@@ -143,18 +143,35 @@ function migrate(db: Database.Database) {
       'INSERT INTO alert_thresholds (window_minutes, metric, threshold_value) VALUES (?, ?, ?)'
     );
     const defaults = db.transaction(() => {
-      // Per-minute thresholds
-      insert.run(1, 'output_tokens', 50000);        // 50K output/min = burning fast
-      insert.run(1, 'input_tokens', 500000);         // 500K input/min = context-heavy
+      // Per-minute thresholds (tuned for Max plan, ~$6-8k/mo equivalent, 20+ agents)
+      insert.run(1, 'output_tokens', 250000);        // 250K output/min = truly burning
+      insert.run(1, 'input_tokens', 2500000);         // 2.5M input/min = massive context load
       // 5-minute windows
-      insert.run(5, 'output_tokens', 200000);        // 200K output in 5 min
-      insert.run(5, 'input_tokens', 2000000);         // 2M input in 5 min
-      insert.run(5, 'total_tokens', 2500000);         // 2.5M total in 5 min
+      insert.run(5, 'output_tokens', 1000000);        // 1M output in 5 min
+      insert.run(5, 'input_tokens', 10000000);         // 10M input in 5 min
+      insert.run(5, 'total_tokens', 12500000);         // 12.5M total in 5 min
       // 15-minute windows
-      insert.run(15, 'total_tokens', 5000000);        // 5M total in 15 min
+      insert.run(15, 'total_tokens', 25000000);        // 25M total in 15 min
       // Hourly
-      insert.run(60, 'total_tokens', 15000000);       // 15M total per hour
+      insert.run(60, 'total_tokens', 75000000);       // 75M total per hour
     });
     defaults();
+  } else {
+    // Migration: bump thresholds from v1 defaults (too aggressive for Max plan)
+    const v1Bump = db.transaction(() => {
+      const bump = (win: number, metric: string, oldVal: number, newVal: number) => {
+        db.prepare(
+          'UPDATE alert_thresholds SET threshold_value = ? WHERE window_minutes = ? AND metric = ? AND threshold_value = ?'
+        ).run(newVal, win, metric, oldVal);
+      };
+      bump(1, 'output_tokens', 50000, 250000);
+      bump(1, 'input_tokens', 500000, 2500000);
+      bump(5, 'output_tokens', 200000, 1000000);
+      bump(5, 'input_tokens', 2000000, 10000000);
+      bump(5, 'total_tokens', 2500000, 12500000);
+      bump(15, 'total_tokens', 5000000, 25000000);
+      bump(60, 'total_tokens', 15000000, 75000000);
+    });
+    v1Bump();
   }
 }

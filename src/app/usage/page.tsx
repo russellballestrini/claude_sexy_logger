@@ -214,8 +214,8 @@ export default function UsageMonitorPage() {
                 type="monotone"
                 dataKey="input_tokens"
                 name="Input"
-                stroke="#60a5fa"
-                fill="#60a5fa"
+                stroke="#22c55e"
+                fill="#22c55e"
                 fillOpacity={0.2}
                 stackId="1"
               />
@@ -272,7 +272,7 @@ export default function UsageMonitorPage() {
                   }}
                   formatter={(v) => formatTokens(Number(v ?? 0))}
                 />
-                <Bar dataKey="input_tokens" name="Input" fill="#60a5fa" stackId="a" />
+                <Bar dataKey="input_tokens" name="Input" fill="#22c55e" stackId="a" />
                 <Bar dataKey="output_tokens" name="Output" fill="#a78bfa" stackId="a" />
               </BarChart>
             </ResponsiveContainer>
