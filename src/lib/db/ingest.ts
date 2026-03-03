@@ -781,12 +781,16 @@ export function deleteSetting(key: string) {
 
 // Plan-based threshold multipliers
 const PLAN_THRESHOLDS: Record<string, Record<string, number>> = {
-  // Base thresholds (1x) — conservative for light usage
+  // Free: conservative, single-agent light usage
   free:    { '1:output_tokens': 50000,  '1:input_tokens': 500000,   '5:output_tokens': 200000,  '5:input_tokens': 2000000,   '5:total_tokens': 2500000,   '15:total_tokens': 5000000,   '60:total_tokens': 15000000  },
-  pro:     { '1:output_tokens': 100000, '1:input_tokens': 1000000,  '5:output_tokens': 400000,  '5:input_tokens': 4000000,   '5:total_tokens': 5000000,   '15:total_tokens': 10000000,  '60:total_tokens': 30000000  },
-  team:    { '1:output_tokens': 150000, '1:input_tokens': 1500000,  '5:output_tokens': 600000,  '5:input_tokens': 6000000,   '5:total_tokens': 7500000,   '15:total_tokens': 15000000,  '60:total_tokens': 45000000  },
-  max_100: { '1:output_tokens': 200000, '1:input_tokens': 2000000,  '5:output_tokens': 800000,  '5:input_tokens': 8000000,   '5:total_tokens': 10000000,  '15:total_tokens': 20000000,  '60:total_tokens': 60000000  },
-  max_200: { '1:output_tokens': 250000, '1:input_tokens': 2500000,  '5:output_tokens': 1000000, '5:input_tokens': 10000000,  '5:total_tokens': 12500000,  '15:total_tokens': 25000000,  '60:total_tokens': 75000000  },
+  // Starter $14/mo: individual, a few agents
+  starter: { '1:output_tokens': 100000, '1:input_tokens': 1000000,  '5:output_tokens': 400000,  '5:input_tokens': 4000000,   '5:total_tokens': 5000000,   '15:total_tokens': 10000000,  '60:total_tokens': 30000000  },
+  // Pro $69/mo: power user, multiple concurrent agents
+  pro:     { '1:output_tokens': 175000, '1:input_tokens': 1750000,  '5:output_tokens': 700000,  '5:input_tokens': 7000000,   '5:total_tokens': 8750000,   '15:total_tokens': 17500000,  '60:total_tokens': 52500000  },
+  // Max $200/mo: heavy multi-agent, 20+ concurrent
+  max:     { '1:output_tokens': 250000, '1:input_tokens': 2500000,  '5:output_tokens': 1000000, '5:input_tokens': 10000000,  '5:total_tokens': 12500000,  '15:total_tokens': 25000000,  '60:total_tokens': 75000000  },
+  // Ultra $420/mo: maximum capacity, fleet operations
+  ultra:   { '1:output_tokens': 500000, '1:input_tokens': 5000000,  '5:output_tokens': 2000000, '5:input_tokens': 20000000,  '5:total_tokens': 25000000,  '15:total_tokens': 50000000,  '60:total_tokens': 150000000 },
 };
 
 export function applyPlanThresholds(plan: string) {

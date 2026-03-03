@@ -9,10 +9,10 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 const PLANS = [
   { value: '', label: 'Select your plan...' },
   { value: 'free', label: 'Free', desc: 'Light usage, conservative alerts' },
-  { value: 'pro', label: 'Pro ($20/mo)', desc: 'Moderate usage, balanced alerts' },
-  { value: 'team', label: 'Team', desc: 'Multi-user, higher thresholds' },
-  { value: 'max_100', label: 'Max ($100/mo)', desc: 'Heavy usage, relaxed alerts' },
-  { value: 'max_200', label: 'Max ($200/mo)', desc: 'Maximum usage, highest thresholds' },
+  { value: 'starter', label: 'Starter ($14/mo)', desc: 'Individual usage, balanced alerts' },
+  { value: 'pro', label: 'Pro ($69/mo)', desc: 'Power user, relaxed alerts' },
+  { value: 'max', label: 'Max ($200/mo)', desc: 'Heavy multi-agent, high thresholds' },
+  { value: 'ultra', label: 'Ultra ($420/mo)', desc: 'Maximum capacity, highest thresholds' },
 ];
 
 const SETTINGS_KEYS = {
@@ -65,14 +65,14 @@ export default function SettingsPage() {
     : null;
 
   const suggestedPlan = estimatedMonthlyCost
-    ? estimatedMonthlyCost > 4000
-      ? 'max_200'
-      : estimatedMonthlyCost > 2000
-        ? 'max_100'
-        : estimatedMonthlyCost > 500
-          ? 'team'
-          : estimatedMonthlyCost > 100
-            ? 'pro'
+    ? estimatedMonthlyCost > 8000
+      ? 'ultra'
+      : estimatedMonthlyCost > 3000
+        ? 'max'
+        : estimatedMonthlyCost > 1000
+          ? 'pro'
+          : estimatedMonthlyCost > 200
+            ? 'starter'
             : 'free'
     : null;
 
