@@ -110,6 +110,12 @@ export function createTestDb(): Database.Database {
     CREATE INDEX IF NOT EXISTS idx_alerts_triggered ON alerts(triggered_at);
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_uuid_unique ON messages(message_uuid) WHERE message_uuid IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Seed default alert thresholds

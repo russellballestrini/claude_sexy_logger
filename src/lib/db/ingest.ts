@@ -750,6 +750,64 @@ export function getTimelineInWindow(windowStart: string, windowEnd: string) {
   }>;
 }
 
+// === Settings ===
+
+export function getSetting(key: string): string | null {
+  const db = getDb();
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+export function setSetting(key: string, value: string) {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  ).run(key, value);
+}
+
+export function getAllSettings(): Record<string, string> {
+  const db = getDb();
+  const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
+  const result: Record<string, string> = {};
+  for (const r of rows) result[r.key] = r.value;
+  return result;
+}
+
+export function deleteSetting(key: string) {
+  const db = getDb();
+  db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+}
+
+// Plan-based threshold multipliers
+const PLAN_THRESHOLDS: Record<string, Record<string, number>> = {
+  // Base thresholds (1x) — conservative for light usage
+  free:    { '1:output_tokens': 50000,  '1:input_tokens': 500000,   '5:output_tokens': 200000,  '5:input_tokens': 2000000,   '5:total_tokens': 2500000,   '15:total_tokens': 5000000,   '60:total_tokens': 15000000  },
+  pro:     { '1:output_tokens': 100000, '1:input_tokens': 1000000,  '5:output_tokens': 400000,  '5:input_tokens': 4000000,   '5:total_tokens': 5000000,   '15:total_tokens': 10000000,  '60:total_tokens': 30000000  },
+  team:    { '1:output_tokens': 150000, '1:input_tokens': 1500000,  '5:output_tokens': 600000,  '5:input_tokens': 6000000,   '5:total_tokens': 7500000,   '15:total_tokens': 15000000,  '60:total_tokens': 45000000  },
+  max_100: { '1:output_tokens': 200000, '1:input_tokens': 2000000,  '5:output_tokens': 800000,  '5:input_tokens': 8000000,   '5:total_tokens': 10000000,  '15:total_tokens': 20000000,  '60:total_tokens': 60000000  },
+  max_200: { '1:output_tokens': 250000, '1:input_tokens': 2500000,  '5:output_tokens': 1000000, '5:input_tokens': 10000000,  '5:total_tokens': 12500000,  '15:total_tokens': 25000000,  '60:total_tokens': 75000000  },
+};
+
+export function applyPlanThresholds(plan: string) {
+  const db = getDb();
+  const thresholds = PLAN_THRESHOLDS[plan];
+  if (!thresholds) return;
+
+  const update = db.prepare(
+    'UPDATE alert_thresholds SET threshold_value = ? WHERE window_minutes = ? AND metric = ?'
+  );
+
+  db.transaction(() => {
+    for (const [key, value] of Object.entries(thresholds)) {
+      const [win, metric] = key.split(':');
+      update.run(value, Number(win), metric);
+    }
+  })();
+
+  setSetting('anthropic_plan', plan);
+}
+
 export function getUserPromptsInWindow(windowStart: string, windowEnd: string) {
   const db = getDb();
   return db.prepare(`

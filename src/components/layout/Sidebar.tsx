@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { href: '/tokens', label: 'Tokens', icon: '$' },
   { href: '/usage', label: 'Usage Monitor', icon: '!' },
   { href: '/styleguide', label: 'Styleguide', icon: '&' },
+  { href: '/settings', label: 'Settings', icon: '%' },
 ];
 
 export function Sidebar() {

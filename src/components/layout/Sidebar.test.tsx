@@ -17,7 +17,7 @@ const { Sidebar } = await import('./Sidebar');
 afterEach(() => cleanup());
 
 describe('Sidebar', () => {
-  it('renders all 8 navigation items', () => {
+  it('renders all 9 navigation items', () => {
     render(<Sidebar />);
     expect(screen.getByText('Live')).toBeTruthy();
     expect(screen.getByText('Dashboard')).toBeTruthy();
@@ -27,6 +27,7 @@ describe('Sidebar', () => {
     expect(screen.getByText('Tokens')).toBeTruthy();
     expect(screen.getByText('Usage Monitor')).toBeTruthy();
     expect(screen.getByText('Styleguide')).toBeTruthy();
+    expect(screen.getByText('Settings')).toBeTruthy();
   });
 
   it('renders the app title', () => {
