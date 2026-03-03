@@ -12,7 +12,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function ThinkingPage() {
   const [search, setSearch] = useState('');
-  const [limit, setLimit] = useState(50);
+  const [limit, setLimit] = useState(1000);
 
   const queryParams = new URLSearchParams({ limit: String(limit) });
   if (search) queryParams.set('search', search);
@@ -49,9 +49,8 @@ export default function ThinkingPage() {
           onChange={(e) => setLimit(Number(e.target.value))}
           className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-3 py-1.5 text-sm"
         >
-          <option value={25}>25</option>
-          <option value={50}>50</option>
-          <option value={100}>100</option>
+          <option value={1000}>1,000</option>
+          <option value={10000}>10,000</option>
         </select>
       </div>
 

@@ -10,33 +10,32 @@ type AnyEntry = any;
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const projectFilter = url.searchParams.get('project');
-  const limit = parseInt(url.searchParams.get('limit') ?? '50');
+  const limit = parseInt(url.searchParams.get('limit') ?? '1000');
   const search = url.searchParams.get('search')?.toLowerCase();
 
   try {
     const projectDirs = await readdir(claudePaths.projects);
     const results: ThinkingExcerpt[] = [];
 
+    // Collect from all projects before sorting, so latest-first is accurate
     for (const dir of projectDirs) {
       if (projectFilter && dir !== projectFilter) continue;
-      if (results.length >= limit) break;
 
       let sessionIds: string[] = [];
       try {
         const indexRaw = await readFile(claudePaths.sessionsIndex(dir), 'utf-8');
         const index: SessionsIndex = JSON.parse(indexRaw);
-        // Sort by modified desc, take recent sessions
+        // Sort by modified desc, scale session scan with limit
+        const sessionCap = limit <= 1000 ? 20 : 50;
         sessionIds = index.entries
           .sort((a, b) => (b.modified ?? '').localeCompare(a.modified ?? ''))
-          .slice(0, 10)
+          .slice(0, sessionCap)
           .map((e) => e.sessionId);
       } catch {
         continue;
       }
 
       for (const sid of sessionIds) {
-        if (results.length >= limit) break;
-
         const filePath = claudePaths.sessionFile(dir, sid);
         let lastUserText = '';
 
@@ -68,11 +67,9 @@ export async function GET(request: NextRequest) {
                     precedingPrompt: lastUserText,
                     model: e.message.model,
                   });
-                  if (results.length >= limit) break;
                 }
               }
             }
-            if (results.length >= limit) break;
           }
         } catch {
           // skip unreadable sessions
@@ -80,8 +77,9 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Sort all results by timestamp desc (latest first), then slice to limit
     results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    return NextResponse.json(results);
+    return NextResponse.json(results.slice(0, limit));
   } catch (err) {
     return NextResponse.json(
       { error: 'Failed to aggregate thinking', detail: String(err) },
