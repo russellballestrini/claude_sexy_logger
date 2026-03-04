@@ -402,7 +402,8 @@ export default function TokensPage() {
                 type="category"
                 dataKey="tool_name"
                 tick={{ fill: '#a1a1aa', fontSize: 16 }}
-                width={100}
+                width={140}
+                interval={0}
               />
               <Tooltip
 
