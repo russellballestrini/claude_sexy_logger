@@ -55,7 +55,7 @@ const CSS_VARS = [
   { name: '--color-accent', hex: '#10b981' },
   { name: '--color-thinking', hex: '#a78bfa' },
   { name: '--color-user', hex: '#60a5fa' },
-  { name: '--color-assistant', hex: '#34d399' },
+  { name: '--color-assistant', hex: '#10b981' },
   { name: '--color-tool', hex: '#fbbf24' },
   { name: '--color-error', hex: '#f87171' },
 ];
