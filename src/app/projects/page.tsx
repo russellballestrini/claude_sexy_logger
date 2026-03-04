@@ -5,7 +5,7 @@ import useSWR from 'swr';
 import Link from 'next/link';
 import type { ProjectInfo, ProjectMetadata } from '@/lib/types';
 import { PageContext } from '@/components/PageContext';
-import { formatRelativeTime, formatTokens } from '@/lib/format';
+import { formatRelativeTime, formatTokens, gitRemoteToWebUrl, commitUrl } from '@/lib/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -129,18 +129,12 @@ function DetailPanel({
           {meta.remotes.filter((r) => r.type === 'fetch').length > 0 && (
             <div className="text-base text-[var(--color-muted)] space-y-0.5">
               {meta.remotes.filter((r) => r.type === 'fetch').map((r) => {
-                const ghMatch = r.url.match(/github\.com[:/](.+?)(?:\.git)?$/);
-                const glMatch = r.url.match(/gitlab\.com[:/](.+?)(?:\.git)?$/);
-                const linkUrl = ghMatch
-                  ? `https://github.com/${ghMatch[1]}`
-                  : glMatch
-                    ? `https://gitlab.com/${glMatch[1]}`
-                    : null;
+                const webUrl = gitRemoteToWebUrl(r.url);
                 return (
                   <div key={`${r.name}-${r.url}`}>
                     <span className="text-[var(--color-foreground)]">{r.name}</span>{' '}
-                    {linkUrl ? (
-                      <a href={linkUrl} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline">
+                    {webUrl ? (
+                      <a href={webUrl} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline">
                         {r.url}
                       </a>
                     ) : (
@@ -151,19 +145,31 @@ function DetailPanel({
               })}
             </div>
           )}
-          {meta.recentCommits.length > 0 && (
-            <div className="text-base space-y-1 font-mono">
-              {meta.recentCommits.slice(0, 5).map((c) => (
-                <div key={c.hash} className="flex gap-2">
-                  <span className="text-[var(--color-accent)] shrink-0">{c.hash}</span>
-                  <span className="break-words">{c.subject}</span>
-                  <span className="text-[var(--color-muted)] shrink-0">
-                    {c.author}, {formatRelativeTime(c.date)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
+          {meta.recentCommits.length > 0 && (() => {
+            const fetchRemote = meta.remotes.find((r) => r.type === 'fetch');
+            return (
+              <div className="text-base space-y-1 font-mono">
+                {meta.recentCommits.slice(0, 5).map((c) => {
+                  const cUrl = fetchRemote ? commitUrl(fetchRemote.url, c.hash) : null;
+                  return (
+                    <div key={c.hash} className="flex gap-2">
+                      {cUrl ? (
+                        <a href={cUrl} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline shrink-0">
+                          {c.hash}
+                        </a>
+                      ) : (
+                        <span className="text-[var(--color-accent)] shrink-0">{c.hash}</span>
+                      )}
+                      <span className="break-words">{c.subject}</span>
+                      <span className="text-[var(--color-muted)] shrink-0">
+                        {c.author}, {formatRelativeTime(c.date)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       )}
 

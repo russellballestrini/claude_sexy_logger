@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import type { ProjectMetadata } from '@/lib/types';
 import { PageContext } from '@/components/PageContext';
-import { formatTokens, formatCost, formatRelativeTime, formatTimestamp } from '@/lib/format';
+import { formatTokens, formatCost, formatRelativeTime, formatTimestamp, gitRemoteToWebUrl, commitUrl } from '@/lib/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -125,35 +125,41 @@ function RepoContext({ projectName }: { projectName: string }) {
           </span>
         )}
         {meta.remotes.filter((r) => r.type === 'fetch').map((r) => {
-          const ghMatch = r.url.match(/github\.com[:/](.+?)(?:\.git)?$/);
-          const glMatch = r.url.match(/gitlab\.com[:/](.+?)(?:\.git)?$/);
-          const linkUrl = ghMatch
-            ? `https://github.com/${ghMatch[1]}`
-            : glMatch
-              ? `https://gitlab.com/${glMatch[1]}`
-              : null;
-          return linkUrl ? (
-            <a key={`${r.name}-${r.url}`} href={linkUrl} target="_blank" rel="noopener noreferrer" className="text-base text-[var(--color-accent)] hover:underline">
-              {r.name}: {ghMatch?.[1] ?? glMatch?.[1]}
+          const webUrl = gitRemoteToWebUrl(r.url);
+          return webUrl ? (
+            <a key={`${r.name}-${r.url}`} href={webUrl} target="_blank" rel="noopener noreferrer" className="text-base text-[var(--color-accent)] hover:underline">
+              {r.name}: {webUrl.replace(/^https?:\/\//, '')}
             </a>
           ) : (
             <span key={`${r.name}-${r.url}`} className="text-base font-mono text-[var(--color-muted)]">{r.name}: {r.url}</span>
           );
         })}
       </div>
-      {meta.recentCommits.length > 0 && (
-        <div className="text-base space-y-1 font-mono">
-          {meta.recentCommits.slice(0, 8).map((c) => (
-            <div key={c.hash} className="flex gap-2">
-              <span className="text-[var(--color-accent)] shrink-0">{c.hash}</span>
-              <span className="break-words">{c.subject}</span>
-              <span className="text-[var(--color-muted)] shrink-0">
-                {c.author}, {formatRelativeTime(c.date)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      {meta.recentCommits.length > 0 && (() => {
+        const fetchRemote = meta.remotes.find((r) => r.type === 'fetch');
+        return (
+          <div className="text-base space-y-1 font-mono">
+            {meta.recentCommits.slice(0, 8).map((c) => {
+              const cUrl = fetchRemote ? commitUrl(fetchRemote.url, c.hash) : null;
+              return (
+                <div key={c.hash} className="flex gap-2">
+                  {cUrl ? (
+                    <a href={cUrl} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline shrink-0">
+                      {c.hash}
+                    </a>
+                  ) : (
+                    <span className="text-[var(--color-accent)] shrink-0">{c.hash}</span>
+                  )}
+                  <span className="break-words">{c.subject}</span>
+                  <span className="text-[var(--color-muted)] shrink-0">
+                    {c.author}, {formatRelativeTime(c.date)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
       {meta.claudeMdExists && meta.claudeMd && (
         <details className="text-base">
           <summary className="text-[var(--color-muted)] cursor-pointer hover:text-[var(--color-foreground)]">CLAUDE.md preview</summary>

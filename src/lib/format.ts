@@ -60,6 +60,37 @@ export function truncate(str: string, maxLen: number): string {
   return str.slice(0, maxLen - 1) + '\u2026';
 }
 
+/**
+ * Convert a git remote URL to a browsable web URL.
+ * Supports GitHub, GitLab, and Gitea/Forgejo (e.g. git.unturf.com).
+ */
+export function gitRemoteToWebUrl(remoteUrl: string): string | null {
+  // SSH: git@host:owner/repo.git or git@host:owner/repo
+  const sshMatch = remoteUrl.match(/^git@([^:]+):(.+?)(?:\.git)?$/);
+  if (sshMatch) {
+    return `https://${sshMatch[1]}/${sshMatch[2]}`;
+  }
+  // HTTPS: https://host/owner/repo.git or https://host/owner/repo
+  const httpsMatch = remoteUrl.match(/^https?:\/\/([^/]+)\/(.+?)(?:\.git)?$/);
+  if (httpsMatch) {
+    return `https://${httpsMatch[1]}/${httpsMatch[2]}`;
+  }
+  return null;
+}
+
+/**
+ * Build a commit URL for a given remote URL and commit hash.
+ * GitLab uses /-/commit/, GitHub and Gitea use /commit/.
+ */
+export function commitUrl(remoteUrl: string, hash: string): string | null {
+  const baseUrl = gitRemoteToWebUrl(remoteUrl);
+  if (!baseUrl) return null;
+  if (baseUrl.includes('gitlab.com')) {
+    return `${baseUrl}/-/commit/${hash}`;
+  }
+  return `${baseUrl}/commit/${hash}`;
+}
+
 export function extractUserText(entry: { message: { content: unknown } }): string {
   const { content } = entry.message;
   if (typeof content === 'string') return content;

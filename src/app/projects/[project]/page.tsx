@@ -3,8 +3,8 @@
 import { use, useState } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
-import type { SessionIndexEntry } from '@/lib/types';
-import { formatRelativeTime } from '@/lib/format';
+import type { SessionIndexEntry, ProjectMetadata } from '@/lib/types';
+import { formatRelativeTime, gitRemoteToWebUrl, commitUrl } from '@/lib/format';
 import { PageContext } from '@/components/PageContext';
 import { SessionPopover } from '@/components/SessionPopover';
 
@@ -26,6 +26,11 @@ export default function ProjectSessionsPage({
     originalPath: string;
     sessions: SessionIndexEntry[];
   }>(`/api/projects/${project}/sessions`, fetcher);
+
+  const { data: meta } = useSWR<ProjectMetadata>(
+    `/api/projects/metadata?project=${encodeURIComponent(decodedProject)}`,
+    fetcher
+  );
 
   async function bootSession(sessionId?: string) {
     if (!data?.originalPath) return;
@@ -91,6 +96,52 @@ export default function ProjectSessionsPage({
           </p>
         )}
       </div>
+
+      {/* Git info */}
+      {meta && (meta.remotes.length > 0 || meta.recentCommits.length > 0) && (() => {
+        const fetchRemote = meta.remotes.find((r) => r.type === 'fetch');
+        return (
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              {meta.branch && (
+                <span className="inline-block text-base bg-[var(--color-surface-hover)] text-[var(--color-accent)] px-2 py-0.5 rounded font-mono">
+                  {meta.branch}
+                </span>
+              )}
+              {meta.remotes.filter((r) => r.type === 'fetch').map((r) => {
+                const webUrl = gitRemoteToWebUrl(r.url);
+                return webUrl ? (
+                  <a key={`${r.name}-${r.url}`} href={webUrl} target="_blank" rel="noopener noreferrer" className="text-base text-[var(--color-accent)] hover:underline">
+                    {webUrl.replace(/^https?:\/\//, '')}
+                  </a>
+                ) : (
+                  <span key={`${r.name}-${r.url}`} className="text-base font-mono text-[var(--color-muted)]">{r.url}</span>
+                );
+              })}
+            </div>
+            {meta.recentCommits.length > 0 && (
+              <div className="text-base space-y-1 font-mono">
+                {meta.recentCommits.slice(0, 5).map((c) => {
+                  const cUrl = fetchRemote ? commitUrl(fetchRemote.url, c.hash) : null;
+                  return (
+                    <div key={c.hash} className="flex gap-2">
+                      {cUrl ? (
+                        <a href={cUrl} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline shrink-0">
+                          {c.hash}
+                        </a>
+                      ) : (
+                        <span className="text-[var(--color-accent)] shrink-0">{c.hash}</span>
+                      )}
+                      <span className="break-words">{c.subject}</span>
+                      <span className="text-[var(--color-muted)] shrink-0">{formatRelativeTime(c.date)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Boot controls */}
       {data.originalPath && (
