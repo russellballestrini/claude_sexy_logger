@@ -19,7 +19,14 @@ import {
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function UsageMonitorPage() {
-  const [window, setWindow] = useState(1440);
+  const [window, _setWindow] = useState(() => {
+    if (typeof globalThis.localStorage !== 'undefined') {
+      const saved = localStorage.getItem('usage_window');
+      return saved ? Number(saved) : 1440;
+    }
+    return 1440;
+  });
+  const setWindow = (v: number) => { _setWindow(v); localStorage.setItem('usage_window', String(v)); };
   const [ingesting, setIngesting] = useState(false);
   const [lastIngest, setLastIngest] = useState<any>(null);
 

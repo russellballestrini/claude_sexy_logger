@@ -61,7 +61,13 @@ const DAY_COLORS = [
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export default function DashboardPage() {
-  const [range, setRange] = useState('7d');
+  const [range, _setRange] = useState(() => {
+    if (typeof globalThis.localStorage !== 'undefined') {
+      return localStorage.getItem('dashboard_range') ?? '7d';
+    }
+    return '7d';
+  });
+  const setRange = (v: string) => { _setRange(v); localStorage.setItem('dashboard_range', v); };
   const { data, error } = useSWR(`/api/dashboard?range=${range}`, fetcher, {
     refreshInterval: 30000,
   });
