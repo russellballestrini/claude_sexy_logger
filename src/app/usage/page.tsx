@@ -170,6 +170,9 @@ export default function UsageMonitorPage() {
             className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base"
           >
             <option value={60}>1 hour</option>
+            <option value={180}>3 hours</option>
+            <option value={360}>6 hours</option>
+            <option value={720}>12 hours</option>
             <option value={1440}>24 hours</option>
             <option value={10080}>7 days</option>
             <option value={20160}>14 days</option>
