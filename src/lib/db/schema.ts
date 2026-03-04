@@ -130,6 +130,21 @@ function migrate(db: Database.Database) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- Blog posts (jsonblog.org schema)
+    CREATE TABLE IF NOT EXISTS posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      post_uuid TEXT UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      source TEXT,
+      content TEXT,
+      url TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_posts_created ON posts(created_at);
+
     -- Indexes for fast queries
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);

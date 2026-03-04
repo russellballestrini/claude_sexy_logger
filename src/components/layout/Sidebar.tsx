@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   { href: '/logs', label: 'All Logs', icon: '#' },
   { href: '/tokens', label: 'Tokens', icon: '$' },
   { href: '/usage', label: 'Usage Monitor', icon: '!' },
-  { href: '/blog', label: 'Blog', icon: '@' },
+  // { href: '/blog', label: 'Blog', icon: '@' },
   { href: '/styleguide', label: 'Styleguide', icon: '&' },
   { href: '/settings', label: 'Settings', icon: '%' },
 ];
