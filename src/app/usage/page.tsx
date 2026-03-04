@@ -75,9 +75,11 @@ export default function UsageMonitorPage() {
     setIngesting(false);
   }, [mutateTimeline, mutateProjects, mutateAlerts]);
 
-  // Auto-ingest on mount
+  // Auto-ingest on mount + every 30s
   useEffect(() => {
     runIngest();
+    const interval = setInterval(runIngest, 30000);
+    return () => clearInterval(interval);
   }, [runIngest]);
 
   const acknowledgeAll = async () => {
