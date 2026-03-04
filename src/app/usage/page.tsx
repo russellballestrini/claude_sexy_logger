@@ -321,13 +321,13 @@ export default function UsageMonitorPage() {
             {projectActivity.map((p: any) => (
               <div key={p.name}>
                 <div
-                  className={`grid grid-cols-[auto_10rem_1fr_7rem] items-center gap-3 text-base py-2 px-2 rounded cursor-pointer hover:bg-[var(--color-surface-hover)] ${
+                  className={`grid grid-cols-[auto_10rem_minmax(0,1fr)_auto] items-center gap-3 text-base py-2 px-2 rounded cursor-pointer hover:bg-[var(--color-surface-hover)] ${
                     expandedProject === p.name ? 'bg-[var(--color-surface-hover)]' : ''
                   }`}
                   onClick={() => setExpandedProject(expandedProject === p.name ? null : p.name)}
                 >
                   {/* Status indicator */}
-                  <span className={`w-2 h-2 rounded-full ${
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${
                     isActiveRecently(p.last_activity)
                       ? 'bg-[var(--color-accent)] animate-pulse'
                       : isActiveSameDay(p.last_activity)
@@ -336,10 +336,10 @@ export default function UsageMonitorPage() {
                   }`} />
 
                   {/* Project name */}
-                  <span className="font-bold break-words">{p.display_name}</span>
+                  <span className="font-bold truncate">{p.display_name}</span>
 
                   {/* Metrics bar */}
-                  <div className="grid grid-flow-col auto-cols-max gap-4 text-base text-[var(--color-muted)]">
+                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-base text-[var(--color-muted)] min-w-0">
                     <span>{p.user_messages.toLocaleString()} prompts</span>
                     <span>{p.session_count} sessions</span>
                     <span>{p.active_days}d active</span>
@@ -348,7 +348,7 @@ export default function UsageMonitorPage() {
                   </div>
 
                   {/* Last activity */}
-                  <span className="text-base text-[var(--color-muted)] text-right">
+                  <span className="text-base text-[var(--color-muted)] text-right whitespace-nowrap">
                     {p.last_activity ? formatRelativeTime(p.last_activity) : '-'}
                   </span>
                 </div>
