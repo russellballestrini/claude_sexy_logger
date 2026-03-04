@@ -6,6 +6,7 @@ test:
   tags:
     - build
   before_script:
+    - export PATH="$HOME/.local/node-v22.14.0/bin:$PATH"
     - npm ci
   script:
     - npm run lint
