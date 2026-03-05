@@ -1,10 +1,10 @@
 # 3011-3016: Unfirehose Infrastructure (KYC, Bucket Sync, Tier Enforcement)
 
-**Status:** blocked
-**Project:** claude-sexy-logger + unfirehose
+**Status:** closed (moved — 2026-03-05)
+**Project:** unfirehose (Elixir API) + unfirehose.com (unsandbox.com portal)
 **Estimated:** 240m+ (multi-session)
 **Todo IDs:** 3011, 3012, 3013, 3014, 3015, 3016
-**Blocked by:** These todos were created during planning but belong in the unfirehose repo, not here. Need fox to confirm architecture decisions before work starts.
+**Resolution:** Infrastructure work belongs in unfirehose (API) and unfirehose.com (portal) repos. KYC, bucket sync, tier enforcement are server-side concerns.
 
 ## Context
 

@@ -1,10 +1,10 @@
 # 3010: Update landing page with scrobble onboarding + pricing copy
 
-**Status:** blocked
-**Project:** claude-sexy-logger / unfirehose
+**Status:** closed (moved — 2026-03-05)
+**Project:** unfirehose.com (unsandbox.com portal)
 **Estimated:** 60m
 **Todo IDs:** 3010
-**Blocked by:** Need fox to decide: does this landing page live in this repo (localhost dashboard) or on unfirehose.org? Also need final pricing copy and onboarding flow design.
+**Resolution:** Onboarding lives on unfirehose.com, not in this local dashboard. Work belongs in the unsandbox.com/unfirehose.com repo.
 
 ## Context
 
