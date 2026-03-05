@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import Link from 'next/link';
 import { formatRelativeTime, formatTimestamp } from '@unfirehose/core/format';
 import { PageContext } from '@unfirehose/ui/PageContext';
@@ -104,6 +104,7 @@ export default function TodosPage() {
   const [landedCardId, setLandedCardId] = useState<number | null>(null);
   const [pulsedColumn, setPulsedColumn] = useState<string | null>(null);
   const [burst, setBurst] = useState<{ x: number; y: number; color: string } | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
 
   const fetchTodos = useCallback(() => {
     setLoading(true);
@@ -257,19 +258,29 @@ export default function TodosPage() {
   }
   const completedDays = Object.keys(completedByDay).sort().reverse();
 
+  // Valid drop transitions
+  const canDropOnColumn = useCallback((from: string, to: string) => {
+    if (from === to) return false;
+    if (from === 'pending' && to === 'in_progress') return true;
+    if (from === 'in_progress' && to === 'completed') return true;
+    if (from === 'in_progress' && to === 'pending') return true;
+    return false;
+  }, []);
+
   // Drag handlers
   const handleDragStart = useCallback((todo: Todo) => { setDraggedTodo(todo); }, []);
-  const handleDragEnd = useCallback(() => { setDraggedTodo(null); setDragOverColumn(null); }, []);
+  const handleDragEnd = useCallback(() => { setDraggedTodo(null); setDragOverColumn(null); setDragOverIndex(-1); }, []);
 
   const handleDrop = useCallback(async (targetStatus: string, e: React.DragEvent) => {
-    if (!draggedTodo || draggedTodo.status === targetStatus) {
-      setDraggedTodo(null); setDragOverColumn(null);
+    if (!draggedTodo || !canDropOnColumn(draggedTodo.status, targetStatus)) {
+      setDraggedTodo(null); setDragOverColumn(null); setDragOverIndex(-1);
       return;
     }
 
     const todo = draggedTodo;
     setDraggedTodo(null);
     setDragOverColumn(null);
+    setDragOverIndex(-1);
 
     // Burst effect at drop point
     const burstColor = targetStatus === 'in_progress' ? '#a855f7' : targetStatus === 'completed' ? '#22c55e' : '#a1a1aa';
@@ -388,24 +399,44 @@ export default function TodosPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {STATUS_COLUMNS.map(col => {
               const isOver = dragOverColumn === col.key;
-              const canDrop = draggedTodo != null && draggedTodo.status !== col.key;
+              const validDrop = draggedTodo != null && canDropOnColumn(draggedTodo.status, col.key);
               const isPulsed = pulsedColumn === col.key;
               const isCompleted = col.key === 'completed';
               const columnTodos = isCompleted ? recentCompleted : (columns[col.key] ?? []);
 
+              // Insertion gap color
+              const gapColor = col.key === 'in_progress' ? '#a855f7' : col.key === 'completed' ? '#22c55e' : 'var(--color-muted)';
+              const gapLabel = col.key === 'in_progress' ? 'Drop to power up agent' : col.key === 'completed' ? 'Drop to mark done' : 'Drop to queue';
+
               return (
                 <div
                   key={col.key}
-                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverColumn(col.key); }}
-                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverColumn(null); }}
+                  onDragOver={(e) => {
+                    if (!draggedTodo || !canDropOnColumn(draggedTodo.status, col.key)) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    setDragOverColumn(col.key);
+                    // If hovering over empty area (not on a card), place at end
+                    if (e.target === e.currentTarget || (e.target as HTMLElement).closest('[data-kanban-col]') === e.currentTarget) {
+                      setDragOverIndex(columnTodos.length);
+                    }
+                  }}
+                  onDragLeave={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      setDragOverColumn(null);
+                      setDragOverIndex(-1);
+                    }
+                  }}
                   onDrop={(e) => { e.preventDefault(); handleDrop(col.key, e); }}
+                  data-kanban-col={col.key}
                   className={`rounded-xl p-3 transition-all duration-300 min-h-[200px] ${
-                    isOver && canDrop
-                      ? 'bg-[var(--color-accent)]/10 ring-2 ring-[var(--color-accent)] ring-inset scale-[1.01]'
+                    isOver && validDrop
+                      ? 'scale-[1.01]'
                       : isPulsed
                         ? 'column-drop-pulse'
                         : ''
                   }`}
+                  style={isOver && validDrop ? { outline: `2px solid ${gapColor}`, outlineOffset: '-2px', borderRadius: '12px' } : undefined}
                 >
                   {/* Column header */}
                   <div className="flex items-center gap-2 mb-4 pb-2 border-b-2" style={{ borderBottomColor: col.color }}>
@@ -415,56 +446,70 @@ export default function TodosPage() {
                     <span className="text-xs text-[var(--color-muted)] ml-auto tabular-nums">{columnTodos.length}</span>
                   </div>
 
-                  {/* Drop zone — only visible when dragging */}
-                  {isOver && canDrop && (
-                    <div className={`border-2 border-dashed rounded-lg p-3 mb-3 text-center transition-all ${
-                      col.key === 'in_progress'
-                        ? 'border-[#a855f7] bg-[#a855f7]/10'
-                        : col.key === 'completed'
-                          ? 'border-[#22c55e] bg-[#22c55e]/10'
-                          : 'border-[var(--color-accent)]/50 bg-[var(--color-accent)]/5'
-                    }`}>
-                      <span className={`text-sm font-bold ${
-                        col.key === 'in_progress' ? 'text-[#a855f7]' : col.key === 'completed' ? 'text-[#22c55e]' : 'text-[var(--color-accent)]'
-                      }`}>
-                        {col.key === 'in_progress' ? 'Drop to power up agent' : col.key === 'completed' ? 'Drop to mark done' : 'Drop to queue'}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Cards */}
+                  {/* Cards with insertion gaps */}
                   <div className="space-y-2">
                     {isCompleted ? (
                       completedDays.length === 0 ? (
                         <p className="text-sm text-[var(--color-muted)] text-center py-8 italic">No completions in last {COMPLETED_WINDOW_DAYS} days</p>
                       ) : (
-                        completedDays.map(day => (
-                          <div key={day}>
-                            <div className="text-xs text-[var(--color-muted)] font-bold mb-1.5 mt-2">{day}</div>
-                            {completedByDay[day].map(todo => (
-                              <CompletedCard key={todo.id} todo={todo} landed={landedCardId === todo.id} />
-                            ))}
-                          </div>
-                        ))
+                        <>
+                          {/* Insertion gap at top of completed */}
+                          {isOver && validDrop && dragOverIndex === 0 && (
+                            <InsertionGap color={gapColor} label={gapLabel} />
+                          )}
+                          {completedDays.map(day => (
+                            <div key={day}>
+                              <div className="text-xs text-[var(--color-muted)] font-bold mb-1.5 mt-2">{day}</div>
+                              {completedByDay[day].map(todo => (
+                                <CompletedCard key={todo.id} todo={todo} landed={landedCardId === todo.id} />
+                              ))}
+                            </div>
+                          ))}
+                        </>
                       )
                     ) : (
                       <>
-                        {columnTodos.map(todo => {
+                        {columnTodos.map((todo, i) => {
                           const group = byProject.find(g => g.project === todo.projectName);
                           return (
-                            <KanbanCard
-                              key={todo.id} todo={todo}
-                              onUpdate={updateTodo} onDelete={deleteTodo}
-                              projectPath={group?.projectPath ?? null}
-                              onBoot={bootAgent} booting={booting} bootResult={bootResult}
-                              onDragStart={handleDragStart} onDragEnd={handleDragEnd}
-                              isDragging={draggedTodo?.id === todo.id}
-                              landed={landedCardId === todo.id}
-                            />
+                            <Fragment key={todo.id}>
+                              {/* Insertion gap before this card */}
+                              {isOver && validDrop && dragOverIndex === i && (
+                                <InsertionGap color={gapColor} label={gapLabel} />
+                              )}
+                              <div
+                                onDragOver={(e) => {
+                                  if (!draggedTodo || !canDropOnColumn(draggedTodo.status, col.key)) return;
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const midY = rect.top + rect.height / 2;
+                                  setDragOverIndex(e.clientY < midY ? i : i + 1);
+                                  setDragOverColumn(col.key);
+                                }}
+                              >
+                                <KanbanCard
+                                  todo={todo}
+                                  onUpdate={updateTodo} onDelete={deleteTodo}
+                                  projectPath={group?.projectPath ?? null}
+                                  onBoot={bootAgent} booting={booting} bootResult={bootResult}
+                                  onDragStart={handleDragStart} onDragEnd={handleDragEnd}
+                                  isDragging={draggedTodo?.id === todo.id}
+                                  landed={landedCardId === todo.id}
+                                />
+                              </div>
+                            </Fragment>
                           );
                         })}
-                        {columnTodos.length === 0 && (
+                        {/* Insertion gap at end */}
+                        {isOver && validDrop && dragOverIndex >= columnTodos.length && (
+                          <InsertionGap color={gapColor} label={gapLabel} />
+                        )}
+                        {columnTodos.length === 0 && !validDrop && (
                           <p className="text-sm text-[var(--color-muted)] text-center py-8 italic">Empty</p>
+                        )}
+                        {columnTodos.length === 0 && isOver && validDrop && (
+                          <InsertionGap color={gapColor} label={gapLabel} />
                         )}
                       </>
                     )}
@@ -532,18 +577,37 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
   return (
     <div
       draggable
-      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(todo.id)); onDragStart(todo); }}
+      onDragStart={(e) => {
+        // Custom drag image with glow
+        const el = e.currentTarget;
+        const clone = el.cloneNode(true) as HTMLElement;
+        clone.style.width = `${el.offsetWidth}px`;
+        clone.style.transform = 'rotate(3deg) scale(1.05)';
+        clone.style.boxShadow = '0 25px 50px rgba(0,0,0,0.5), 0 0 30px rgba(168,85,247,0.4)';
+        clone.style.borderRadius = '12px';
+        clone.style.position = 'absolute';
+        clone.style.left = '-9999px';
+        clone.style.top = '-9999px';
+        clone.style.zIndex = '9999';
+        document.body.appendChild(clone);
+        e.dataTransfer.setDragImage(clone, e.nativeEvent.offsetX, e.nativeEvent.offsetY);
+        requestAnimationFrame(() => document.body.removeChild(clone));
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(todo.id));
+        onDragStart(todo);
+      }}
       onDragEnd={onDragEnd}
       className={`
-        bg-[var(--color-surface)] rounded-xl border p-3.5 text-sm
+        rounded-xl border p-3.5 text-sm
         transition-all duration-200 select-none
         ${isDragging
-          ? 'opacity-30 scale-90 rotate-2 shadow-2xl'
+          ? 'border-2 border-dashed border-[var(--color-muted)]/40 bg-[var(--color-surface)]/30 shadow-none [&>*]:opacity-20'
           : landed
-            ? 'card-landed'
-            : 'cursor-grab active:cursor-grabbing hover:shadow-xl hover:-translate-y-0.5 active:scale-[1.03] active:rotate-1'
+            ? 'card-landed bg-[var(--color-surface)]'
+            : 'bg-[var(--color-surface)] cursor-grab active:cursor-grabbing hover:shadow-xl hover:-translate-y-0.5 active:scale-[1.03] active:rotate-1'
         }
-        ${needsTicket ? 'border-yellow-400/40 bg-yellow-400/[0.03]'
+        ${isDragging ? ''
+          : needsTicket ? 'border-yellow-400/40 bg-yellow-400/[0.03]'
           : isActive ? 'border-[#a855f7]/50 shadow-[0_0_12px_rgba(168,85,247,0.15)] shadow-lg'
           : 'border-[var(--color-border)] shadow-md hover:border-[var(--color-muted)]'
         }
@@ -669,6 +733,18 @@ function MegaPanel({ megaStatus, onClose }: { megaStatus: any; onClose: () => vo
         </div>
       )}
       {megaStatus.error && <p className="text-[var(--color-error)] text-sm">{megaStatus.error}</p>}
+    </div>
+  );
+}
+
+// --- Insertion gap for drag target ---
+function InsertionGap({ color, label }: { color: string; label: string }) {
+  return (
+    <div
+      className="rounded-xl border-2 border-dashed p-4 text-center transition-all duration-200 animate-pulse"
+      style={{ borderColor: color, backgroundColor: `${color}11` }}
+    >
+      <span className="text-sm font-bold" style={{ color }}>{label}</span>
     </div>
   );
 }
