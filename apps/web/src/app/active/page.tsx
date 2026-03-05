@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { formatRelativeTime, formatTokens } from '@unfirehose/core/format';
 import { PageContext } from '@unfirehose/ui/PageContext';
+import { TimeRangeSelect, useTimeRange, getTimeRangeMinutes } from '@unfirehose/ui/TimeRangeSelect';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -31,13 +32,16 @@ const SESSION_COLORS = [
 export default function ActivePage() {
   const [sessions, setSessions] = useState<ActiveSession[]>([]);
   const [loading, setLoading] = useState(true);
+  const [timeRange, setTimeRange] = useTimeRange('active_time_range', '1h');
+
+  const minutes = getTimeRangeMinutes(timeRange) || 60 * 24 * 365 * 10; // 'all' = 10 years
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
 
     const fetchActive = async () => {
       try {
-        const res = await fetch('/api/active-sessions');
+        const res = await fetch(`/api/active-sessions?minutes=${minutes}`);
         const data = await res.json();
         setSessions(data.sessions ?? []);
       } catch {
@@ -50,7 +54,7 @@ export default function ActivePage() {
     fetchActive();
     interval = setInterval(fetchActive, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [minutes]);
 
   return (
     <div className="p-6 max-w-6xl">
@@ -61,6 +65,9 @@ export default function ActivePage() {
           {sessions.length} active
         </span>
         <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+        <div className="ml-auto">
+          <TimeRangeSelect value={timeRange} onChange={setTimeRange} />
+        </div>
       </div>
 
       {loading ? (
@@ -69,7 +76,7 @@ export default function ActivePage() {
         <div className="border border-[var(--color-border)] rounded p-8 text-center">
           <p className="text-[var(--color-muted)] text-lg mb-2">No active sessions</p>
           <p className="text-[var(--color-muted)] text-base">
-            Sessions appear here when agents have been active in the last 10 minutes.
+            No sessions found in the last {timeRange === 'all' ? 'lifetime' : timeRange}.
           </p>
         </div>
       ) : (

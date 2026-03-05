@@ -64,7 +64,15 @@ const SETTINGS_KEYS = {
   firehoseEndpoint: 'unfirehose_endpoint',
   firehoseEnabled: 'unfirehose_enabled',
   scrobbleEnabled: 'unfirehose_scrobble',
+  bootDefaultHost: 'boot_default_host',
+  bootStrategy: 'boot_strategy',
 };
+
+const BOOT_STRATEGIES = [
+  { value: 'default', label: 'Default Host', desc: 'Always use the configured default host' },
+  { value: 'least-loaded', label: 'Least Loaded', desc: 'Pick the mesh node with lowest load average' },
+  { value: 'round-robin', label: 'Round Robin', desc: 'Rotate across available mesh nodes' },
+];
 
 export default function SettingsPage() {
   const { data: settings, mutate } = useSWR('/api/settings', fetcher);
@@ -252,6 +260,9 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
+
+      {/* Compute / Boot */}
+      <ComputeSettings settings={settings} onSave={saveSetting} />
 
       {/* Data & Storage */}
       <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
@@ -447,6 +458,104 @@ function HoseToggle({
         {enabled && <span className="text-[var(--color-accent)] text-base">on</span>}
       </div>
       <div className="text-base text-[var(--color-muted)]">{desc}</div>
+    </div>
+  );
+}
+
+function ComputeSettings({
+  settings,
+  onSave,
+}: {
+  settings: Record<string, string> | undefined;
+  onSave: (key: string, value: string) => void;
+}) {
+  const defaultHost = settings?.[SETTINGS_KEYS.bootDefaultHost] ?? 'localhost';
+  const strategy = settings?.[SETTINGS_KEYS.bootStrategy] ?? 'default';
+  const { data: mesh } = useSWR('/api/mesh', fetcher);
+
+  const nodes: { hostname: string; reachable: boolean; claudeProcesses?: number; loadAvg?: number[] }[] = mesh?.nodes ?? [];
+
+  return (
+    <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-4">
+      <h3 className="text-base font-bold text-[var(--color-muted)]">Compute</h3>
+      <p className="text-base text-[var(--color-muted)]">
+        Where &quot;Start Now&quot; boots Claude agents. Defaults to localhost unless overridden.
+      </p>
+
+      <div>
+        <label className="text-base text-[var(--color-muted)] block mb-1">Default Host</label>
+        <div className="flex gap-2 flex-wrap">
+          {['localhost', ...nodes.filter(n => n.hostname !== 'localhost' && n.hostname !== mesh?.nodes?.[0]?.hostname).map((n: { hostname: string }) => n.hostname)].map((h) => {
+            const node = nodes.find((n: { hostname: string }) => n.hostname === h || (h === 'localhost' && n.hostname === nodes[0]?.hostname));
+            const isSelected = defaultHost === h;
+            const isReachable = h === 'localhost' || node?.reachable;
+            return (
+              <button
+                key={h}
+                onClick={() => onSave(SETTINGS_KEYS.bootDefaultHost, h)}
+                className={`px-3 py-1.5 text-sm rounded border transition-colors cursor-pointer ${
+                  isSelected
+                    ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)] font-bold'
+                    : isReachable
+                      ? 'border-[var(--color-border)] hover:border-[var(--color-muted)] text-[var(--color-foreground)]'
+                      : 'border-[var(--color-border)] text-[var(--color-muted)] opacity-50'
+                }`}
+              >
+                {h}
+                {node?.claudeProcesses !== undefined && (
+                  <span className="ml-1.5 text-xs text-[var(--color-muted)]">
+                    ({node.claudeProcesses} claude{node.claudeProcesses !== 1 ? 's' : ''})
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="mt-2">
+          <input
+            type="text"
+            defaultValue={defaultHost !== 'localhost' ? defaultHost : ''}
+            placeholder="Or enter a custom SSH host..."
+            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-base font-mono"
+            onBlur={(e) => {
+              const v = e.target.value.trim();
+              if (v && v !== defaultHost) onSave(SETTINGS_KEYS.bootDefaultHost, v);
+              if (!v && defaultHost !== 'localhost') onSave(SETTINGS_KEYS.bootDefaultHost, 'localhost');
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+            }}
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="text-base text-[var(--color-muted)] block mb-1">Strategy</label>
+        <div className="space-y-1.5">
+          {BOOT_STRATEGIES.map((s) => (
+            <div
+              key={s.value}
+              onClick={() => onSave(SETTINGS_KEYS.bootStrategy, s.value)}
+              className={`rounded border p-2 cursor-pointer transition-colors ${
+                strategy === s.value
+                  ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10'
+                  : 'border-[var(--color-border)] hover:border-[var(--color-muted)]'
+              }`}
+            >
+              <span className={`text-base font-bold ${strategy === s.value ? 'text-[var(--color-accent)]' : ''}`}>
+                {s.label}
+              </span>
+              <span className="text-base text-[var(--color-muted)] ml-2">{s.desc}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {nodes.length > 1 && (
+        <div className="text-base text-[var(--color-muted)]">
+          {nodes.filter((n: { reachable: boolean }) => n.reachable).length} of {nodes.length} mesh nodes reachable
+        </div>
+      )}
     </div>
   );
 }

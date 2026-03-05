@@ -5,6 +5,7 @@ import useSWR from 'swr';
 import Link from 'next/link';
 import { formatRelativeTime, formatTimestamp } from '@unfirehose/core/format';
 import { PageContext } from '@unfirehose/ui/PageContext';
+import { TimeRangeSelect, useTimeRange, getTimeRangeMinutes } from '@unfirehose/ui/TimeRangeSelect';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -28,7 +29,6 @@ interface Todo {
 }
 
 const TICKET_THRESHOLD = 15;
-const COMPLETED_WINDOW_DAYS = 6;
 
 const STATUS_COLUMNS = [
   { key: 'pending', label: 'Pending', color: 'var(--color-muted)', icon: '○' },
@@ -92,6 +92,8 @@ export default function ProjectKanbanPage({ params }: { params: Promise<{ projec
   const [pulsedColumn, setPulsedColumn] = useState<string | null>(null);
   const [burst, setBurst] = useState<{ x: number; y: number; color: string } | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
+  const [range, setRange] = useTimeRange('kanban_range', '7d');
+  const completedWindowDays = Math.max(1, Math.ceil((getTimeRangeMinutes(range) || 60 * 24 * 365) / 60 / 24));
 
   const canDropOnColumn = useCallback((from: string, to: string) => {
     if (from === to) return false;
@@ -192,7 +194,7 @@ export default function ProjectKanbanPage({ params }: { params: Promise<{ projec
 
   // Filter completed to last N days
   const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - COMPLETED_WINDOW_DAYS);
+  cutoff.setDate(cutoff.getDate() - completedWindowDays);
   const cutoffStr = cutoff.toISOString();
   const recentCompleted = columns.completed.filter(t => (t.completedAt ?? t.updatedAt) >= cutoffStr);
 
@@ -258,7 +260,10 @@ export default function ProjectKanbanPage({ params }: { params: Promise<{ projec
           <span className="px-2 py-0.5 rounded bg-[var(--color-surface-hover)] text-yellow-400">{columns.in_progress.length} active</span>
           <span className="px-2 py-0.5 rounded bg-[var(--color-surface-hover)] text-green-400">{recentCompleted.length} done</span>
         </div>
-        <Link href="/todos" className="ml-auto text-xs text-[var(--color-accent)] hover:underline">Global Kanban</Link>
+        <div className="ml-auto flex items-center gap-3">
+          <Link href="/todos" className="text-xs text-[var(--color-accent)] hover:underline">Global Kanban</Link>
+          <TimeRangeSelect value={range} onChange={setRange} />
+        </div>
       </div>
 
       {/* Add todo */}
@@ -326,14 +331,14 @@ export default function ProjectKanbanPage({ params }: { params: Promise<{ projec
                 <div className="flex items-center gap-2 mb-4 pb-2 border-b-2" style={{ borderBottomColor: col.color }}>
                   <span className="text-lg" style={{ color: col.color }}>{col.icon}</span>
                   <h2 className="font-bold text-sm">{col.label}</h2>
-                  {isCompleted && <span className="text-xs text-[var(--color-muted)]">last {COMPLETED_WINDOW_DAYS}d</span>}
+                  {isCompleted && <span className="text-xs text-[var(--color-muted)]">last {completedWindowDays}d</span>}
                   <span className="text-xs text-[var(--color-muted)] ml-auto tabular-nums">{columnTodos.length}</span>
                 </div>
 
                 <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-220px)] pr-1">
                   {isCompleted ? (
                     completedDays.length === 0 ? (
-                      <p className="text-sm text-[var(--color-muted)] text-center py-8 italic">No completions in last {COMPLETED_WINDOW_DAYS} days</p>
+                      <p className="text-sm text-[var(--color-muted)] text-center py-8 italic">No completions in last {completedWindowDays} days</p>
                     ) : (
                       <>
                         {isOver && validDrop && dragOverIndex === 0 && (

@@ -1,13 +1,13 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@unfirehose/core/db/schema';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const db = getDb();
+    const minutes = Math.max(1, parseInt(request.nextUrl.searchParams.get('minutes') ?? '10'));
 
-    // Sessions with activity in the last 10 minutes
     const sessions = db.prepare(`
       SELECT
         s.id,
@@ -21,14 +21,14 @@ export async function GET() {
         p.display_name as project_display,
         p.path as project_path,
         (SELECT COUNT(*) FROM messages m WHERE m.session_id = s.id) as message_count,
-        (SELECT SUM(m.input_tokens + m.output_tokens) FROM messages m WHERE m.session_id = s.id AND m.timestamp >= datetime('now', '-10 minutes')) as recent_tokens,
+        (SELECT SUM(m.input_tokens + m.output_tokens) FROM messages m WHERE m.session_id = s.id AND m.timestamp >= datetime('now', '-' || ? || ' minutes')) as recent_tokens,
         (SELECT m.model FROM messages m WHERE m.session_id = s.id AND m.model IS NOT NULL ORDER BY m.timestamp DESC LIMIT 1) as last_model
       FROM sessions s
       JOIN projects p ON s.project_id = p.id
-      WHERE s.updated_at >= datetime('now', '-10 minutes')
+      WHERE s.updated_at >= datetime('now', '-' || ? || ' minutes')
         AND (s.status IS NULL OR s.status = 'active')
       ORDER BY s.updated_at DESC
-    `).all() as any[];
+    `).all(minutes, minutes) as any[];
 
     return NextResponse.json({
       sessions: sessions.map(s => ({

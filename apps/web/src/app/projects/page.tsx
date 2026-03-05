@@ -4,6 +4,7 @@ import useSWR from 'swr';
 import Link from 'next/link';
 import type { ProjectInfo } from '@unfirehose/core/types';
 import { PageContext } from '@unfirehose/ui/PageContext';
+import { TimeRangeSelect, useTimeRange, getTimeRangeMinutes } from '@unfirehose/ui/TimeRangeSelect';
 import { formatRelativeTime, formatTokens } from '@unfirehose/core/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -22,12 +23,15 @@ interface ProjectActivity {
 }
 
 export default function ProjectsPage() {
+  const [range, setRange] = useTimeRange('projects_range', '28d');
+  const rangeDays = Math.max(1, Math.ceil((getTimeRangeMinutes(range) || 60 * 24 * 365) / 60 / 24));
+
   const { data: projects, error } = useSWR<ProjectInfo[]>(
     '/api/projects',
     fetcher
   );
   const { data: activity } = useSWR<ProjectActivity[]>(
-    '/api/projects/activity?days=30',
+    `/api/projects/activity?days=${rangeDays}`,
     fetcher
   );
 
@@ -79,7 +83,10 @@ export default function ProjectsPage() {
         <div className="flex gap-3 text-sm text-[var(--color-muted)]">
           <span>{totalSessions} sessions</span>
           <span>{totalMessages.toLocaleString()} messages</span>
-          {totalCost > 0 && <span className="text-[var(--color-accent)]">${totalCost.toFixed(0)} / 30d</span>}
+          {totalCost > 0 && <span className="text-[var(--color-accent)]">${totalCost.toFixed(0)} / {rangeDays}d</span>}
+        </div>
+        <div className="ml-auto">
+          <TimeRangeSelect value={range} onChange={setRange} />
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -127,7 +134,7 @@ function ProjectCard({
       </div>
       {activity && (
         <div className="mt-2 text-base text-[var(--color-accent)]">
-          ${activity.cost_estimate.toFixed(0)} / 30d
+          ${activity.cost_estimate.toFixed(0)}
         </div>
       )}
     </Link>

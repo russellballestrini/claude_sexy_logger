@@ -23,7 +23,8 @@
     "./types": "./types.ts",
     "./pii": "./pii.ts",
     "./session-name": "./session-name.ts",
-    "./uuidv7": "./uuidv7.ts"
+    "./uuidv7": "./uuidv7.ts",
+    "./mesh": "./mesh.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2"

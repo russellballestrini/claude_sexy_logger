@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { execSync } from 'child_process';
 import { readFileSync } from 'fs';
-import { homedir } from 'os';
-import path from 'path';
+import { discoverNodes } from '@unfirehose/core/mesh';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -19,35 +18,6 @@ interface MeshNode {
   swapUsedGB?: number;
   swapTotalGB?: number;
   error?: string;
-}
-
-// Discover mesh nodes from SSH config
-function discoverNodes(): string[] {
-  const nodes = new Set<string>();
-  // Always include localhost
-  nodes.add('localhost');
-
-  try {
-    const sshConfig = readFileSync(path.join(homedir(), '.ssh', 'config'), 'utf-8');
-    // Look for Host entries that look like real machines (not wildcards, not git hosts)
-    const hostRegex = /^Host\s+(.+)/gm;
-    let match;
-    while ((match = hostRegex.exec(sshConfig)) !== null) {
-      const hosts = match[1].split(/\s+/);
-      for (const h of hosts) {
-        // Skip wildcards, git hosts, proxy hosts
-        if (h.includes('*') || h.includes('git.') || h.includes('github')) continue;
-        // Only include things that look like mesh nodes (hostnames, not service endpoints)
-        if (h.includes('.foxhop.net') || (!h.includes('.') && h !== 'localhost')) {
-          nodes.add(h);
-        }
-      }
-    }
-  } catch {
-    // SSH config not readable
-  }
-
-  return [...nodes];
 }
 
 // Deduplicate nodes that resolve to the same host

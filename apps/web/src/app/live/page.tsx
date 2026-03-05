@@ -44,14 +44,15 @@ function extractText(entry: any): string {
   return content
     .filter((b: any) => b.type === 'text')
     .map((b: any) => b.text ?? '')
-    .join('\n');
+    .join('\n')
+    .trim();
 }
 
 function extractThinking(entry: any): string | null {
   if (entry?.type !== 'assistant' || !Array.isArray(entry?.message?.content)) return null;
   const blocks = entry.message.content.filter((b: any) => b.type === 'thinking');
   if (blocks.length === 0) return null;
-  return blocks.map((b: any) => b.thinking ?? '').join('\n');
+  return blocks.map((b: any) => b.thinking ?? '').join('\n').trim();
 }
 
 function extractTools(entry: any): { name: string; id?: string; detail?: string; input?: any }[] {
@@ -191,67 +192,15 @@ function formatOutput(text: string): { formatted: string; isJson: boolean } {
   return { formatted: text, isJson: false };
 }
 
-// Expandable content block
-function ExpandableContent({ children, maxHeight = 120, label }: { children: React.ReactNode; maxHeight?: number; label?: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [needsExpansion, setNeedsExpansion] = useState(false);
-
-  useEffect(() => {
-    if (contentRef.current) {
-      setNeedsExpansion(contentRef.current.scrollHeight > maxHeight + 20);
-    }
-  }, [children, maxHeight]);
-
-  return (
-    <div className="relative">
-      <div
-        ref={contentRef}
-        className={`overflow-hidden transition-[max-height] duration-200 ${!expanded && needsExpansion ? '' : ''}`}
-        style={{ maxHeight: expanded ? 'none' : `${maxHeight}px` }}
-      >
-        {children}
-      </div>
-      {needsExpansion && !expanded && (
-        <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-[var(--color-surface)] to-transparent" />
-      )}
-      {needsExpansion && (
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="text-xs text-[var(--color-accent)] hover:underline mt-0.5 cursor-pointer"
-        >
-          {expanded ? 'collapse' : label ?? 'show more'}
-        </button>
-      )}
-    </div>
-  );
-}
-
-// Render a tool result block with proper formatting
-function ToolResultBlock({ content, isError }: { content: string; isError: boolean }) {
-  if (!content.trim()) return null;
-
-  const { formatted, isJson } = formatOutput(content);
-  const colorClass = isError
-    ? 'text-[var(--color-error)]'
-    : 'text-[var(--color-foreground)] opacity-80';
-
-  return (
-    <ExpandableContent maxHeight={160} label={`show full output (${content.split('\n').length} lines)`}>
-      <pre className={`whitespace-pre-wrap break-words text-sm leading-relaxed ${colorClass} ${isJson ? 'bg-[var(--color-background)] rounded px-2 py-1.5' : ''}`}>
-        {formatted}
-      </pre>
-    </ExpandableContent>
-  );
-}
 
 export default function LivePage() {
   const [entries, setEntries] = useState<LiveEntry[]>([]);
   const [sessions, setSessions] = useState<LiveSession[]>([]);
   const [connected, setConnected] = useState(false);
-  const [showThinking, setShowThinking] = useState(false);
+  const [showThinking, setShowThinking] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [expandedEntries, setExpandedEntries] = useState<Set<number>>(new Set());
+  const [hoveredEntry, setHoveredEntry] = useState<number | null>(null);
+  const hoverTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
   const sessionColorMap = useRef<Map<string, number>>(new Map());
 
@@ -262,13 +211,14 @@ export default function LivePage() {
     return getSessionColor(sessionColorMap.current.get(sessionId)!);
   }
 
-  const toggleEntry = useCallback((index: number) => {
-    setExpandedEntries(prev => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
+  const onEntryMouseEnter = useCallback((index: number) => {
+    clearTimeout(hoverTimeout.current);
+    hoverTimeout.current = setTimeout(() => setHoveredEntry(index), 180);
+  }, []);
+
+  const onEntryMouseLeave = useCallback(() => {
+    clearTimeout(hoverTimeout.current);
+    setHoveredEntry(null);
   }, []);
 
   useEffect(() => {
@@ -391,7 +341,7 @@ export default function LivePage() {
             Auto-scroll
           </label>
           <button
-            onClick={() => { setEntries([]); setExpandedEntries(new Set()); }}
+            onClick={() => { setEntries([]); setHoveredEntry(null); }}
             className="text-base text-[var(--color-muted)] hover:text-[var(--color-foreground)] cursor-pointer"
           >
             Clear
@@ -447,7 +397,7 @@ export default function LivePage() {
           const toolResults = extractToolResults(e);
           const model = e?.message?.model;
           const usage = e?.message?.usage;
-          const isExpanded = expandedEntries.has(i);
+          const isHovered = hoveredEntry === i;
 
           const isUser = e.type === 'user';
           const isAssistant = e.type === 'assistant';
@@ -464,25 +414,29 @@ export default function LivePage() {
           const isToolOutput = isUser && toolResults.length > 0 && !text.trim();
           const hasErrors = toolResults.some(r => r.isError);
 
+          // Hover popup only for content that doesn't fit inline
+          const textLineCount = text ? text.split('\n').length : 0;
+          const toolResultLineCount = toolResults.reduce((s, r) => s + (r.content ? r.content.split('\n').length : 0), 0);
+          const hasExpandableContent = textLineCount > 1 || toolResultLineCount > 1 || !!thinking;
+
           return (
             <div
               key={i}
               className={`group border-b border-[var(--color-border)]/30 hover:bg-[var(--color-surface)] transition-colors ${
                 isToolOutput ? 'bg-[var(--color-background)]' : ''
               } ${hasErrors ? 'border-l-2 border-l-[var(--color-error)]' : ''}`}
+              onMouseEnter={() => hasExpandableContent && onEntryMouseEnter(i)}
+              onMouseLeave={onEntryMouseLeave}
             >
               {/* Header row — always visible */}
-              <div
-                className="flex gap-2 py-1.5 px-3 cursor-pointer select-none"
-                onClick={() => toggleEntry(i)}
-              >
+              <div className="flex gap-2 py-1.5 px-3 select-none">
                 {/* Session dot + project */}
-                <div className="shrink-0 flex items-center gap-1.5 w-36">
+                <div className="shrink-0 flex items-center gap-1.5">
                   <span
                     className="inline-block w-2 h-2 rounded-full shrink-0"
                     style={{ background: color }}
                   />
-                  <span className="truncate text-sm" style={{ color }}>
+                  <span className="whitespace-nowrap text-sm" style={{ color }}>
                     {item.projectName}
                   </span>
                 </div>
@@ -520,12 +474,16 @@ export default function LivePage() {
                     </span>
                   )}
 
-                  {/* Tool names */}
+                  {/* Tool names + details */}
                   {tools.length > 0 && (
                     <span className="text-[var(--color-tool)]">
                       {tools.map((t, ti) => (
                         <span key={ti}>
-                          [{t.name}]{' '}
+                          [{t.name}]
+                          {t.detail && (
+                            <span className="text-[var(--color-muted)] ml-1">{t.detail}</span>
+                          )}
+                          {' '}
                         </span>
                       ))}
                     </span>
@@ -547,64 +505,44 @@ export default function LivePage() {
                   )}
                 </div>
 
-                {/* Expand indicator */}
-                <span className="shrink-0 text-[var(--color-muted)] text-xs opacity-0 group-hover:opacity-100 transition-opacity">
-                  {isExpanded ? '-' : '+'}
-                </span>
               </div>
 
-              {/* Expanded content — shown on click */}
-              {isExpanded && (
-                <div className="px-3 pb-3 pl-[13.5rem] space-y-2">
+              {/* Inline expand on hover */}
+              {isHovered && hasExpandableContent && (
+                <div
+                  className="output-reveal-inline px-3 pb-2 pl-[10rem] space-y-2"
+                  style={{
+                    background: 'color-mix(in srgb, var(--color-accent) 3%, var(--color-surface))',
+                  }}
+                >
                   {/* Thinking */}
                   {thinking && (
-                    <ExpandableContent maxHeight={200}>
-                      <div className="text-[var(--color-thinking)] text-sm leading-relaxed whitespace-pre-wrap italic">
-                        {thinking}
-                      </div>
-                    </ExpandableContent>
-                  )}
-
-                  {/* Tool calls with details */}
-                  {tools.length > 0 && (
-                    <div className="space-y-1.5">
-                      {tools.map((t, ti) => (
-                        <div key={ti}>
-                          <div className="text-[var(--color-tool)] text-sm font-bold">
-                            [{t.name}]
-                            {t.detail && (
-                              <span className="font-normal text-[var(--color-muted)] ml-1.5">{t.detail}</span>
-                            )}
-                          </div>
-                          {/* Pretty-print non-trivial tool inputs */}
-                          {t.input && t.name !== 'Bash' && t.name !== 'Read' && t.name !== 'Glob' && t.name !== 'Grep' && (
-                            <ExpandableContent maxHeight={120}>
-                              <pre className="text-xs text-[var(--color-muted)] bg-[var(--color-background)] rounded px-2 py-1 mt-0.5 overflow-x-auto">
-                                {JSON.stringify(t.input, null, 2)}
-                              </pre>
-                            </ExpandableContent>
-                          )}
-                        </div>
-                      ))}
+                    <div className="text-[var(--color-thinking)] text-sm leading-relaxed whitespace-pre-wrap italic">
+                      {thinking}
                     </div>
                   )}
 
                   {/* Tool results */}
                   {toolResults.length > 0 && (
                     <div className="space-y-1.5">
-                      {toolResults.map((r, ri) => (
-                        <ToolResultBlock key={ri} content={r.content} isError={r.isError} />
-                      ))}
+                      {toolResults.map((r, ri) => {
+                        const { formatted, isJson } = formatOutput(r.content);
+                        return (
+                          <pre key={ri} className={`whitespace-pre-wrap break-words text-sm leading-relaxed ${
+                            r.isError ? 'text-[var(--color-error)]' : 'text-[var(--color-foreground)] opacity-80'
+                          } ${isJson ? 'bg-[var(--color-background)] rounded px-2 py-1.5' : ''}`}>
+                            {formatted}
+                          </pre>
+                        );
+                      })}
                     </div>
                   )}
 
-                  {/* Text content with markdown rendering */}
+                  {/* Text content */}
                   {text && (
-                    <ExpandableContent maxHeight={300} label={`show full message (${text.split('\n').length} lines)`}>
-                      <div className="text-sm text-[var(--color-foreground)] leading-relaxed whitespace-pre-wrap break-words">
-                        {renderMarkdownish(text)}
-                      </div>
-                    </ExpandableContent>
+                    <div className="text-sm text-[var(--color-foreground)] leading-relaxed whitespace-pre-wrap break-words">
+                      {renderMarkdownish(text)}
+                    </div>
                   )}
                 </div>
               )}

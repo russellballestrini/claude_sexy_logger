@@ -88,7 +88,8 @@ export default function ProjectPage({
       });
       const result = await res.json();
       if (result.success) {
-        setBootResult(result.command);
+        const hostLabel = result.host && result.host !== 'localhost' ? ` [${result.host}]` : '';
+        setBootResult(`${result.command}${hostLabel}`);
       } else {
         setBootResult(`Error: ${result.error}${result.detail ? ' — ' + result.detail : ''}`);
       }
@@ -125,7 +126,8 @@ export default function ProjectPage({
         });
         const result = await res.json();
         if (result.success) {
-          setBootResult(result.command);
+          const hostLabel = result.host && result.host !== 'localhost' ? ` [${result.host}]` : '';
+          setBootResult(`${result.command}${hostLabel}`);
         } else {
           setBootResult(`Error: ${result.error}${result.detail ? ' — ' + result.detail : ''}`);
         }
