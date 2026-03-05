@@ -14,7 +14,17 @@ Each session is a single JSONL file. Project slug is the filesystem path with se
 
 ## Native Format
 
-Claude Code logs every API message exchange as JSONL entries with three top-level types:
+Claude Code logs every API message exchange as JSONL entries. Top-level `type` values:
+
+- `user` — human input or tool results
+- `assistant` — model responses
+- `system` — metadata (`compact_boundary`, `turn_duration`)
+- `progress` — streaming progress for tool execution
+- `file-history-snapshot` — file state checkpoints
+- `queue-operation` — queue management
+- `last-prompt` — stores the last prompt
+
+The main types used for session reconstruction are:
 
 ### User Entry
 
@@ -141,6 +151,32 @@ Claude Code has full extended thinking support. Thinking blocks include a signat
 ```
 
 These map to `{ type: "reasoning", text: "...", signature: "..." }` in canonical format.
+
+## Additional Fields
+
+Fields discovered on messages not covered in the main mapping:
+
+| Field | Location | Notes |
+|-------|----------|-------|
+| `toolUseResult` | User messages | `{stdout, stderr, interrupted, isImage}` — enriched tool result metadata |
+| `sourceToolAssistantUUID` | User messages | UUID of the assistant message that requested the tool |
+| `permissionMode` | First user message | `"bypassPermissions"` when running with `--dangerously-skip-permissions` |
+| `requestId` | Assistant messages | `"req_..."` Anthropic API request ID |
+| `message.usage.server_tool_use` | Assistant messages | `{web_search_requests, web_fetch_requests}` |
+| `message.usage.cache_creation.ephemeral_1h_input_tokens` | Assistant messages | Ephemeral cache tier breakdown |
+| `message.usage.service_tier` | Assistant messages | `"standard"` |
+| `slug` | Messages | Optional model slug identifier |
+| `userType` | Messages | `"external"` |
+
+## Subagents
+
+Subagent sessions are stored in a subdirectory:
+
+```
+~/.claude/projects/{slug}/{session-uuid}/subagents/agent-{id}.jsonl
+```
+
+Messages in subagent files have `isSidechain: true`.
 
 ## Session Index
 

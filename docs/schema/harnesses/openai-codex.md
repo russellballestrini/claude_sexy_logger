@@ -8,47 +8,59 @@
 
 OpenAI's Codex CLI is an open-source coding agent: https://github.com/openai/codex
 
-It uses the OpenAI chat completions API format with function calling.
+It uses the OpenAI **Responses API** format (not chat completions) with `ResponseItem` types.
+
+## File Location
+
+```
+$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl    # session transcripts
+~/.codex/log/codex-tui.log                          # debug log (not transcripts)
+```
+
+Sessions chain via `previous_response_id`. Resume with `codex --resume` or `codex --continue`.
 
 ## Native Format
 
-Codex follows the OpenAI message format:
+Codex uses `ResponseItem` types from the Responses API:
 
 ### User Message
 
 ```jsonc
 {
+  "type": "message",
   "role": "user",
-  "content": "Fix the login page"
+  "content": [{ "type": "input_text", "text": "Fix the login page" }]
 }
 ```
 
-### Assistant Message (with tool calls)
+### Assistant Message
 
 ```jsonc
 {
+  "type": "message",
   "role": "assistant",
-  "content": null,
-  "tool_calls": [
-    {
-      "id": "call_abc123",
-      "type": "function",
-      "function": {
-        "name": "shell",
-        "arguments": "{\"command\": \"ls src/\"}"
-      }
-    }
-  ]
+  "content": [{ "type": "output_text", "text": "I'll fix that." }]
 }
 ```
 
-### Tool Response
+### Function Call
 
 ```jsonc
 {
-  "role": "tool",
-  "tool_call_id": "call_abc123",
-  "content": "login.css\napp.js"
+  "type": "function_call",
+  "name": "shell",
+  "arguments": "{\"cmd\": [\"ls\", \"src/\"]}",
+  "call_id": "call_abc123"
+}
+```
+
+### Function Call Output
+
+```jsonc
+{
+  "type": "function_call_output",
+  "call_id": "call_abc123",
+  "output": "{\"output\": \"login.css\\napp.js\", \"metadata\": {\"exit_code\": 0, \"duration_seconds\": 1.2}}"
 }
 ```
 
@@ -72,15 +84,19 @@ Codex follows the OpenAI message format:
 
 ## Field Mapping → Unfirehose
 
-| OpenAI / Codex | Unfirehose | Transform |
+| Codex (Responses API) | Unfirehose | Transform |
 |---|---|---|
-| `role: "assistant"` | `role: "assistant"` | direct |
-| `role: "tool"` | `role: "tool"` | direct |
-| `content` (string) | `content: [{ type: "text", text }]` | wrap in block |
-| `tool_calls[].function.name` | `content[].toolName` | flatten |
-| `tool_calls[].function.arguments` | `content[].input` | JSON parse |
-| `tool_calls[].id` | `content[].toolCallId` | direct |
-| `tool_call_id` | `content[].toolCallId` | direct |
+| `type: "message", role: "user"` | `role: "user"` | direct |
+| `type: "message", role: "assistant"` | `role: "assistant"` | direct |
+| `content[].type: "input_text"` | `content[].type: "text"` | rename |
+| `content[].type: "output_text"` | `content[].type: "text"` | rename |
+| `type: "function_call"` | `content[].type: "tool-call"` | restructure |
+| `function_call.name` | `content[].toolName` | rename |
+| `function_call.arguments` | `content[].input` | JSON parse |
+| `function_call.call_id` | `content[].toolCallId` | rename |
+| `type: "function_call_output"` | `content[].type: "tool-result"` | restructure |
+| `function_call_output.call_id` | `content[].toolCallId` | rename |
+| `function_call_output.output` | `content[].output` | JSON parse |
 | `usage.prompt_tokens` | `usage.inputTokens` | rename |
 | `usage.completion_tokens` | `usage.outputTokens` | rename |
 | `usage.prompt_tokens_details.cached_tokens` | `usage.inputTokenDetails.cacheReadTokens` | nest + rename |

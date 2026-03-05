@@ -7,10 +7,20 @@
 ## File Location
 
 ```
-~/.gemini/sessions/{slug}/{session-uuid}.jsonl   # expected
+~/.gemini/tmp/<project_hash>/logs.json           # user messages only (current)
+~/.gemini/tmp/<project_hash>/checkpoint-*.json    # /chat save snapshots
+~/.gemini/tmp/<project_hash>/shell_history        # shell command history
 ```
 
-Gemini CLI is open source: https://github.com/google-gemini/gemini-cli
+Full JSONL session logging (user + model messages) is in development: [Issue #5101](https://github.com/google-gemini/gemini-cli/issues/5101), [PR #4401](https://github.com/google-gemini/gemini-cli/pull/4401).
+
+Gemini CLI also supports OTLP telemetry via `settings.json`:
+- `telemetry.target`: `local` or collector
+- `telemetry.protocol`: `grpc` or `http`
+- `telemetry.logPrompts`: boolean
+- `telemetry.outfile`: file path
+
+Source: https://github.com/google-gemini/gemini-cli
 
 ## Native Format
 

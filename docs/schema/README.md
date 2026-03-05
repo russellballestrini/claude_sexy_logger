@@ -46,6 +46,40 @@ Provider API → unfirehose canonical field mappings:
 | Google AI | `parts[]` → `content[]`, `functionCall` → `tool-call`, `usageMetadata` → `usage` |
 | Vercel AI SDK | Near-identical — our reference alignment target |
 
+## Competitive Landscape
+
+**No universal standard exists for agent session logging.** Every harness invented its own format:
+
+| Tool | Format | Structured? | Full Transcript? | Open Source? |
+|------|--------|:-----------:|:----------------:|:------------:|
+| Claude Code | JSONL | Yes | Yes | Yes |
+| Gemini CLI | JSON (partial) | Partial | No (user msgs only, full JSONL in dev) | Yes |
+| Codex CLI | JSONL | Yes | Yes | Yes |
+| Aider | Markdown | No | No (human-readable only) | Yes |
+| Cursor | SQLite (proprietary) | Semi | Requires extraction | No |
+| Continue.dev | JSON + JSONL export | Yes | Yes | Yes |
+| Vercel AI SDK | TypeScript types | N/A (in-memory) | N/A (no persistence) | Yes |
+| OpenAI Agents SDK | Trace/Span | Yes | Via exporters | Yes |
+| Google ADK | In-memory sessions | Yes | Via session services | Yes |
+| Amazon Q | JSON to S3 / JSONL (RFC) | Partial | Partial | Partial |
+
+### Related Standards
+
+| Standard | Scope | Status | Relation to Unfirehose |
+|----------|-------|--------|----------------------|
+| **OpenTelemetry GenAI Semantic Conventions** | Span attributes for LLM calls | Experimental | Defines attribute names, not session format. Complementary — unfirehose sessions can emit OTEL spans |
+| **Model Context Protocol (MCP)** | Real-time tool communication | Stable | Wire protocol, not persistence. MCP tool calls map to our `tool-call` blocks |
+| **OpenAI Chat Completions API** | Request/response format | Stable | One of 3 provider formats we normalize from |
+| **Anthropic Messages API** | Request/response format | Stable | Reference format (Claude Code is our baseline) |
+| **Google Generative AI API** | Request/response format | Stable | `parts[]` format we normalize from |
+
+### Why Unfirehose Wins
+
+1. **Session-native**: OTEL treats LLM calls as spans. We treat coding sessions as first-class objects with thinking chains, todos, and project context.
+2. **Append-only JSONL**: Unlike JSON documents or SQLite, our format supports real-time tailing and streaming ingestion.
+3. **Cross-harness**: One schema that normalizes Claude, Gemini, OpenAI, and local models. No other standard does this.
+4. **Already working**: 160K+ messages ingested across 465 sessions from 47 projects. This isn't theoretical.
+
 ## Design Principles
 
 1. **Append-only JSONL** — one line per event, never mutate written lines

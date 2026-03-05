@@ -20,40 +20,75 @@ Continue stores session history in JSON files:
 
 ### Session Format
 
-```jsonc
-{
-  "sessionId": "abc-123-...",
-  "title": "Fix login page",
-  "dateCreated": "2026-03-05T10:42:45Z",
-  "history": [
-    {
-      "message": {
-        "role": "user",
-        "content": "Fix the login page"
-      },
-      "contextItems": [
-        {
-          "name": "login.css",
-          "description": "File contents",
-          "content": "..."
-        }
-      ]
-    },
-    {
-      "message": {
-        "role": "assistant",
-        "content": "I'll fix the login page..."
-      },
-      "edits": [
-        {
-          "filepath": "src/login.css",
-          "replacement": ".login-form { display: flex; }"
-        }
-      ]
-    }
-  ]
+```typescript
+// From core/index.d.ts
+interface Session {
+  sessionId: string;
+  title: string;
+  workspaceDirectory: string;
+  history: ChatHistoryItem[];
 }
 ```
+
+### Message Roles
+
+Continue has **5 roles** (more than most harnesses):
+
+```typescript
+type ChatMessageRole = "user" | "assistant" | "thinking" | "system" | "tool";
+```
+
+### ChatHistoryItem (wraps messages with metadata)
+
+```typescript
+interface ChatHistoryItem {
+  message: ChatMessage;
+  contextItems: ContextItemWithId[];  // files, search results, etc.
+  editorState?: any;
+  promptLogs?: PromptLog[];
+  toolCallState?: ToolCallState;
+  reasoning?: { active: boolean; text: string; startAt: number; endAt?: number; };
+}
+```
+
+### Tool Calls
+
+```typescript
+interface ToolCallDelta {
+  id?: string;
+  type?: "function";
+  function?: { name?: string; arguments?: string; };
+}
+```
+
+### Thinking Messages
+
+Continue has native thinking support as a distinct role:
+
+```typescript
+interface ThinkingChatMessage {
+  role: "thinking";
+  content: MessageContent;
+  signature?: string;          // Anthropic thinking signature
+  redactedThinking?: string;
+}
+```
+
+### Data Export (JSONL)
+
+Continue supports structured data export via config:
+
+```jsonc
+// config.json
+{
+  "data": {
+    "destination": "file://~/.continue/export.jsonl"
+    // or HTTP endpoint
+  }
+}
+```
+
+Exports `autocomplete`, `chatInteraction`, and other event types in JSONL with schema versioning (0.1.0, 0.2.0).
 
 ## Field Mapping → Unfirehose
 
