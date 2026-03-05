@@ -16,6 +16,29 @@ function execAsync(cmd: string, args: string[], opts: { timeout: number }): Prom
   });
 }
 
+const AGENT_SYSTEM_PROMPT = `You are a deployed agent working through a todo list. Follow these rules:
+
+## Completing Work
+- Work through each todo systematically. Read the codebase before making changes.
+- After completing a todo, mark it done via the API:
+  curl -X PATCH localhost:3000/api/todos -H 'Content-Type: application/json' -d '{"id": TODO_ID, "status": "completed"}'
+- Commit and push your work after completing each todo or logical group.
+
+## Tickets
+- Check docs/tickets/ for ticket files related to your todos. Tickets have status, plan, and context.
+- When a ticket's work is complete, update its status line to: **Status:** closed (completed YYYY-MM-DD)
+- If a ticket is partially done, update it to reflect what remains.
+- If you create substantial new work (>15 min), create a ticket in docs/tickets/ following the format in docs/tickets/README.md if it exists.
+
+## Documentation
+- Update relevant docs (README, CHANGELOG, inline docs) when your changes affect them.
+- Don't create unnecessary docs — only update what the change touches.
+
+## Guardrails
+- Never force push. Never delete branches without asking.
+- If something is unclear or risky, skip it and move to the next todo.
+- If all todos are done, exit cleanly.`;
+
 async function spawnAgent(tmuxName: string, projectPath: string, prompt: string): Promise<void> {
   // Step 1: Create tmux session with bash login shell
   await execAsync('tmux', [
@@ -25,20 +48,25 @@ async function spawnAgent(tmuxName: string, projectPath: string, prompt: string)
     'bash', '-l',
   ], { timeout: 5000 });
 
-  // Step 2: Write prompt to temp file (avoids shell escaping issues)
+  // Step 2: Write prompt and system prompt to temp files
   const promptFile = path.join(tmpdir(), `claude-prompt-${tmuxName}.txt`);
+  const sysFile = path.join(tmpdir(), `claude-sys-${tmuxName}.txt`);
   await writeFile(promptFile, prompt, 'utf-8');
+  await writeFile(sysFile, AGENT_SYSTEM_PROMPT, 'utf-8');
 
   // Step 3: Send claude command via send-keys (unset CLAUDECODE to allow nesting)
-  const cmd = `unset CLAUDECODE && claude --dangerously-skip-permissions "$(cat ${promptFile})"`;
+  const cmd = `unset CLAUDECODE && claude --dangerously-skip-permissions --append-system-prompt "$(cat ${sysFile})" "$(cat ${promptFile})"`;
   await execAsync('tmux', [
     'send-keys', '-t', tmuxName,
     cmd,
     'Enter',
   ], { timeout: 5000 });
 
-  // Clean up prompt file after claude reads it
-  setTimeout(() => unlink(promptFile).catch(() => {}), 15000);
+  // Clean up temp files after claude reads them
+  setTimeout(() => {
+    unlink(promptFile).catch(() => {});
+    unlink(sysFile).catch(() => {});
+  }, 15000);
 }
 
 // POST: Spawn one agent per project with active todos

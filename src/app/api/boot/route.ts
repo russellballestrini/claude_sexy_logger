@@ -7,6 +7,14 @@ import { tmpdir } from 'os';
 
 const UUID_RE = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 
+const AGENT_SYSTEM_PROMPT = `You are a deployed agent. Follow these rules:
+- Work through your assigned task. Read the codebase before making changes.
+- Mark todos done: curl -X PATCH localhost:3000/api/todos -H 'Content-Type: application/json' -d '{"id": TODO_ID, "status": "completed"}'
+- Commit and push your work after completing each task or logical group.
+- Check docs/tickets/ for related ticket files. Update ticket status when work is complete.
+- Update relevant docs when your changes affect them.
+- Never force push. If something is unclear or risky, skip it.`;
+
 function exec(cmd: string, args: string[], opts: { timeout: number }): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, opts, (err, stdout, stderr) => {
@@ -64,12 +72,21 @@ export async function POST(request: NextRequest) {
       parts.push('--dangerously-skip-permissions');
     }
 
+    // Inject system prompt when in yolo mode (deployed agent)
+    const cleanupFiles: string[] = [];
+    if (yolo) {
+      const sysFile = path.join(tmpdir(), `claude-sys-${tmuxName}.txt`);
+      await writeFile(sysFile, AGENT_SYSTEM_PROMPT, 'utf-8');
+      parts.push(`--append-system-prompt "$(cat ${sysFile})"`);
+      cleanupFiles.push(sysFile);
+    }
+
     // If there's a prompt, write to temp file and use cat substitution
-    let promptFile: string | null = null;
     if (prompt && typeof prompt === 'string') {
-      promptFile = path.join(tmpdir(), `claude-prompt-${tmuxName}.txt`);
+      const promptFile = path.join(tmpdir(), `claude-prompt-${tmuxName}.txt`);
       await writeFile(promptFile, prompt, 'utf-8');
       parts.push(`"$(cat ${promptFile})"`);
+      cleanupFiles.push(promptFile);
     }
 
     await exec('tmux', [
@@ -78,10 +95,9 @@ export async function POST(request: NextRequest) {
       'Enter',
     ], { timeout: 5000 });
 
-    // Clean up prompt file after a delay (claude will have read it)
-    if (promptFile) {
-      const pf = promptFile;
-      setTimeout(() => unlink(pf).catch(() => {}), 10000);
+    // Clean up temp files after claude reads them
+    if (cleanupFiles.length) {
+      setTimeout(() => cleanupFiles.forEach(f => unlink(f).catch(() => {})), 15000);
     }
 
     return NextResponse.json({
