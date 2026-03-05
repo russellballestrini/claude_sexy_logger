@@ -3,6 +3,40 @@ import { getDb } from '@/lib/db/schema';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+export async function POST(request: NextRequest) {
+  try {
+    const db = getDb();
+    const body = await request.json();
+    const { content, projectId, source } = body;
+
+    if (!content?.trim()) {
+      return NextResponse.json({ error: 'content required' }, { status: 400 });
+    }
+
+    // If no project specified, use the first project or create a "global" bucket
+    let pid = projectId;
+    if (!pid) {
+      const first = db.prepare('SELECT id FROM projects ORDER BY id LIMIT 1').get() as any;
+      pid = first?.id;
+      if (!pid) return NextResponse.json({ error: 'no projects found' }, { status: 400 });
+    }
+
+    const now = new Date().toISOString();
+    const result = db.prepare(`
+      INSERT INTO todos (project_id, content, status, source, created_at, updated_at)
+      VALUES (?, ?, 'pending', ?, ?, ?)
+    `).run(pid, content.trim(), source ?? 'manual', now, now);
+
+    db.prepare(
+      'INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, NULL, ?, ?)'
+    ).run(result.lastInsertRowid, 'pending', now);
+
+    return NextResponse.json({ ok: true, id: Number(result.lastInsertRowid) });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
 export async function PATCH(request: NextRequest) {
   try {
     const db = getDb();
