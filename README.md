@@ -19,7 +19,7 @@ This tool does all of that.
 
 ## Screenshots
 
-> Screenshots coming soon. Run it locally and see for yourself.
+See [gallery below](#gallery) or browse [`screenshots/v1/`](screenshots/v1/).
 
 ## Features
 
@@ -183,8 +183,33 @@ npm run build       # production build
 
 ## License
 
-MIT
+AGPL-3.0-only
 
 ## Origin
 
 Built in ~48 hours by humans and agents working together. 42 commits from first `create-next-app` to full observability platform. The code speaks for itself.
+
+---
+
+## Gallery
+
+### Dashboard
+![Dashboard — activity charts, hour distribution, day-of-week, hotspots, model usage](screenshots/v1/dashboard-activity-overview.png)
+
+### Live Session Tailing
+![Live view — SSE real-time tailing of active sessions](screenshots/v1/live-session-tailing.png)
+
+### Usage Monitor
+![Usage Monitor — token timeline and per-project usage breakdown](screenshots/v1/usage-monitor.png)
+
+### Token Usage Breakdown
+![Token Usage — donut charts, model breakdown, tool call frequency](screenshots/v1/token-usage-breakdown.png)
+
+### Projects
+![Projects — grid view with session counts and cost per project](screenshots/v1/projects-grid.png)
+
+### Thinking Stream
+![Thinking Stream — browse extended thinking blocks with timestamps](screenshots/v1/thinking-stream.png)
+
+### Settings
+![Settings — plan tiers, scrobble toggle, alert configuration](screenshots/v1/settings-plans-scrobble.png)
