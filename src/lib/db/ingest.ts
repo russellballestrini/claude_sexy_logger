@@ -225,6 +225,172 @@ function updateUsageMinutes(
   );
 }
 
+// --- Todo extraction from JSONL entries ---
+
+function upsertTodo(
+  db: ReturnType<typeof getDb>,
+  projectId: number,
+  sessionId: number,
+  todo: {
+    content: string;
+    status: string;
+    activeForm?: string;
+    externalId?: string;
+    source?: string;
+    sourceSessionUuid?: string;
+    blockedBy?: string[];
+  }
+) {
+  const now = new Date().toISOString();
+  const source = todo.source ?? 'claude';
+
+  if (todo.externalId) {
+    // TaskCreate/TaskUpdate style: key on project + external_id
+    const existing = db.prepare(
+      'SELECT id, status FROM todos WHERE project_id = ? AND external_id = ? AND source = ?'
+    ).get(projectId, todo.externalId, source) as { id: number; status: string } | undefined;
+
+    if (existing) {
+      if (existing.status !== todo.status) {
+        db.prepare(
+          'UPDATE todos SET status = ?, active_form = ?, blocked_by = ?, updated_at = ?, completed_at = CASE WHEN ? = \'completed\' THEN ? ELSE completed_at END WHERE id = ?'
+        ).run(todo.status, todo.activeForm ?? null, todo.blockedBy ? JSON.stringify(todo.blockedBy) : null, now, todo.status, now, existing.id);
+        db.prepare(
+          'INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, ?, ?, ?)'
+        ).run(existing.id, existing.status, todo.status, now);
+      }
+    } else {
+      const r = db.prepare(
+        `INSERT INTO todos (project_id, session_id, external_id, content, status, active_form, source, source_session_uuid, blocked_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(projectId, sessionId, todo.externalId, todo.content, todo.status, todo.activeForm ?? null, source, todo.sourceSessionUuid ?? null, todo.blockedBy ? JSON.stringify(todo.blockedBy) : null, now, now);
+      db.prepare(
+        'INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, NULL, ?, ?)'
+      ).run(r.lastInsertRowid, todo.status, now);
+    }
+  } else {
+    // Legacy TodoWrite style: key on project + session + content
+    const existing = db.prepare(
+      'SELECT id, status FROM todos WHERE project_id = ? AND session_id = ? AND content = ? AND source = ?'
+    ).get(projectId, sessionId, todo.content, source) as { id: number; status: string } | undefined;
+
+    if (existing) {
+      if (existing.status !== todo.status) {
+        db.prepare(
+          'UPDATE todos SET status = ?, active_form = ?, updated_at = ?, completed_at = CASE WHEN ? = \'completed\' THEN ? ELSE completed_at END WHERE id = ?'
+        ).run(todo.status, todo.activeForm ?? null, now, todo.status, now, existing.id);
+        db.prepare(
+          'INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, ?, ?, ?)'
+        ).run(existing.id, existing.status, todo.status, now);
+      }
+    } else {
+      const r = db.prepare(
+        `INSERT INTO todos (project_id, session_id, content, status, active_form, source, source_session_uuid, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(projectId, sessionId, todo.content, todo.status, todo.activeForm ?? null, source, todo.sourceSessionUuid ?? null, now, now);
+      db.prepare(
+        'INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, NULL, ?, ?)'
+      ).run(r.lastInsertRowid, todo.status, now);
+    }
+  }
+}
+
+function extractTodosFromEntry(
+  db: ReturnType<typeof getDb>,
+  projectId: number,
+  sessionId: number,
+  entry: any,
+  sessionUuid: string
+) {
+  // 1. UserEntry.todos snapshot (legacy TodoWrite format)
+  if (entry.todos && Array.isArray(entry.todos)) {
+    for (const todo of entry.todos) {
+      if (!todo.content) continue;
+      upsertTodo(db, projectId, sessionId, {
+        content: todo.content,
+        status: todo.status ?? 'pending',
+        activeForm: todo.activeForm,
+        source: 'claude',
+        sourceSessionUuid: sessionUuid,
+      });
+    }
+  }
+
+  // 2. Tool calls: TaskCreate, TaskUpdate, TodoWrite
+  const content = entry.message?.content;
+  if (!Array.isArray(content)) return;
+
+  for (const block of content) {
+    if (block.type !== 'tool_use') continue;
+
+    if (block.name === 'TaskCreate' && block.input) {
+      upsertTodo(db, projectId, sessionId, {
+        content: block.input.subject ?? block.input.description ?? '',
+        status: 'pending',
+        activeForm: block.input.activeForm,
+        source: 'claude',
+        sourceSessionUuid: sessionUuid,
+      });
+    }
+
+    if (block.name === 'TaskUpdate' && block.input?.taskId) {
+      const taskId = String(block.input.taskId);
+      if (block.input.status) {
+        // Try to find by external_id first
+        const existing = db.prepare(
+          'SELECT id, status FROM todos WHERE project_id = ? AND external_id = ?'
+        ).get(projectId, taskId) as { id: number; status: string } | undefined;
+        if (existing && existing.status !== block.input.status) {
+          const now = new Date().toISOString();
+          const newStatus = block.input.status === 'deleted' ? 'completed' : block.input.status;
+          db.prepare(
+            'UPDATE todos SET status = ?, updated_at = ?, completed_at = CASE WHEN ? IN (\'completed\', \'deleted\') THEN ? ELSE completed_at END WHERE id = ?'
+          ).run(newStatus, now, block.input.status, now, existing.id);
+          db.prepare(
+            'INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, ?, ?, ?)'
+          ).run(existing.id, existing.status, newStatus, now);
+        }
+      }
+    }
+
+    if (block.name === 'TodoWrite' && block.input?.todos) {
+      for (const todo of block.input.todos) {
+        if (!todo.content) continue;
+        upsertTodo(db, projectId, sessionId, {
+          content: todo.content,
+          status: todo.status ?? 'pending',
+          activeForm: todo.activeForm,
+          source: 'claude',
+          sourceSessionUuid: sessionUuid,
+        });
+      }
+    }
+  }
+
+  // 3. Tool results with task lists (toolUseResult.tasks)
+  for (const block of content) {
+    if (block.type !== 'tool_result') continue;
+    try {
+      const resultData = typeof block.content === 'string' ? JSON.parse(block.content) : block.content;
+      if (resultData?.tasks && Array.isArray(resultData.tasks)) {
+        for (const task of resultData.tasks) {
+          if (!task.subject && !task.id) continue;
+          upsertTodo(db, projectId, sessionId, {
+            externalId: task.id ? String(task.id) : undefined,
+            content: task.subject ?? '',
+            status: task.status ?? 'pending',
+            blockedBy: Array.isArray(task.blockedBy) ? task.blockedBy.map(String) : undefined,
+            source: 'claude',
+            sourceSessionUuid: sessionUuid,
+          });
+        }
+      }
+    } catch {
+      // not JSON, skip
+    }
+  }
+}
+
 function checkThresholds(db: ReturnType<typeof getDb>): number {
   const thresholds = db
     .prepare('SELECT * FROM alert_thresholds WHERE enabled = 1')
@@ -683,6 +849,9 @@ export async function ingestAll(): Promise<IngestResult> {
                   cacheCreationTokens: usage.cache_creation_input_tokens ?? 0,
                 });
               }
+
+              // Extract todos from this entry
+              extractTodosFromEntry(db, projectId, sessionId, entry, meta.sessionId);
             } catch {
               // skip malformed lines
             }

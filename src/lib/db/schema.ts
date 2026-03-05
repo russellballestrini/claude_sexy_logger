@@ -158,6 +158,35 @@ function migrate(db: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_pii_message ON pii_replacements(message_id);
 
+    -- Cross-session todo tracking (from TodoWrite, TaskCreate/TaskUpdate, Fetch tasks)
+    CREATE TABLE IF NOT EXISTS todos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL REFERENCES projects(id),
+      session_id INTEGER REFERENCES sessions(id),
+      external_id TEXT,
+      content TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      active_form TEXT,
+      source TEXT NOT NULL DEFAULT 'claude',
+      source_session_uuid TEXT,
+      blocked_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      completed_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_todos_project ON todos(project_id);
+    CREATE INDEX IF NOT EXISTS idx_todos_status ON todos(status);
+
+    CREATE TABLE IF NOT EXISTS todo_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      todo_id INTEGER NOT NULL REFERENCES todos(id),
+      old_status TEXT,
+      new_status TEXT NOT NULL,
+      message_id INTEGER REFERENCES messages(id),
+      event_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_todo_events_todo ON todo_events(todo_id);
+
     -- Indexes for fast queries
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
