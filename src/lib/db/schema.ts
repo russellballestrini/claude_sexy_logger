@@ -187,6 +187,14 @@ function migrate(db: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_todo_events_todo ON todo_events(todo_id);
 
+    -- Project visibility for scrobbling
+    CREATE TABLE IF NOT EXISTS project_visibility (
+      project_id INTEGER PRIMARY KEY REFERENCES projects(id),
+      visibility TEXT NOT NULL DEFAULT 'private',
+      auto_detected TEXT,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Indexes for fast queries
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);

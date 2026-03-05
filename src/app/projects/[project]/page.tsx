@@ -95,7 +95,18 @@ export default function ProjectSessionsPage({
         >
           &larr; Projects
         </Link>
-        <h2 className="text-lg font-bold mt-1">{decodedProject}</h2>
+        <div className="flex items-center gap-2 mt-1">
+          <h2 className="text-lg font-bold">{decodedProject}</h2>
+          {full?.visibility && (
+            <span className={`text-xs px-1.5 py-0.5 rounded ${
+              full.visibility === 'public' ? 'text-green-400 bg-green-400/10' :
+              full.visibility === 'unlisted' ? 'text-yellow-400 bg-yellow-400/10' :
+              'text-[var(--color-muted)] bg-[var(--color-surface-hover)]'
+            }`}>
+              {full.visibility}
+            </span>
+          )}
+        </div>
         {data.originalPath && (
           <p className="text-base text-[var(--color-muted)]">
             {data.originalPath}

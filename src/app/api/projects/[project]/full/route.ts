@@ -108,7 +108,11 @@ export async function GET(
       GROUP BY cb.tool_name ORDER BY count DESC LIMIT 10
     `).all(proj.id) as any[];
 
+    // Visibility
+    const vis = db.prepare('SELECT visibility, auto_detected FROM project_visibility WHERE project_id = ?').get(proj.id) as any;
+
     return NextResponse.json({
+      visibility: vis?.visibility ?? 'private',
       project: {
         name: proj.name,
         displayName: proj.display_name,
