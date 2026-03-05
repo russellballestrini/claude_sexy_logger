@@ -478,17 +478,17 @@ function hexToHue(hex: string): number {
 function HexColorPicker({ value, settingKey }: { value: string; settingKey: string }) {
   const [color, setColor] = useState(value);
   const [hexText, setHexText] = useState(value.replace('#', ''));
-  const [editing, setEditing] = useState(false);
+  const editingRef = useRef(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const committedRef = useRef(false);
 
   const hue = hexToHue(color);
 
-  function applyAndSave(hex: string) {
+  function save(hex: string) {
     setColor(hex);
-    if (!editing) setHexText(hex.replace('#', ''));
+    setHexText(hex.replace('#', ''));
     document.documentElement.style.setProperty('--color-accent', hex);
     document.documentElement.style.setProperty('--color-assistant', hex);
-    // Debounce API save — no SWR mutate, no re-render
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       fetch('/api/settings', {
@@ -502,12 +502,10 @@ function HexColorPicker({ value, settingKey }: { value: string; settingKey: stri
   function commitHex() {
     const clean = hexText.replace(/[^0-9a-fA-F]/g, '');
     if (clean.length === 6) {
-      applyAndSave('#' + clean.toLowerCase());
+      save('#' + clean.toLowerCase());
     } else if (clean.length === 3) {
-      const full = clean.split('').map(c => c + c).join('');
-      applyAndSave('#' + full.toLowerCase());
+      save('#' + clean.split('').map(c => c + c).join('').toLowerCase());
     }
-    setEditing(false);
   }
 
   return (
@@ -520,12 +518,20 @@ function HexColorPicker({ value, settingKey }: { value: string; settingKey: stri
             type="text"
             value={hexText}
             onChange={(e) => {
-              const v = e.target.value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
-              setHexText(v);
+              setHexText(e.target.value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6));
             }}
-            onFocus={() => setEditing(true)}
-            onBlur={() => commitHex()}
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitHex(); } }}
+            onFocus={() => { editingRef.current = true; committedRef.current = false; }}
+            onBlur={() => {
+              editingRef.current = false;
+              if (!committedRef.current) commitHex();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                committedRef.current = true;
+                commitHex();
+              }
+            }}
             className="w-24 bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-1.5 text-base font-mono"
             maxLength={6}
             spellCheck={false}
@@ -537,11 +543,7 @@ function HexColorPicker({ value, settingKey }: { value: string; settingKey: stri
         min={0}
         max={360}
         value={hue}
-        onChange={(e) => {
-          const hex = hslToHex(Number(e.target.value), 0.7, 0.55);
-          setHexText(hex.replace('#', ''));
-          applyAndSave(hex);
-        }}
+        onChange={(e) => save(hslToHex(Number(e.target.value), 0.7, 0.55))}
         className="w-full h-3 rounded-full appearance-none cursor-pointer"
         style={{
           background: 'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
