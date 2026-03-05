@@ -25,8 +25,8 @@ export async function PATCH(request: NextRequest) {
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
       return NextResponse.json({ error: 'ids array required' }, { status: 400 });
     }
-    if (ids.length > 200) {
-      return NextResponse.json({ error: 'max 200 ids per batch' }, { status: 400 });
+    if (ids.length > 500) {
+      return NextResponse.json({ error: 'max 500 ids per batch' }, { status: 400 });
     }
 
     const now = new Date().toISOString();
@@ -38,7 +38,7 @@ export async function PATCH(request: NextRequest) {
           const old = db.prepare('SELECT status FROM todos WHERE id = ?').get(id) as any;
           if (!old) continue;
 
-          const completedAt = status === 'completed' ? now : null;
+          const completedAt = (status === 'completed' || status === 'obsolete') ? now : null;
           db.prepare(
             'UPDATE todos SET status = ?, updated_at = ?, completed_at = COALESCE(?, completed_at) WHERE id = ?'
           ).run(status, now, completedAt, id);

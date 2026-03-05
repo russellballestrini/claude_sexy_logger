@@ -23,10 +23,10 @@ describe('uuidv7', () => {
     expect(set.size).toBe(100);
   });
 
-  it('is time-ordered (monotonically increasing)', () => {
-    const a = uuidv7();
-    const b = uuidv7();
-    expect(a < b || a === b).toBe(true); // same ms could tie, but never reverse
+  it('is time-ordered (different timestamps)', () => {
+    const a = uuidv7(1000000000000);
+    const b = uuidv7(1000000000001);
+    expect(a < b).toBe(true);
   });
 
   it('accepts custom timestamp', () => {

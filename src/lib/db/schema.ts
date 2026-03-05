@@ -213,6 +213,9 @@ function migrate(db: Database.Database) {
     try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); } catch { /* column already exists */ }
   };
   addColumn('sessions', 'display_name', 'TEXT');
+  addColumn('sessions', 'status', "TEXT DEFAULT 'active'");
+  addColumn('sessions', 'closed_at', 'TEXT');
+  addColumn('sessions', 'last_message_at', 'TEXT');
   addColumn('todos', 'estimated_minutes', 'INTEGER');
   addColumn('todos', 'uuid', 'TEXT');
 

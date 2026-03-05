@@ -26,6 +26,7 @@ export async function GET() {
       FROM sessions s
       JOIN projects p ON s.project_id = p.id
       WHERE s.updated_at >= datetime('now', '-10 minutes')
+        AND (s.status IS NULL OR s.status = 'active')
       ORDER BY s.updated_at DESC
     `).all() as any[];
 
