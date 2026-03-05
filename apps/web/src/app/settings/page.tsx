@@ -49,7 +49,7 @@ const PLANS = [
       'SSO & role management',
       'Priority support & SLA',
     ],
-    price: '$420/mo — unlimited seats',
+    price: '$420/mo or $2,920/yr (42% off)',
   },
 ];
 
