@@ -81,6 +81,41 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
+export async function DELETE(request: NextRequest) {
+  try {
+    const db = getDb();
+    const body = await request.json();
+    const { id, ids } = body;
+
+    const todoIds: number[] = ids ?? (id ? [id] : []);
+    if (todoIds.length === 0) return NextResponse.json({ error: 'id or ids required' }, { status: 400 });
+    if (todoIds.length > 500) return NextResponse.json({ error: 'max 500 ids per batch' }, { status: 400 });
+
+    const now = new Date().toISOString();
+    let deleted = 0;
+
+    const tx = db.transaction(() => {
+      for (const tid of todoIds) {
+        const old = db.prepare('SELECT status FROM todos WHERE id = ?').get(tid) as any;
+        if (!old) continue;
+
+        db.prepare('UPDATE todos SET status = ?, updated_at = ?, completed_at = COALESCE(completed_at, ?) WHERE id = ?')
+          .run('deleted', now, now, tid);
+
+        db.prepare('INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, ?, ?, ?)')
+          .run(tid, old.status, 'deleted', now);
+
+        deleted++;
+      }
+    });
+    tx();
+
+    return NextResponse.json({ ok: true, deleted });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const db = getDb();
@@ -95,7 +130,7 @@ export async function GET(request: NextRequest) {
       FROM todos t
       JOIN projects p ON t.project_id = p.id
       LEFT JOIN sessions s ON t.session_id = s.id
-      WHERE 1=1
+      WHERE t.status != 'deleted'
     `;
     const params: any[] = [];
 
@@ -156,7 +191,7 @@ export async function GET(request: NextRequest) {
         COUNT(*) FILTER (WHERE status = 'pending') as pending,
         COUNT(*) FILTER (WHERE status = 'in_progress') as in_progress,
         COUNT(*) FILTER (WHERE status = 'completed') as completed,
-        COUNT(*) as total
+        COUNT(*) FILTER (WHERE status != 'deleted') as total
       FROM todos
     `).get() as any;
 

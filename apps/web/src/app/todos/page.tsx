@@ -97,20 +97,57 @@ export default function TodosPage() {
     fetchTodos();
   }, [fetchTodos]);
 
-  const addTodo = useCallback(async () => {
+  const deleteTodo = useCallback(async (id: number) => {
+    await fetch('/api/todos', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    fetchTodos();
+  }, [fetchTodos]);
+
+  const addTodo = useCallback(async (startNow = false) => {
     if (!newTodo.trim() || submitting) return;
     setSubmitting(true);
     try {
-      await fetch('/api/todos', {
+      const res = await fetch('/api/todos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: newTodo.trim(), source: 'manual' }),
+        body: JSON.stringify({
+          content: newTodo.trim(),
+          source: 'manual',
+          status: startNow ? 'in_progress' : 'pending',
+        }),
       });
+      const todoResult = await res.json();
+
+      if (startNow) {
+        // Find a project path to boot into — use first project with a path
+        const projectGroup = byProject.find(g => g.projectPath);
+        if (projectGroup?.projectPath) {
+          const bootRes = await fetch('/api/boot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              projectPath: projectGroup.projectPath,
+              yolo: true,
+              prompt: newTodo.trim(),
+            }),
+          });
+          const bootData = await bootRes.json();
+          if (bootData.success) {
+            setBootResult({ key: `todo-${todoResult.id}`, msg: `tmux: ${bootData.tmuxSession}` });
+          } else {
+            setBootResult({ key: `todo-${todoResult.id}`, msg: `Error: ${bootData.error}` });
+          }
+        }
+      }
+
       setNewTodo('');
       fetchTodos();
     } catch { /* silent */ }
     setSubmitting(false);
-  }, [newTodo, submitting, fetchTodos]);
+  }, [newTodo, submitting, fetchTodos, byProject]);
 
   const bootAgent = useCallback(async (projectPath: string, key: string, prompt?: string) => {
     setBooting(key);
@@ -402,17 +439,25 @@ export default function TodosPage() {
           type="text"
           value={newTodo}
           onChange={e => setNewTodo(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && addTodo()}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addTodo(false); } }}
           placeholder="Add a task..."
           className="flex-1 px-3 py-1.5 text-sm rounded border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-foreground)] placeholder:text-[var(--color-muted)] focus:outline-none focus:border-[var(--color-accent)]"
           disabled={submitting}
         />
         <button
-          onClick={addTodo}
+          onClick={() => addTodo(false)}
           disabled={submitting || !newTodo.trim()}
-          className="px-4 py-1.5 text-sm rounded border border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="px-3 py-1.5 text-sm rounded bg-[var(--color-surface-hover)] text-[var(--color-foreground)] hover:bg-[var(--color-border)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          {submitting ? '...' : 'Add'}
+          Queue
+        </button>
+        <button
+          onClick={() => addTodo(true)}
+          disabled={submitting || !newTodo.trim()}
+          className="px-3 py-1.5 text-sm font-bold rounded bg-[var(--color-accent)] text-[var(--color-background)] hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
+          title="Creates todo and boots Claude in a tmux session"
+        >
+          {submitting ? '...' : 'Start Now'}
         </button>
       </div>
 
@@ -463,7 +508,7 @@ export default function TodosPage() {
                   {(columns[col.key] ?? []).map(todo => {
                     const group = byProject.find(g => g.project === todo.projectName);
                     return (
-                      <TodoCard key={todo.id} todo={todo} onUpdate={updateTodo}
+                      <TodoCard key={todo.id} todo={todo} onUpdate={updateTodo} onDelete={deleteTodo}
                         projectPath={group?.projectPath ?? null}
                         onBoot={bootAgent} booting={booting} bootResult={bootResult} />
                     );
@@ -570,15 +615,17 @@ export default function TodosPage() {
   );
 }
 
-function TodoCard({ todo, onUpdate, projectPath, onBoot, booting, bootResult }: {
+function TodoCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bootResult }: {
   todo: Todo;
   onUpdate: (id: number, updates: { estimatedMinutes?: number; status?: string }) => void;
+  onDelete: (id: number) => void;
   projectPath: string | null;
   onBoot: (path: string, key: string, prompt?: string) => void;
   booting: string | null;
   bootResult: { key: string; msg: string } | null;
 }) {
   const [showEstimate, setShowEstimate] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const needsTicket = (todo.estimatedMinutes ?? 0) > TICKET_THRESHOLD;
   const bootKey = `todo-${todo.id}`;
 
@@ -663,6 +710,30 @@ function TodoCard({ todo, onUpdate, projectPath, onBoot, booting, bootResult }: 
             title="Deploy agent to work on this todo"
           >
             {booting === bootKey ? '...' : 'Deploy'}
+          </button>
+        )}
+        {confirmDelete ? (
+          <span className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => { onDelete(todo.id); setConfirmDelete(false); }}
+              className="px-1.5 py-0.5 text-xs font-bold bg-[var(--color-error)] text-white rounded hover:opacity-90"
+            >
+              Confirm
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="px-1.5 py-0.5 text-xs text-[var(--color-muted)] rounded border border-[var(--color-border)] hover:border-[var(--color-muted)]"
+            >
+              Cancel
+            </button>
+          </span>
+        ) : (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="px-1.5 py-0.5 text-xs text-[var(--color-muted)] rounded border border-[var(--color-border)] hover:border-[var(--color-error)] hover:text-[var(--color-error)] shrink-0"
+            title="Delete todo"
+          >
+            Del
           </button>
         )}
         <span className="ml-auto shrink-0" title={formatTimestamp(todo.createdAt)}>

@@ -98,14 +98,14 @@ tr:hover td {
 
 /* Selection */
 ::selection {
-  background: #10b98140;
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
   color: #fafafa;
 }
 
 /* Focus ring for inputs */
 input:focus,
 select:focus {
-  outline: 1px solid #10b981;
+  outline: 1px solid var(--color-accent);
   outline-offset: -1px;
 }
 

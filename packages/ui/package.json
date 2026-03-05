@@ -7,6 +7,7 @@
     "./PageContext": "./components/PageContext.tsx",
     "./TimeRangeSelect": "./components/TimeRangeSelect.tsx",
     "./SessionPopover": "./components/SessionPopover.tsx",
+    "./ThemeProvider": "./components/ThemeProvider.tsx",
     "./layout/Sidebar": "./components/layout/Sidebar.tsx",
     "./viewer/MessageBlock": "./components/viewer/MessageBlock.tsx"
   },

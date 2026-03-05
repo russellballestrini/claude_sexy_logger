@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@sexy-logger/ui/layout/Sidebar";
+import { ThemeProvider } from "@sexy-logger/ui/ThemeProvider";
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
@@ -21,6 +22,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${geistMono.variable} antialiased min-h-screen flex`}>
+        <ThemeProvider />
         <Sidebar />
         <main className="flex-1 overflow-auto p-6">
           {children}

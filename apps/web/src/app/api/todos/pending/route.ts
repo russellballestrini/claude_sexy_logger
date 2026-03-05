@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const quick = url.searchParams.get('quick') === 'true';
 
     const params: any[] = [];
-    let where = "t.status IN ('pending', 'in_progress')";
+    let where = "t.status IN ('pending', 'in_progress') AND t.status != 'deleted'";
 
     if (project) {
       where += ' AND p.name = ?';

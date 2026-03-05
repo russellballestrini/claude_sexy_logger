@@ -56,7 +56,19 @@ const PLANS = [
   },
 ];
 
+const ACCENT_PRESETS = [
+  { label: 'Emerald', value: '#10b981' },
+  { label: 'Cyan', value: '#22d3ee' },
+  { label: 'Blue', value: '#3b82f6' },
+  { label: 'Violet', value: '#8b5cf6' },
+  { label: 'Pink', value: '#ec4899' },
+  { label: 'Rose', value: '#f43f5e' },
+  { label: 'Orange', value: '#f97316' },
+  { label: 'Amber', value: '#f59e0b' },
+];
+
 const SETTINGS_KEYS = {
+  accentColor: 'theme_accent_color',
   plan: 'unfirehose_plan',
   displayName: 'unfirehose_display_name',
   handle: 'unfirehose_handle',
@@ -93,6 +105,7 @@ export default function SettingsPage() {
     [mutate]
   );
 
+  const accentColor = settings?.[SETTINGS_KEYS.accentColor] ?? '#10b981';
   const currentPlan = settings?.[SETTINGS_KEYS.plan] ?? '';
   const displayName = settings?.[SETTINGS_KEYS.displayName] ?? '';
   const handle = settings?.[SETTINGS_KEYS.handle] ?? '';
@@ -185,6 +198,39 @@ export default function SettingsPage() {
             {projectCount} projects — {totalPrompts.toLocaleString()} prompts (30d)
           </div>
         )}
+      </div>
+
+      {/* Accent Color */}
+      <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-4">
+        <h3 className="text-base font-bold text-[var(--color-muted)]">Accent Color</h3>
+        <div className="flex flex-wrap gap-2">
+          {ACCENT_PRESETS.map((preset) => (
+            <button
+              key={preset.value}
+              onClick={() => saveSetting(SETTINGS_KEYS.accentColor, preset.value)}
+              className={`w-10 h-10 rounded-lg border-2 transition-all ${
+                accentColor === preset.value
+                  ? 'border-white scale-110'
+                  : 'border-transparent hover:border-[var(--color-muted)]'
+              }`}
+              style={{ backgroundColor: preset.value }}
+              title={preset.label}
+            />
+          ))}
+          <label className="relative w-10 h-10 rounded-lg border-2 border-[var(--color-border)] hover:border-[var(--color-muted)] cursor-pointer overflow-hidden"
+            title="Custom color">
+            <input
+              type="color"
+              value={accentColor}
+              onChange={(e) => saveSetting(SETTINGS_KEYS.accentColor, e.target.value)}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+            />
+            <span className="absolute inset-0 flex items-center justify-center text-xs text-[var(--color-muted)]">+</span>
+          </label>
+        </div>
+        <div className="text-base text-[var(--color-muted)]">
+          Current: <span className="font-mono" style={{ color: accentColor }}>{accentColor}</span>
+        </div>
       </div>
 
       {/* Plan */}
