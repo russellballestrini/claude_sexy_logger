@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
     }
 
     const rows = db.prepare(`
-      SELECT t.id, t.content, t.status, t.source, t.estimated_minutes,
+      SELECT t.id, t.uuid, t.content, t.status, t.source, t.estimated_minutes,
              t.created_at, t.updated_at,
              p.name as project, p.display_name as project_display
       FROM todos t
@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
 
     const todos = rows.map(r => ({
       id: r.id,
+      uuid: r.uuid,
       content: r.content,
       status: r.status,
       source: r.source,

@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
     }
 
     const rows = db.prepare(`
-      SELECT t.id, t.content, t.status, t.source, t.external_id,
+      SELECT t.id, t.uuid, t.content, t.status, t.source, t.external_id,
              t.estimated_minutes, t.active_form, t.blocked_by,
              t.created_at, t.updated_at,
              p.name as project, p.display_name as project_display,
@@ -70,6 +70,7 @@ export async function GET(request: NextRequest) {
 
     const todos = rows.map(r => ({
       id: r.id,
+      uuid: r.uuid,
       content: r.content,
       status: r.status,
       source: r.source,

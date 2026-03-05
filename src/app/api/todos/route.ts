@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db/schema';
+import { uuidv7 } from '@/lib/uuidv7';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -7,14 +8,26 @@ export async function POST(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { content, projectId, source } = body;
+    const { content, projectId, sessionUuid, source } = body;
 
     if (!content?.trim()) {
       return NextResponse.json({ error: 'content required' }, { status: 400 });
     }
 
-    // If no project specified, use the first project or create a "global" bucket
+    // Resolve project and session from sessionUuid if provided
     let pid = projectId;
+    let sid: number | null = null;
+
+    if (sessionUuid) {
+      const sess = db.prepare(
+        'SELECT id, project_id FROM sessions WHERE session_uuid = ?'
+      ).get(sessionUuid) as any;
+      if (sess) {
+        sid = sess.id;
+        if (!pid) pid = sess.project_id;
+      }
+    }
+
     if (!pid) {
       const first = db.prepare('SELECT id FROM projects ORDER BY id LIMIT 1').get() as any;
       pid = first?.id;
@@ -22,16 +35,17 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date().toISOString();
+    const todoUuid = uuidv7();
     const result = db.prepare(`
-      INSERT INTO todos (project_id, content, status, source, created_at, updated_at)
-      VALUES (?, ?, 'pending', ?, ?, ?)
-    `).run(pid, content.trim(), source ?? 'manual', now, now);
+      INSERT INTO todos (project_id, session_id, content, status, source, source_session_uuid, uuid, created_at, updated_at)
+      VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?)
+    `).run(pid, sid, content.trim(), source ?? 'manual', sessionUuid ?? null, todoUuid, now, now);
 
     db.prepare(
       'INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, NULL, ?, ?)'
     ).run(result.lastInsertRowid, 'pending', now);
 
-    return NextResponse.json({ ok: true, id: Number(result.lastInsertRowid) });
+    return NextResponse.json({ ok: true, id: Number(result.lastInsertRowid), uuid: todoUuid });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
@@ -108,6 +122,7 @@ export async function GET(request: NextRequest) {
       }
       byProject[todo.project_name].todos.push({
         id: todo.id,
+        uuid: todo.uuid,
         content: todo.content,
         status: todo.status,
         activeForm: todo.active_form,

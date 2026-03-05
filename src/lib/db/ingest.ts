@@ -9,6 +9,7 @@ import { normalizeUncloseaiEntry } from '../uncloseai-adapter';
 import { fetchPaths, decodeFetchProjectName } from '../fetch-paths';
 import { sanitizePII } from '../pii';
 import { generateSessionName } from '../session-name';
+import { uuidv7 } from '../uuidv7';
 import type { SessionsIndex } from '../types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -260,10 +261,11 @@ function upsertTodo(
         ).run(existing.id, existing.status, todo.status, now);
       }
     } else {
+      const todoUuid = uuidv7();
       const r = db.prepare(
-        `INSERT INTO todos (project_id, session_id, external_id, content, status, active_form, source, source_session_uuid, blocked_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(projectId, sessionId, todo.externalId, todo.content, todo.status, todo.activeForm ?? null, source, todo.sourceSessionUuid ?? null, todo.blockedBy ? JSON.stringify(todo.blockedBy) : null, now, now);
+        `INSERT INTO todos (project_id, session_id, external_id, content, status, active_form, source, source_session_uuid, blocked_by, uuid, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(projectId, sessionId, todo.externalId, todo.content, todo.status, todo.activeForm ?? null, source, todo.sourceSessionUuid ?? null, todo.blockedBy ? JSON.stringify(todo.blockedBy) : null, todoUuid, now, now);
       db.prepare(
         'INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, NULL, ?, ?)'
       ).run(r.lastInsertRowid, todo.status, now);
@@ -284,10 +286,11 @@ function upsertTodo(
         ).run(existing.id, existing.status, todo.status, now);
       }
     } else {
+      const todoUuid = uuidv7();
       const r = db.prepare(
-        `INSERT INTO todos (project_id, session_id, content, status, active_form, source, source_session_uuid, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(projectId, sessionId, todo.content, todo.status, todo.activeForm ?? null, source, todo.sourceSessionUuid ?? null, now, now);
+        `INSERT INTO todos (project_id, session_id, content, status, active_form, source, source_session_uuid, uuid, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(projectId, sessionId, todo.content, todo.status, todo.activeForm ?? null, source, todo.sourceSessionUuid ?? null, todoUuid, now, now);
       db.prepare(
         'INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, NULL, ?, ?)'
       ).run(r.lastInsertRowid, todo.status, now);
@@ -1103,6 +1106,20 @@ export async function ingestAll(): Promise<IngestResult> {
   const todoCount = (db.prepare('SELECT COUNT(*) as c FROM todos').get() as { c: number }).c;
   if (todoCount === 0) {
     backfillTodosFromContentBlocks(db);
+  }
+
+  // Backfill UUIDv7 for existing todos that don't have one
+  const nullUuids = db.prepare('SELECT id, created_at FROM todos WHERE uuid IS NULL').all() as Array<{ id: number; created_at: string }>;
+  if (nullUuids.length > 0) {
+    const updateUuid = db.prepare('UPDATE todos SET uuid = ? WHERE id = ?');
+    const uuidBackfill = db.transaction(() => {
+      for (const row of nullUuids) {
+        const ts = row.created_at ? new Date(row.created_at).getTime() : Date.now();
+        updateUuid.run(uuidv7(ts), row.id);
+      }
+    });
+    uuidBackfill();
+    console.log(`[backfill] Assigned UUIDv7 to ${nullUuids.length} todos`);
   }
 
   // Check alert thresholds

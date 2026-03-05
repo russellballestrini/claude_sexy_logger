@@ -214,6 +214,10 @@ function migrate(db: Database.Database) {
   };
   addColumn('sessions', 'display_name', 'TEXT');
   addColumn('todos', 'estimated_minutes', 'INTEGER');
+  addColumn('todos', 'uuid', 'TEXT');
+
+  // UUIDv7 unique index — try/catch since it may already exist
+  try { db.exec('CREATE UNIQUE INDEX idx_todos_uuid ON todos(uuid) WHERE uuid IS NOT NULL'); } catch { /* exists */ }
 
   // Seed default alert thresholds if empty
   const count = db.prepare('SELECT COUNT(*) as c FROM alert_thresholds').get() as { c: number };
