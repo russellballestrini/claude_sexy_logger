@@ -21,7 +21,6 @@ const PLANS = [
       'All harness ingestion (Claude, uncloseai, Fetch)',
       'PII anonymization',
       'Cross-session todo tracking',
-      '7-day sliding window of public firehose data',
       'Follow other developers',
       'Social analytics',
       'AGPL-3.0 — self-host forever',
@@ -33,26 +32,11 @@ const PLANS = [
     label: 'Starter — $14/mo',
     features: [
       'Everything in Free',
-      'Public coding profile on unfirehose.org',
       'Scrobble feed (unlimited history)',
       'Status posts & microblog',
       'API access + 1 custom hose',
     ],
     price: '$14/mo or $97/yr',
-  },
-  {
-    value: 'ultra',
-    label: 'Ultra — $420/mo',
-    features: [
-      'Everything in Starter',
-      'S3 bucket sync (full historical firehose data)',
-      'Full firehose to webhooks',
-      'KYC verified account',
-      'Unlimited hoses + team members',
-      'For labs & teams needing all historical data',
-      'SLA & priority support',
-    ],
-    price: '$420/mo — requires KYC',
   },
 ];
 
