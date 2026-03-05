@@ -283,7 +283,8 @@ export default function TodosPage() {
     setDragOverIndex(-1);
 
     // Burst effect at drop point
-    const burstColor = targetStatus === 'in_progress' ? '#a855f7' : targetStatus === 'completed' ? '#22c55e' : '#a1a1aa';
+    const accent = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim();
+    const burstColor = targetStatus === 'in_progress' ? accent : targetStatus === 'completed' ? '#22c55e' : '#a1a1aa';
     setBurst({ x: e.clientX, y: e.clientY, color: burstColor });
     setTimeout(() => setBurst(null), 600);
 
@@ -396,7 +397,7 @@ export default function TodosPage() {
       ) : (
         <>
           {view === 'kanban' ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
             {STATUS_COLUMNS.map(col => {
               const isOver = dragOverColumn === col.key;
               const validDrop = draggedTodo != null && canDropOnColumn(draggedTodo.status, col.key);
@@ -404,8 +405,8 @@ export default function TodosPage() {
               const isCompleted = col.key === 'completed';
               const columnTodos = isCompleted ? recentCompleted : (columns[col.key] ?? []);
 
-              // Insertion gap color
-              const gapColor = col.key === 'in_progress' ? '#a855f7' : col.key === 'completed' ? '#22c55e' : 'var(--color-muted)';
+              // Insertion gap color — use accent for in_progress
+              const gapColor = col.key === 'in_progress' ? 'var(--color-accent)' : col.key === 'completed' ? '#22c55e' : 'var(--color-muted)';
               const gapLabel = col.key === 'in_progress' ? 'Drop to power up agent' : col.key === 'completed' ? 'Drop to mark done' : 'Drop to queue';
 
               return (
@@ -446,8 +447,8 @@ export default function TodosPage() {
                     <span className="text-xs text-[var(--color-muted)] ml-auto tabular-nums">{columnTodos.length}</span>
                   </div>
 
-                  {/* Cards with insertion gaps */}
-                  <div className="space-y-2">
+                  {/* Cards with insertion gaps — scrollable to prevent layout shift */}
+                  <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-220px)] pr-1">
                     {isCompleted ? (
                       completedDays.length === 0 ? (
                         <p className="text-sm text-[var(--color-muted)] text-center py-8 italic">No completions in last {COMPLETED_WINDOW_DAYS} days</p>
@@ -583,7 +584,8 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
         const clone = el.cloneNode(true) as HTMLElement;
         clone.style.width = `${el.offsetWidth}px`;
         clone.style.transform = 'rotate(3deg) scale(1.05)';
-        clone.style.boxShadow = '0 25px 50px rgba(0,0,0,0.5), 0 0 30px rgba(168,85,247,0.4)';
+        const accent = getComputedStyle(document.documentElement).getPropertyValue('--color-accent').trim();
+        clone.style.boxShadow = `0 25px 50px rgba(0,0,0,0.5), 0 0 30px ${accent}66`;
         clone.style.borderRadius = '12px';
         clone.style.position = 'absolute';
         clone.style.left = '-9999px';
@@ -608,7 +610,7 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
         }
         ${isDragging ? ''
           : needsTicket ? 'border-yellow-400/40 bg-yellow-400/[0.03]'
-          : isActive ? 'border-[#a855f7]/50 shadow-[0_0_12px_rgba(168,85,247,0.15)] shadow-lg'
+          : isActive ? 'border-[var(--color-accent)]/50 shadow-[0_0_12px_var(--color-accent)] shadow-lg'
           : 'border-[var(--color-border)] shadow-md hover:border-[var(--color-muted)]'
         }
       `}
@@ -616,8 +618,8 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
       {/* Power indicator for in_progress */}
       {isActive && (
         <div className="flex items-center gap-1.5 mb-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#a855f7] animate-pulse" />
-          <span className="text-xs font-bold text-[#a855f7]">RUNNING</span>
+          <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse" />
+          <span className="text-xs font-bold text-[var(--color-accent)]">RUNNING</span>
         </div>
       )}
 
@@ -668,7 +670,7 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
       </div>
 
       {bootResult?.key === bootKey && (
-        <div className={`mt-2 text-xs font-mono px-2 py-1 rounded ${bootResult.msg.startsWith('Error') ? 'text-[var(--color-error)] bg-[var(--color-error)]/10' : 'text-[#a855f7] bg-[#a855f7]/10'}`}>
+        <div className={`mt-2 text-xs font-mono px-2 py-1 rounded ${bootResult.msg.startsWith('Error') ? 'text-[var(--color-error)] bg-[var(--color-error)]/10' : 'text-[var(--color-accent)] bg-[var(--color-accent)]/10'}`}>
           {bootResult.msg}
         </div>
       )}
@@ -742,7 +744,7 @@ function InsertionGap({ color, label }: { color: string; label: string }) {
   return (
     <div
       className="rounded-xl border-2 border-dashed p-4 text-center transition-all duration-200 animate-pulse"
-      style={{ borderColor: color, backgroundColor: `${color}11` }}
+      style={{ borderColor: color, backgroundColor: `color-mix(in srgb, ${color} 7%, transparent)` }}
     >
       <span className="text-sm font-bold" style={{ color }}>{label}</span>
     </div>

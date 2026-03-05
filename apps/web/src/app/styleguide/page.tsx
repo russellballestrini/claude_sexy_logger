@@ -434,8 +434,9 @@ const from = getTimeRangeFrom(range); // ISO string or undefined
       <Section title="Kanban Cards">
         <p className="text-base text-[var(--color-muted)]">
           Drag-and-drop todo cards with particle burst effects. Cards have rounded-xl corners, grab cursor,
-          and lift + rotate on drag. Drop triggers purple/green particle burst and landing animation.
-          In-progress cards glow purple with RUNNING indicator. Project kanban at /projects/[project]/kanban.
+          and lift + rotate on drag. Drop triggers accent/green particle burst and landing animation.
+          In-progress cards glow with user&apos;s accent color and RUNNING indicator. Columns scroll independently.
+          Only valid transitions allowed (pending&rarr;active, active&rarr;done). Project kanban at /projects/[project]/kanban.
         </p>
         <div className="grid grid-cols-3 gap-4 mt-3">
           {/* Pending column */}
@@ -482,15 +483,15 @@ const from = getTimeRangeFrom(range); // ISO string or undefined
               <span className="text-xs text-[var(--color-muted)] ml-auto tabular-nums">1</span>
             </div>
             {/* Drop zone highlight */}
-            <div className="border-2 border-dashed border-[#a855f7] rounded-lg p-3 mb-2 bg-[#a855f7]/10 text-center">
-              <span className="text-sm font-bold text-[#a855f7]">Drop to power up agent</span>
+            <div className="border-2 border-dashed border-[var(--color-accent)] rounded-lg p-3 mb-2 bg-[var(--color-accent)]/10 text-center">
+              <span className="text-sm font-bold text-[var(--color-accent)]">Drop to power up agent</span>
             </div>
             <div className="space-y-2">
               {/* Active card with purple glow + RUNNING */}
-              <div className="bg-[var(--color-surface)] rounded-xl border border-[#a855f7]/50 p-3.5 shadow-lg shadow-[0_0_12px_rgba(168,85,247,0.15)]">
+              <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-accent)]/50 p-3.5 shadow-lg shadow-[0_0_12px_var(--color-accent)]">
                 <div className="flex items-center gap-1.5 mb-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#a855f7] animate-pulse" />
-                  <span className="text-xs font-bold text-[#a855f7]">RUNNING</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse" />
+                  <span className="text-xs font-bold text-[var(--color-accent)]">RUNNING</span>
                 </div>
                 <p className="text-sm font-medium mb-2 leading-snug">Translate Polish (pl) - 1016 strings</p>
                 <div className="flex items-center gap-1.5 text-xs">
@@ -500,10 +501,10 @@ const from = getTimeRangeFrom(range); // ISO string or undefined
                 </div>
               </div>
               {/* Landed card (simulated glow burst) */}
-              <div className="bg-[var(--color-surface)] rounded-xl border border-[#a855f7]/50 p-3.5 card-landed shadow-lg shadow-[0_0_12px_rgba(168,85,247,0.15)]">
+              <div className="bg-[var(--color-surface)] rounded-xl border border-[var(--color-accent)]/50 p-3.5 card-landed shadow-lg shadow-[0_0_12px_var(--color-accent)]">
                 <div className="flex items-center gap-1.5 mb-2">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#a855f7] animate-pulse" />
-                  <span className="text-xs font-bold text-[#a855f7]">RUNNING</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-accent)] animate-pulse" />
+                  <span className="text-xs font-bold text-[var(--color-accent)]">RUNNING</span>
                 </div>
                 <p className="text-sm font-medium mb-2 leading-snug">Just landed (burst animation)</p>
                 <div className="flex items-center gap-1.5 text-xs">
