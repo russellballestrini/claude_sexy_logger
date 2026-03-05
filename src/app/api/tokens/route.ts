@@ -39,11 +39,11 @@ export async function GET(request: NextRequest) {
     let dateFilter = '';
     const dateParams: string[] = [];
     if (from) {
-      dateFilter += ' AND m.created_at >= ?';
+      dateFilter += ' AND m.timestamp >= ?';
       dateParams.push(from);
     }
     if (to) {
-      dateFilter += ' AND m.created_at < ?';
+      dateFilter += ' AND m.timestamp < ?';
       dateParams.push(to);
     }
 
