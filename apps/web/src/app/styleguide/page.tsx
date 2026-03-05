@@ -139,6 +139,36 @@ export default function StyleguidePage() {
         </button>
       </div>
 
+      {/* Navigation */}
+      <Section title="Navigation">
+        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-4">
+          <p className="text-base text-[var(--color-muted)]">
+            Sidebar nav grouped by function. Section labels are tiny uppercase dividers.
+            Active item gets accent icon, inactive icons are dimmed border color.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { title: 'monitor', items: [['●', 'Live'], ['▸', 'Active']] },
+              { title: 'navigate', items: [['◇', 'Dashboard'], ['■', 'Projects'], ['☰', 'Todos'], ['◈', 'Graph']] },
+              { title: 'analyze', items: [['◎', 'Thinking'], ['≡', 'All Logs'], ['¤', 'Tokens'], ['△', 'Usage']] },
+              { title: 'configure', items: [['♪', 'Scrobble'], ['{', 'Schema'], ['◐', 'Styleguide'], ['⚙', 'Settings']] },
+            ].map(group => (
+              <div key={group.title}>
+                <div className="text-[10px] uppercase tracking-widest text-[var(--color-muted)] opacity-60 mb-2">{group.title}</div>
+                <div className="space-y-1">
+                  {group.items.map(([icon, label], i) => (
+                    <div key={i} className="flex items-center gap-2 text-base text-[var(--color-muted)]">
+                      <span className={`font-bold w-4 text-center ${i === 0 ? 'text-[var(--color-accent)]' : 'text-[var(--color-border)]'}`}>{icon}</span>
+                      <span className={i === 0 ? 'text-[var(--color-foreground)]' : ''}>{label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Section>
+
       {/* Layout rule */}
       <Section title="Layout — Grid Only">
         <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">

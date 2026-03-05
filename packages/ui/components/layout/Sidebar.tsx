@@ -3,22 +3,40 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-const NAV_ITEMS = [
-  { href: '/live', label: 'Live', icon: '*' },
-  { href: '/active', label: 'Active', icon: '+' },
-  { href: '/', label: 'Dashboard', icon: '~' },
-  { href: '/projects', label: 'Projects', icon: '>' },
-  { href: '/todos', label: 'Todos', icon: '=' },
-  { href: '/todos/graph', label: 'Graph', icon: '.' },
-  { href: '/thinking', label: 'Thinking', icon: '?' },
-  { href: '/logs', label: 'All Logs', icon: '#' },
-  { href: '/tokens', label: 'Tokens', icon: '$' },
-  { href: '/usage', label: 'Usage Monitor', icon: '!' },
-  { href: '/scrobble', label: 'Scrobble', icon: '@' },
+type NavLink = { href: string; label: string; icon: string };
+type NavSeparator = { separator: string };
+type NavItem = NavLink | NavSeparator;
+
+function isLink(item: NavItem): item is NavLink {
+  return 'href' in item;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  // Monitor — what's happening now
+  { separator: 'monitor' },
+  { href: '/live', label: 'Live', icon: '●' },
+  { href: '/active', label: 'Active', icon: '▸' },
+  // Navigate — browse your data
+  { separator: 'navigate' },
+  { href: '/', label: 'Dashboard', icon: '◇' },
+  { href: '/projects', label: 'Projects', icon: '■' },
+  { href: '/todos', label: 'Todos', icon: '☰' },
+  { href: '/todos/graph', label: 'Graph', icon: '◈' },
+  // Analyze — deep dives
+  { separator: 'analyze' },
+  { href: '/thinking', label: 'Thinking', icon: '◎' },
+  { href: '/logs', label: 'All Logs', icon: '≡' },
+  { href: '/tokens', label: 'Tokens', icon: '¤' },
+  { href: '/usage', label: 'Usage', icon: '△' },
+  // Configure
+  { separator: 'configure' },
+  { href: '/scrobble', label: 'Scrobble', icon: '♪' },
   { href: '/schema', label: 'Schema', icon: '{' },
-  { href: '/styleguide', label: 'Styleguide', icon: '&' },
-  { href: '/settings', label: 'Settings', icon: '%' },
+  { href: '/styleguide', label: 'Styleguide', icon: '◐' },
+  { href: '/settings', label: 'Settings', icon: '⚙' },
 ];
+
+const NAV_LINKS = NAV_ITEMS.filter(isLink);
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -34,22 +52,32 @@ export function Sidebar() {
         </Link>
       </div>
       <nav className="flex-1 p-2">
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.map((item, i) => {
+          if (!isLink(item)) {
+            return (
+              <div
+                key={item.separator}
+                className={`text-[10px] uppercase tracking-widest text-[var(--color-muted)] px-3 ${i === 0 ? 'pt-1' : 'pt-3'} pb-1 select-none opacity-60`}
+              >
+                {item.separator}
+              </div>
+            );
+          }
           const isActive =
             item.href === '/'
               ? pathname === '/'
-              : pathname === item.href || (pathname.startsWith(item.href + '/') && !NAV_ITEMS.some(n => n !== item && n.href.startsWith(item.href + '/') && pathname.startsWith(n.href)));
+              : pathname === item.href || (pathname.startsWith(item.href + '/') && !NAV_LINKS.some(n => n !== item && n.href.startsWith(item.href + '/') && pathname.startsWith(n.href)));
           return (
             <Link
               key={item.href}
               href={item.href}
-              className={`flex items-center gap-3 px-3 py-2 rounded text-base transition-colors ${
+              className={`flex items-center gap-3 px-3 py-1.5 rounded text-base transition-colors ${
                 isActive
                   ? 'bg-[var(--color-surface-hover)] text-[var(--color-foreground)]'
                   : 'text-[var(--color-muted)] hover:text-[var(--color-foreground)] hover:bg-[var(--color-surface-hover)]'
               }`}
             >
-              <span className="text-[var(--color-accent)] font-bold w-4 text-center">
+              <span className={`font-bold w-4 text-center ${isActive ? 'text-[var(--color-accent)]' : 'text-[var(--color-border)]'}`}>
                 {item.icon}
               </span>
               {item.label}
