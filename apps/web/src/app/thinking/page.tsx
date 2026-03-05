@@ -124,10 +124,6 @@ export default function ThinkingPage() {
 }
 
 function ThinkingCard({ excerpt, searchTerm }: { excerpt: any; searchTerm: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const thinkingPreview = expanded ? excerpt.thinking : excerpt.thinking?.slice(0, 600);
-  const isTruncated = !expanded && excerpt.thinking?.length > 600;
-
   return (
     <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded p-4">
       <div className="flex items-center gap-3 mb-2 flex-wrap text-sm">
@@ -165,18 +161,10 @@ function ThinkingCard({ excerpt, searchTerm }: { excerpt: any; searchTerm: strin
         </div>
       )}
 
-      <div
-        className="border-l-2 border-[var(--color-thinking)] pl-3 cursor-pointer"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <div className="text-sm text-[var(--color-muted)] whitespace-pre-wrap font-mono max-h-96 overflow-auto">
-          {searchTerm ? highlightSearch(thinkingPreview ?? '', searchTerm) : thinkingPreview}
+      <div className="border-l-2 border-[var(--color-thinking)] pl-3">
+        <div className="text-sm text-[var(--color-muted)] whitespace-pre-wrap font-mono overflow-auto">
+          {searchTerm ? highlightSearch(excerpt.thinking ?? '', searchTerm) : excerpt.thinking}
         </div>
-        {isTruncated && (
-          <button className="text-xs text-[var(--color-accent)] mt-1 hover:underline">
-            Show full ({excerpt.thinking.length.toLocaleString()} chars)
-          </button>
-        )}
       </div>
     </div>
   );
