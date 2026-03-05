@@ -4,19 +4,38 @@ import { execSync } from 'child_process';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-const PUBLIC_FORGES = [
-  'github.com',
-  'gitlab.com',
-  'codeberg.org',
-  'sr.ht',
-  'bitbucket.org',
-  'sourceforge.net',
-  'git.sr.ht',
-];
+/** Parse a remote URL into a forge API check. Returns null if unsupported. */
+function parseRemoteForCheck(url: string): { apiUrl: string; webUrl: string } | null {
+  // GitHub ssh: git@github.com:owner/repo.git
+  let m = url.match(/github\.com[:/]([^/]+\/[^/]+?)(?:\.git)?$/);
+  if (m) return {
+    apiUrl: `https://api.github.com/repos/${m[1]}`,
+    webUrl: `https://github.com/${m[1]}`,
+  };
 
-/** Check if a project path has git remotes pointing to public forges */
-function detectPublicRemotes(projectPath: string | null): { isPublic: boolean; remotes: string[] } {
-  if (!projectPath) return { isPublic: false, remotes: [] };
+  // GitLab (git.unturf.com) ssh: ssh://git@git.unturf.com:2222/path/to/repo.git
+  m = url.match(/git\.unturf\.com(?::\d+)?\/(.+?)(?:\.git)?$/);
+  if (m) {
+    const encoded = encodeURIComponent(m[1]);
+    return {
+      apiUrl: `https://git.unturf.com/api/v4/projects/${encoded}`,
+      webUrl: `https://git.unturf.com/${m[1]}`,
+    };
+  }
+
+  // Codeberg ssh/https
+  m = url.match(/codeberg\.org[:/]([^/]+\/[^/]+?)(?:\.git)?$/);
+  if (m) return {
+    apiUrl: `https://codeberg.org/api/v1/repos/${m[1]}`,
+    webUrl: `https://codeberg.org/${m[1]}`,
+  };
+
+  return null;
+}
+
+/** Check if a project has any truly public remotes by hitting forge APIs (unauthenticated = public) */
+function detectPublicRemotes(projectPath: string | null): { isPublic: boolean; remotes: string[]; publicRepo: string | null } {
+  if (!projectPath) return { isPublic: false, remotes: [], publicRepo: null };
 
   try {
     const output = execSync('git remote -v', {
@@ -34,13 +53,24 @@ function detectPublicRemotes(projectPath: string | null): { isPublic: boolean; r
         .filter(Boolean)
     )];
 
-    const isPublic = remotes.some(url =>
-      PUBLIC_FORGES.some(forge => url.includes(forge))
-    );
+    // Actually verify each remote is publicly accessible (unauthenticated API → 200 = public)
+    for (const url of remotes) {
+      const check = parseRemoteForCheck(url);
+      if (!check) continue;
+      try {
+        const resp = execSync(
+          `curl -s -o /dev/null -w '%{http_code}' --max-time 3 '${check.apiUrl}'`,
+          { encoding: 'utf-8', timeout: 5000, stdio: ['pipe', 'pipe', 'pipe'] }
+        ).trim();
+        if (resp === '200') {
+          return { isPublic: true, remotes, publicRepo: check.webUrl };
+        }
+      } catch { /* API unreachable, skip */ }
+    }
 
-    return { isPublic, remotes };
+    return { isPublic: false, remotes, publicRepo: null };
   } catch {
-    return { isPublic: false, remotes: [] };
+    return { isPublic: false, remotes: [], publicRepo: null };
   }
 }
 
@@ -82,20 +112,19 @@ export async function GET() {
     const autoSetVis = db.prepare(`
       UPDATE project_visibility
       SET visibility = 'public', updated_at = datetime('now')
-      WHERE project_id = ? AND visibility = 'private' AND auto_detected LIKE 'public_remote:%'
+      WHERE project_id = ? AND visibility = 'private' AND auto_detected LIKE 'public_repo:%'
     `);
 
     for (const p of projects) {
       if (!p.path) continue;
-      const { isPublic, remotes } = detectPublicRemotes(p.path);
+      const { isPublic, remotes, publicRepo } = detectPublicRemotes(p.path);
       if (remotes.length > 0) {
-        const detection = isPublic ? 'public_remote' : 'private_remote';
-        const remoteStr = remotes.join(', ');
-        upsertVis.run(p.id, p.visibility ?? 'private', `${detection}:${remoteStr}`);
+        const detection = isPublic ? `public_repo:${publicRepo}` : 'private_remote';
+        upsertVis.run(p.id, p.visibility ?? 'private', detection);
         if (isPublic && p.visibility === 'private') {
           autoSetVis.run(p.id);
           p.visibility = 'public';
-          p.auto_detected = `${detection}:${remoteStr}`;
+          p.auto_detected = detection;
         }
       }
     }

@@ -121,14 +121,17 @@ export default function ScrobblePage() {
                 >
                   {p.visibility}
                 </span>
-                {p.autoDetected?.startsWith('public_remote:') && (
-                  <span
-                    className="text-xs px-1.5 py-0.5 rounded"
+                {p.autoDetected?.startsWith('public_repo:') && (
+                  <a
+                    href={p.autoDetected.replace('public_repo:', '')}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs px-1.5 py-0.5 rounded hover:opacity-80"
                     style={{ color: '#10b981', backgroundColor: '#10b98122' }}
-                    title={p.autoDetected.replace('public_remote:', '')}
+                    title={p.autoDetected.replace('public_repo:', '')}
                   >
-                    open source
-                  </span>
+                    public repo
+                  </a>
                 )}
               </div>
               <div className="text-xs text-[var(--color-muted)] mt-1">
