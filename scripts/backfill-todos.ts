@@ -2,9 +2,9 @@ import { getDb } from '../src/lib/db/schema.js';
 
 const db = getDb();
 
-// Clear any test data
-db.prepare('DELETE FROM todos').run();
+// Clear any test data (events first due to FK)
 db.prepare('DELETE FROM todo_events').run();
+db.prepare('DELETE FROM todos').run();
 
 console.log('[backfill] Starting todo backfill from content_blocks...');
 
@@ -20,7 +20,6 @@ const taskCreates = db.prepare(`
 console.log(`TaskCreate rows: ${taskCreates.length}`);
 
 const sessionCounters = new Map<number, number>();
-const now = new Date().toISOString();
 let created = 0;
 
 const tx = db.transaction(() => {
@@ -31,18 +30,19 @@ const tx = db.transaction(() => {
 
       const counter = (sessionCounters.get(row.session_id) ?? 0) + 1;
       sessionCounters.set(row.session_id, counter);
+      const ts = row.timestamp ?? new Date().toISOString();
 
       db.prepare(`
         INSERT OR IGNORE INTO todos (project_id, session_id, external_id, content, status, active_form, source, source_session_uuid, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(row.project_id, row.session_id, String(counter), input.subject ?? input.description ?? '', 'pending', input.activeForm ?? null, 'claude', row.session_uuid, now, now);
+      `).run(row.project_id, row.session_id, String(counter), input.subject ?? input.description ?? '', 'pending', input.activeForm ?? null, 'claude', row.session_uuid, ts, ts);
       created++;
     } catch { /* skip */ }
   }
 
   // Process TaskUpdate
   const taskUpdates = db.prepare(`
-    SELECT cb.tool_input, m.session_id, s.project_id
+    Select cb.tool_input, m.session_id, s.project_id, m.timestamp
     FROM content_blocks cb
     JOIN messages m ON cb.message_id = m.id
     JOIN sessions s ON m.session_id = s.id
@@ -60,6 +60,7 @@ const tx = db.transaction(() => {
 
       const taskId = String(input.taskId);
       const newStatus = input.status === 'deleted' ? 'completed' : input.status;
+      const ts = row.timestamp ?? new Date().toISOString();
 
       const existing = db.prepare(
         "SELECT id, status FROM todos WHERE project_id = ? AND external_id = ? AND source = 'claude'"
@@ -68,10 +69,10 @@ const tx = db.transaction(() => {
       if (existing && existing.status !== newStatus) {
         db.prepare(
           `UPDATE todos SET status = ?, updated_at = ?, completed_at = CASE WHEN ? IN ('completed', 'deleted') THEN ? ELSE completed_at END WHERE id = ?`
-        ).run(newStatus, now, input.status, now, existing.id);
+        ).run(newStatus, ts, input.status, ts, existing.id);
         db.prepare(
           'INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, ?, ?, ?)'
-        ).run(existing.id, existing.status, newStatus, now);
+        ).run(existing.id, existing.status, newStatus, ts);
         updated++;
       }
     } catch { /* skip */ }
@@ -81,7 +82,7 @@ const tx = db.transaction(() => {
 
   // Process TodoWrite
   const todoWrites = db.prepare(`
-    SELECT cb.tool_input, m.session_id, s.project_id, s.session_uuid
+    SELECT cb.tool_input, m.session_id, s.project_id, s.session_uuid, m.timestamp
     FROM content_blocks cb
     JOIN messages m ON cb.message_id = m.id
     JOIN sessions s ON m.session_id = s.id
@@ -95,12 +96,13 @@ const tx = db.transaction(() => {
     try {
       const input = JSON.parse(row.tool_input);
       if (!input?.todos || !Array.isArray(input.todos)) continue;
+      const ts = row.timestamp ?? new Date().toISOString();
       for (const todo of input.todos) {
         if (!todo.content) continue;
         db.prepare(`
           INSERT OR IGNORE INTO todos (project_id, session_id, content, status, active_form, source, source_session_uuid, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(row.project_id, row.session_id, todo.content, todo.status ?? 'pending', todo.activeForm ?? null, 'claude', row.session_uuid, now, now);
+        `).run(row.project_id, row.session_id, todo.content, todo.status ?? 'pending', todo.activeForm ?? null, 'claude', row.session_uuid, ts, ts);
       }
     } catch { /* skip */ }
   }
