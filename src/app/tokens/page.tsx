@@ -24,23 +24,23 @@ import {
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 const DATE_PRESETS = [
-  { label: 'Today', value: 'today' },
-  { label: '24h', value: '24h' },
-  { label: '3d', value: '3d' },
+  { label: '1h', value: '1h' },
+  { label: '3h', value: '3h' },
+  { label: '1d', value: '1d' },
   { label: '7d', value: '7d' },
-  { label: '30d', value: '30d' },
-  { label: 'All', value: 'all' },
+  { label: '28d', value: '28d' },
+  { label: 'Lifetime', value: 'all' },
 ] as const;
 
 function getDateRange(preset: string): { from?: string; to?: string } {
   if (preset === 'all') return {};
   const now = new Date();
   const d = new Date();
-  if (preset === 'today') d.setHours(0, 0, 0, 0);
-  else if (preset === '24h') d.setTime(now.getTime() - 24 * 60 * 60 * 1000);
-  else if (preset === '3d') d.setTime(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+  if (preset === '1h') d.setTime(now.getTime() - 60 * 60 * 1000);
+  else if (preset === '3h') d.setTime(now.getTime() - 3 * 60 * 60 * 1000);
+  else if (preset === '1d') d.setTime(now.getTime() - 24 * 60 * 60 * 1000);
   else if (preset === '7d') d.setTime(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  else if (preset === '30d') d.setTime(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  else if (preset === '28d') d.setTime(now.getTime() - 28 * 24 * 60 * 60 * 1000);
   return { from: d.toISOString() };
 }
 
@@ -82,9 +82,9 @@ function formatCost(usd: number): string {
 export default function TokensPage() {
   const [datePreset, _setDatePreset] = useState(() => {
     if (typeof globalThis.localStorage !== 'undefined') {
-      return localStorage.getItem('tokens_range') ?? 'all';
+      return localStorage.getItem('tokens_range') ?? '28d';
     }
-    return 'all';
+    return '28d';
   });
   const setDatePreset = (v: string) => { _setDatePreset(v); localStorage.setItem('tokens_range', v); };
   const dateRange = useMemo(() => getDateRange(datePreset), [datePreset]);
