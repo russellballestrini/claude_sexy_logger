@@ -1,0 +1,478 @@
+'use client';
+
+import { use, useState, useCallback, useEffect } from 'react';
+import useSWR from 'swr';
+import Link from 'next/link';
+import { formatRelativeTime, formatTimestamp } from '@unfirehose/core/format';
+import { PageContext } from '@unfirehose/ui/PageContext';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+const fetcher = (url: string) => fetch(url).then(r => r.json());
+
+interface Todo {
+  id: number;
+  content: string;
+  status: string;
+  activeForm: string | null;
+  source: string;
+  externalId: string | null;
+  blockedBy: string[];
+  sessionUuid: string | null;
+  sessionDisplay: string | null;
+  projectName: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  estimatedMinutes: number | null;
+}
+
+const TICKET_THRESHOLD = 15;
+const COMPLETED_WINDOW_DAYS = 6;
+
+const STATUS_COLUMNS = [
+  { key: 'pending', label: 'Pending', color: 'var(--color-muted)', icon: '○' },
+  { key: 'in_progress', label: 'In Progress', color: '#fbbf24', icon: '◉' },
+  { key: 'completed', label: 'Completed', color: '#10b981', icon: '●' },
+] as const;
+
+const SOURCE_BADGE: Record<string, { label: string; color: string }> = {
+  claude: { label: 'claude', color: '#a78bfa' },
+  fetch: { label: 'fetch', color: '#60a5fa' },
+  manual: { label: 'manual', color: '#34d399' },
+};
+
+const TIME_PRESETS = [5, 10, 15, 30, 60, 120];
+
+function ParticleBurst({ x, y, color }: { x: number; y: number; color: string }) {
+  const particles = Array.from({ length: 12 }, (_, i) => {
+    const angle = (i / 12) * Math.PI * 2;
+    const dist = 40 + Math.random() * 30;
+    const size = 4 + Math.random() * 4;
+    return { angle, dist, size, delay: Math.random() * 0.1 };
+  });
+
+  return (
+    <div className="pointer-events-none fixed z-50" style={{ left: x, top: y }}>
+      {particles.map((p, i) => (
+        <div
+          key={i}
+          className="absolute rounded-full"
+          style={{
+            width: p.size,
+            height: p.size,
+            backgroundColor: color,
+            left: -p.size / 2,
+            top: -p.size / 2,
+            animation: `burst-particle 0.5s ease-out ${p.delay}s forwards`,
+            transform: `translate(${Math.cos(p.angle) * p.dist}px, ${Math.sin(p.angle) * p.dist}px) scale(0)`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+export default function ProjectKanbanPage({ params }: { params: Promise<{ project: string }> }) {
+  const { project } = use(params);
+  const decodedProject = decodeURIComponent(project);
+
+  const { data: projectData } = useSWR<any>(`/api/projects/${project}/sessions`, fetcher);
+  const { data: full } = useSWR<any>(`/api/projects/${project}/full`, fetcher);
+
+  const [todos, setTodos] = useState<Todo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [newTodo, setNewTodo] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [booting, setBooting] = useState<string | null>(null);
+  const [bootResult, setBootResult] = useState<{ key: string; msg: string } | null>(null);
+  const [draggedTodo, setDraggedTodo] = useState<Todo | null>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [landedCardId, setLandedCardId] = useState<number | null>(null);
+  const [pulsedColumn, setPulsedColumn] = useState<string | null>(null);
+  const [burst, setBurst] = useState<{ x: number; y: number; color: string } | null>(null);
+
+  const fetchTodos = useCallback(() => {
+    setLoading(true);
+    fetch(`/api/todos?project=${encodeURIComponent(decodedProject)}`)
+      .then(r => r.json())
+      .then(data => {
+        const group = (data.byProject ?? []).find((g: any) => g.project === decodedProject);
+        setTodos(group?.todos ?? []);
+      })
+      .catch(() => setTodos([]))
+      .finally(() => setLoading(false));
+  }, [decodedProject]);
+
+  useEffect(() => { fetchTodos(); }, [fetchTodos]);
+
+  const updateTodo = useCallback(async (id: number, updates: { estimatedMinutes?: number; status?: string }) => {
+    await fetch('/api/todos', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...updates }),
+    });
+    fetchTodos();
+  }, [fetchTodos]);
+
+  const deleteTodo = useCallback(async (id: number) => {
+    await fetch('/api/todos', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+    fetchTodos();
+  }, [fetchTodos]);
+
+  const addTodo = useCallback(async (startNow = false) => {
+    if (!newTodo.trim() || submitting) return;
+    setSubmitting(true);
+    try {
+      await fetch('/api/todos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: newTodo.trim(),
+          projectName: decodedProject,
+          source: 'manual',
+          status: startNow ? 'in_progress' : 'pending',
+        }),
+      });
+
+      if (startNow && projectData?.originalPath) {
+        const res = await fetch('/api/boot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectPath: projectData.originalPath, yolo: true, prompt: newTodo.trim() }),
+        });
+        const result = await res.json();
+        setBootResult({
+          key: 'new-todo',
+          msg: result.success ? `tmux: ${result.tmuxSession}` : `Error: ${result.error}`,
+        });
+      }
+
+      setNewTodo('');
+      fetchTodos();
+    } catch { /* silent */ }
+    setSubmitting(false);
+  }, [newTodo, submitting, fetchTodos, decodedProject, projectData]);
+
+  const bootAgent = useCallback(async (projectPath: string, key: string, prompt?: string) => {
+    setBooting(key);
+    setBootResult(null);
+    try {
+      const res = await fetch('/api/boot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectPath, yolo: true, prompt }),
+      });
+      const result = await res.json();
+      setBootResult({ key, msg: result.success ? `tmux: ${result.tmuxSession}` : `Error: ${result.error}` });
+    } catch (err) {
+      setBootResult({ key, msg: `Error: ${String(err)}` });
+    }
+    setBooting(null);
+  }, []);
+
+  // Sort todos into columns
+  const columns: Record<string, Todo[]> = { pending: [], in_progress: [], completed: [] };
+  for (const todo of todos) {
+    if (columns[todo.status]) columns[todo.status].push(todo);
+  }
+
+  // Filter completed to last N days
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - COMPLETED_WINDOW_DAYS);
+  const cutoffStr = cutoff.toISOString();
+  const recentCompleted = columns.completed.filter(t => (t.completedAt ?? t.updatedAt) >= cutoffStr);
+
+  const completedByDay: Record<string, Todo[]> = {};
+  for (const t of recentCompleted) {
+    const day = (t.completedAt ?? t.updatedAt).slice(0, 10);
+    if (!completedByDay[day]) completedByDay[day] = [];
+    completedByDay[day].push(t);
+  }
+  const completedDays = Object.keys(completedByDay).sort().reverse();
+
+  const handleDragStart = useCallback((todo: Todo) => { setDraggedTodo(todo); }, []);
+  const handleDragEnd = useCallback(() => { setDraggedTodo(null); setDragOverColumn(null); }, []);
+
+  const handleDrop = useCallback(async (targetStatus: string, e: React.DragEvent) => {
+    if (!draggedTodo || draggedTodo.status === targetStatus) {
+      setDraggedTodo(null); setDragOverColumn(null);
+      return;
+    }
+
+    const todo = draggedTodo;
+    setDraggedTodo(null);
+    setDragOverColumn(null);
+
+    const burstColor = targetStatus === 'in_progress' ? '#a855f7' : targetStatus === 'completed' ? '#22c55e' : '#a1a1aa';
+    setBurst({ x: e.clientX, y: e.clientY, color: burstColor });
+    setTimeout(() => setBurst(null), 600);
+
+    setLandedCardId(todo.id);
+    setPulsedColumn(targetStatus);
+    setTimeout(() => { setLandedCardId(null); setPulsedColumn(null); }, 700);
+
+    await updateTodo(todo.id, { status: targetStatus });
+
+    if (targetStatus === 'in_progress' && todo.status === 'pending' && projectData?.originalPath) {
+      bootAgent(projectData.originalPath, `todo-${todo.id}`, `Work on this task: ${todo.content}`);
+    }
+  }, [draggedTodo, updateTodo, projectData, bootAgent]);
+
+  const projectPath = projectData?.originalPath ?? null;
+  const displayName = full?.project?.displayName ?? decodedProject;
+
+  return (
+    <div className="p-6">
+      <PageContext
+        pageType="project-kanban"
+        summary={`Kanban for ${displayName}. ${todos.length} todos.`}
+        metrics={{ project: decodedProject, total: todos.length }}
+      />
+
+      {burst && <ParticleBurst x={burst.x} y={burst.y} color={burst.color} />}
+
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-4">
+        <Link href={`/projects/${project}`} className="text-sm text-[var(--color-muted)] hover:text-[var(--color-foreground)]">
+          &larr; {displayName}
+        </Link>
+        <h1 className="text-xl font-bold">Kanban</h1>
+        <div className="flex gap-2 text-sm ml-2">
+          <span className="px-2 py-0.5 rounded bg-[var(--color-surface-hover)]">{columns.pending.length} pending</span>
+          <span className="px-2 py-0.5 rounded bg-[var(--color-surface-hover)] text-yellow-400">{columns.in_progress.length} active</span>
+          <span className="px-2 py-0.5 rounded bg-[var(--color-surface-hover)] text-green-400">{recentCompleted.length} done</span>
+        </div>
+        <Link href="/todos" className="ml-auto text-xs text-[var(--color-accent)] hover:underline">Global Kanban</Link>
+      </div>
+
+      {/* Add todo */}
+      <div className="flex gap-2 mb-4">
+        <input
+          type="text" value={newTodo} onChange={e => setNewTodo(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addTodo(false); } }}
+          placeholder={`Add task for ${displayName}...`}
+          className="flex-1 px-3 py-2 text-sm rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-foreground)] placeholder:text-[var(--color-muted)] focus:outline-none focus:border-[var(--color-accent)]"
+          disabled={submitting}
+        />
+        <button onClick={() => addTodo(false)} disabled={submitting || !newTodo.trim()} className="px-4 py-2 text-sm rounded-lg bg-[var(--color-surface-hover)] text-[var(--color-foreground)] hover:bg-[var(--color-border)] disabled:opacity-40 transition-colors">Queue</button>
+        <button onClick={() => addTodo(true)} disabled={submitting || !newTodo.trim() || !projectPath} className="px-5 py-2 text-sm font-bold rounded-lg bg-[var(--color-accent)] text-[var(--color-background)] hover:opacity-90 disabled:opacity-40 transition-opacity" title="Creates todo and boots Claude in tmux">
+          {submitting ? '...' : 'Start Now'}
+        </button>
+      </div>
+
+      {draggedTodo && (
+        <div className="mb-4 text-sm text-[var(--color-accent)] font-bold animate-pulse">
+          Drag to In Progress to boot agent — drop on Completed to finish
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-[var(--color-muted)]">Loading...</p>
+      ) : todos.length === 0 ? (
+        <div className="border border-[var(--color-border)] rounded-lg p-8 text-center">
+          <p className="text-[var(--color-muted)] text-lg mb-2">No todos for this project</p>
+          <p className="text-[var(--color-muted)] text-base">Add a task above to get started.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {STATUS_COLUMNS.map(col => {
+            const isOver = dragOverColumn === col.key;
+            const canDrop = draggedTodo != null && draggedTodo.status !== col.key;
+            const isPulsed = pulsedColumn === col.key;
+            const isCompleted = col.key === 'completed';
+            const columnTodos = isCompleted ? recentCompleted : (columns[col.key] ?? []);
+
+            return (
+              <div
+                key={col.key}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; setDragOverColumn(col.key); }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverColumn(null); }}
+                onDrop={(e) => { e.preventDefault(); handleDrop(col.key, e); }}
+                className={`rounded-xl p-3 transition-all duration-300 min-h-[200px] ${
+                  isOver && canDrop
+                    ? 'bg-[var(--color-accent)]/10 ring-2 ring-[var(--color-accent)] ring-inset scale-[1.01]'
+                    : isPulsed
+                      ? 'column-drop-pulse'
+                      : ''
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-4 pb-2 border-b-2" style={{ borderBottomColor: col.color }}>
+                  <span className="text-lg" style={{ color: col.color }}>{col.icon}</span>
+                  <h2 className="font-bold text-sm">{col.label}</h2>
+                  {isCompleted && <span className="text-xs text-[var(--color-muted)]">last {COMPLETED_WINDOW_DAYS}d</span>}
+                  <span className="text-xs text-[var(--color-muted)] ml-auto tabular-nums">{columnTodos.length}</span>
+                </div>
+
+                {isOver && canDrop && (
+                  <div className={`border-2 border-dashed rounded-lg p-3 mb-3 text-center transition-all ${
+                    col.key === 'in_progress'
+                      ? 'border-[#a855f7] bg-[#a855f7]/10'
+                      : col.key === 'completed'
+                        ? 'border-[#22c55e] bg-[#22c55e]/10'
+                        : 'border-[var(--color-accent)]/50 bg-[var(--color-accent)]/5'
+                  }`}>
+                    <span className={`text-sm font-bold ${
+                      col.key === 'in_progress' ? 'text-[#a855f7]' : col.key === 'completed' ? 'text-[#22c55e]' : 'text-[var(--color-accent)]'
+                    }`}>
+                      {col.key === 'in_progress' ? 'Drop to power up agent' : col.key === 'completed' ? 'Drop to mark done' : 'Drop to queue'}
+                    </span>
+                  </div>
+                )}
+
+                <div className="space-y-2">
+                  {isCompleted ? (
+                    completedDays.length === 0 ? (
+                      <p className="text-sm text-[var(--color-muted)] text-center py-8 italic">No completions in last {COMPLETED_WINDOW_DAYS} days</p>
+                    ) : (
+                      completedDays.map(day => (
+                        <div key={day}>
+                          <div className="text-xs text-[var(--color-muted)] font-bold mb-1.5 mt-2">{day}</div>
+                          {completedByDay[day].map(todo => (
+                            <CompletedCard key={todo.id} todo={todo} landed={landedCardId === todo.id} />
+                          ))}
+                        </div>
+                      ))
+                    )
+                  ) : (
+                    <>
+                      {columnTodos.map(todo => (
+                        <KanbanCard
+                          key={todo.id} todo={todo}
+                          onUpdate={updateTodo} onDelete={deleteTodo}
+                          projectPath={projectPath}
+                          onBoot={bootAgent} booting={booting} bootResult={bootResult}
+                          onDragStart={handleDragStart} onDragEnd={handleDragEnd}
+                          isDragging={draggedTodo?.id === todo.id}
+                          landed={landedCardId === todo.id}
+                          project={project}
+                        />
+                      ))}
+                      {columnTodos.length === 0 && (
+                        <p className="text-sm text-[var(--color-muted)] text-center py-8 italic">Empty</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bootResult, onDragStart, onDragEnd, isDragging, landed, project }: {
+  todo: Todo; onUpdate: (id: number, u: any) => void; onDelete: (id: number) => void;
+  projectPath: string | null; onBoot: (p: string, k: string, pr?: string) => void;
+  booting: string | null; bootResult: { key: string; msg: string } | null;
+  onDragStart: (t: Todo) => void; onDragEnd: () => void; isDragging: boolean; landed: boolean;
+  project: string;
+}) {
+  const [showEstimate, setShowEstimate] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const needsTicket = (todo.estimatedMinutes ?? 0) > TICKET_THRESHOLD;
+  const bootKey = `todo-${todo.id}`;
+  const isActive = todo.status === 'in_progress';
+
+  return (
+    <div
+      draggable
+      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(todo.id)); onDragStart(todo); }}
+      onDragEnd={onDragEnd}
+      className={`
+        bg-[var(--color-surface)] rounded-xl border p-3.5 text-sm
+        transition-all duration-200 select-none
+        ${isDragging
+          ? 'opacity-30 scale-90 rotate-2 shadow-2xl'
+          : landed
+            ? 'card-landed'
+            : 'cursor-grab active:cursor-grabbing hover:shadow-xl hover:-translate-y-0.5 active:scale-[1.03] active:rotate-1'
+        }
+        ${needsTicket ? 'border-yellow-400/40 bg-yellow-400/[0.03]'
+          : isActive ? 'border-[#a855f7]/50 shadow-[0_0_12px_rgba(168,85,247,0.15)] shadow-lg'
+          : 'border-[var(--color-border)] shadow-md hover:border-[var(--color-muted)]'
+        }
+      `}
+    >
+      {isActive && (
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#a855f7] animate-pulse" />
+          <span className="text-xs font-bold text-[#a855f7]">RUNNING</span>
+        </div>
+      )}
+
+      <p className="font-medium mb-2 leading-snug">{todo.content}</p>
+
+      <div className="flex items-center gap-1.5 mb-2">
+        <span
+          className={`text-xs px-1.5 py-0.5 rounded cursor-pointer transition-colors ${needsTicket ? 'bg-yellow-400/20 text-yellow-400 hover:bg-yellow-400/30' : 'bg-[var(--color-surface-hover)] text-[var(--color-muted)] hover:text-[var(--color-foreground)]'}`}
+          onClick={(e) => { e.stopPropagation(); setShowEstimate(!showEstimate); }}
+        >
+          {todo.estimatedMinutes !== null ? `~${todo.estimatedMinutes}m` : '?m'}
+        </span>
+        {needsTicket && <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-400/20 text-yellow-400 font-bold">ticket</span>}
+      </div>
+
+      {showEstimate && (
+        <div className="flex gap-1 mb-2 flex-wrap">
+          {TIME_PRESETS.map(m => (
+            <button key={m} onClick={(e) => { e.stopPropagation(); onUpdate(todo.id, { estimatedMinutes: m }); setShowEstimate(false); }}
+              className={`text-xs px-1.5 py-0.5 rounded border transition-colors cursor-pointer ${m > TICKET_THRESHOLD ? 'border-yellow-400/40 text-yellow-400 hover:bg-yellow-400/10' : 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-accent)]'}`}
+            >{m}m</button>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-1.5 text-xs text-[var(--color-muted)] flex-wrap">
+        <SourceBadge source={todo.source} />
+        {todo.sessionDisplay && todo.sessionUuid && (
+          <Link href={`/projects/${project}/${todo.sessionUuid}`} className="hover:text-[var(--color-accent)] truncate max-w-[100px]" onClick={(e) => e.stopPropagation()}>{todo.sessionDisplay}</Link>
+        )}
+        {projectPath && !isActive && (
+          <button onClick={(e) => { e.stopPropagation(); onBoot(projectPath, bootKey, `Work on this task: ${todo.content}`); }} disabled={booting === bootKey}
+            className="px-1.5 py-0.5 text-xs font-bold bg-[var(--color-accent)] text-white rounded hover:opacity-90 disabled:opacity-50 cursor-pointer">
+            {booting === bootKey ? '...' : 'Deploy'}
+          </button>
+        )}
+        {confirmDelete ? (
+          <span className="flex items-center gap-1 shrink-0">
+            <button onClick={(e) => { e.stopPropagation(); onDelete(todo.id); setConfirmDelete(false); }} className="px-1.5 py-0.5 text-xs font-bold bg-[var(--color-error)] text-white rounded hover:opacity-90 cursor-pointer">Confirm</button>
+            <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }} className="px-1.5 py-0.5 text-xs text-[var(--color-muted)] rounded border border-[var(--color-border)] hover:border-[var(--color-muted)] cursor-pointer">Cancel</button>
+          </span>
+        ) : (
+          <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }} className="px-1.5 py-0.5 text-xs text-[var(--color-muted)] rounded border border-[var(--color-border)] hover:border-[var(--color-error)] hover:text-[var(--color-error)] shrink-0 cursor-pointer">Del</button>
+        )}
+        <span className="ml-auto shrink-0" title={formatTimestamp(todo.createdAt)}>{formatRelativeTime(todo.updatedAt)}</span>
+      </div>
+
+      {bootResult?.key === bootKey && (
+        <div className={`mt-2 text-xs font-mono px-2 py-1 rounded ${bootResult.msg.startsWith('Error') ? 'text-[var(--color-error)] bg-[var(--color-error)]/10' : 'text-[#a855f7] bg-[#a855f7]/10'}`}>
+          {bootResult.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompletedCard({ todo, landed }: { todo: Todo; landed: boolean }) {
+  return (
+    <div className={`rounded-lg border border-[#10b981]/20 p-2.5 mb-1.5 text-sm bg-[var(--color-surface)] ${landed ? 'card-landed' : ''}`}>
+      <p className="line-through text-[var(--color-muted)] text-xs leading-snug">{todo.content}</p>
+      <div className="flex items-center gap-1.5 mt-1 text-xs text-[var(--color-muted)]">
+        <SourceBadge source={todo.source} />
+        {todo.completedAt && <span className="text-[#10b981]">{formatRelativeTime(todo.completedAt)}</span>}
+      </div>
+    </div>
+  );
+}
+
+function SourceBadge({ source }: { source: string }) {
+  const badge = SOURCE_BADGE[source] ?? { label: source, color: 'var(--color-muted)' };
+  return <span className="px-1.5 py-0.5 rounded text-xs font-medium" style={{ backgroundColor: `${badge.color}22`, color: badge.color }}>{badge.label}</span>;
+}

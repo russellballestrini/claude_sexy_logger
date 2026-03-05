@@ -162,9 +162,16 @@ export default function ProjectPage({
 
       {/* Header */}
       <div>
-        <Link href="/projects" className="text-sm text-[var(--color-muted)] hover:text-[var(--color-foreground)]">
-          &larr; Projects
-        </Link>
+        <div className="flex items-center gap-3 text-sm">
+          <Link href="/projects" className="text-[var(--color-muted)] hover:text-[var(--color-foreground)]">
+            &larr; Projects
+          </Link>
+          <span className="text-[var(--color-border)]">/</span>
+          <span className="text-[var(--color-foreground)] font-bold">Overview</span>
+          <Link href={`/projects/${project}/kanban`} className="text-[var(--color-muted)] hover:text-[var(--color-accent)] transition-colors">
+            Kanban
+          </Link>
+        </div>
         <div className="flex items-center gap-3 mt-1">
           <h1 className="text-xl font-bold">{full?.project?.displayName ?? decodedProject}</h1>
           {full?.visibility && (
@@ -380,7 +387,8 @@ export default function ProjectPage({
         <div className="flex items-center gap-2 mb-3">
           <h3 className="text-sm font-bold text-[var(--color-muted)]">Open Todos</h3>
           {full?.todos?.length > 0 && <span className="text-xs text-[var(--color-muted)]">{full.todos.length}</span>}
-          <Link href="/todos" className="text-xs text-[var(--color-accent)] hover:underline ml-auto">View all</Link>
+          <Link href={`/projects/${project}/kanban`} className="text-xs text-[var(--color-accent)] hover:underline ml-auto">Kanban</Link>
+          <Link href="/todos" className="text-xs text-[var(--color-accent)] hover:underline">All todos</Link>
         </div>
 
         {full?.todos?.length > 0 && (
