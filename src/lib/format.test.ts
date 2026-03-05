@@ -9,6 +9,8 @@ import {
   formatCost,
   truncate,
   extractUserText,
+  gitRemoteToWebUrl,
+  commitUrl,
 } from './format';
 
 describe('formatTokens', () => {
@@ -182,5 +184,67 @@ describe('extractUserText', () => {
 
   it('returns empty string for empty array', () => {
     expect(extractUserText({ message: { content: [] } })).toBe('');
+  });
+});
+
+describe('gitRemoteToWebUrl', () => {
+  it('converts GitHub SSH shorthand to HTTPS', () => {
+    expect(gitRemoteToWebUrl('git@github.com:owner/repo.git')).toBe('https://github.com/owner/repo');
+  });
+
+  it('strips .git suffix from SSH remotes', () => {
+    expect(gitRemoteToWebUrl('git@github.com:owner/repo.git')).not.toContain('.git');
+  });
+
+  it('converts GitHub HTTPS to canonical HTTPS', () => {
+    expect(gitRemoteToWebUrl('https://github.com/owner/repo.git')).toBe('https://github.com/owner/repo');
+  });
+
+  it('handles HTTPS without .git suffix', () => {
+    expect(gitRemoteToWebUrl('https://github.com/owner/repo')).toBe('https://github.com/owner/repo');
+  });
+
+  it('converts GitLab SSH shorthand', () => {
+    expect(gitRemoteToWebUrl('git@gitlab.com:group/project.git')).toBe('https://gitlab.com/group/project');
+  });
+
+  it('converts self-hosted Gitea/Forgejo SSH url with explicit port', () => {
+    expect(gitRemoteToWebUrl('ssh://git@git.unturf.com:22/fox/myrepo.git')).toBe('https://git.unturf.com/fox/myrepo');
+  });
+
+  it('converts self-hosted HTTPS remote', () => {
+    expect(gitRemoteToWebUrl('https://git.unturf.com/fox/myrepo.git')).toBe('https://git.unturf.com/fox/myrepo');
+  });
+
+  it('returns null for unrecognized format', () => {
+    expect(gitRemoteToWebUrl('file:///local/path')).toBeNull();
+    expect(gitRemoteToWebUrl('not-a-remote')).toBeNull();
+  });
+});
+
+describe('commitUrl', () => {
+  it('builds GitHub commit URL', () => {
+    const url = commitUrl('git@github.com:owner/repo.git', 'abc1234');
+    expect(url).toBe('https://github.com/owner/repo/commit/abc1234');
+  });
+
+  it('builds GitLab commit URL with /-/commit/ path', () => {
+    const url = commitUrl('git@gitlab.com:group/project.git', 'def5678');
+    expect(url).toBe('https://gitlab.com/group/project/-/commit/def5678');
+  });
+
+  it('builds Gitea commit URL (no /-/ path)', () => {
+    const url = commitUrl('https://git.unturf.com/fox/repo.git', 'abc1234');
+    expect(url).toBe('https://git.unturf.com/fox/repo/commit/abc1234');
+  });
+
+  it('returns null for invalid remote URL', () => {
+    expect(commitUrl('not-a-remote', 'abc1234')).toBeNull();
+  });
+
+  it('uses full commit hash in URL', () => {
+    const hash = 'a'.repeat(40);
+    const url = commitUrl('git@github.com:owner/repo.git', hash);
+    expect(url).toContain(hash);
   });
 });
