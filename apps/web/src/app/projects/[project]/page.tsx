@@ -5,8 +5,8 @@ import useSWR from 'swr';
 import Link from 'next/link';
 import type { SessionIndexEntry, ProjectMetadata } from '@sexy-logger/core/types';
 import { formatRelativeTime, formatTokens, gitRemoteToWebUrl, commitUrl } from '@sexy-logger/core/format';
-import { PageContext } from '@/components/PageContext';
-import { SessionPopover } from '@/components/SessionPopover';
+import { PageContext } from '@sexy-logger/ui/PageContext';
+import { SessionPopover } from '@sexy-logger/ui/SessionPopover';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

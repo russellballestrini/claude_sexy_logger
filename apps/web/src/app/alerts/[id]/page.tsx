@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import Link from 'next/link';
-import { PageContext } from '@/components/PageContext';
+import { PageContext } from '@sexy-logger/ui/PageContext';
 import { formatTokens, formatRelativeTime, formatTimestamp } from '@sexy-logger/core/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

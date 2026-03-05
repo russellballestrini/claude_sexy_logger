@@ -4,9 +4,9 @@ import { use, useEffect, useState, useRef, useCallback } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
 import type { SessionEntry } from '@sexy-logger/core/types';
-import { MessageBlock } from '@/components/viewer/MessageBlock';
-import { PageContext } from '@/components/PageContext';
-import { SessionPopover } from '@/components/SessionPopover';
+import { MessageBlock } from '@sexy-logger/ui/viewer/MessageBlock';
+import { PageContext } from '@sexy-logger/ui/PageContext';
+import { SessionPopover } from '@sexy-logger/ui/SessionPopover';
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 

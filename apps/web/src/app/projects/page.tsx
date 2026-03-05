@@ -3,7 +3,7 @@
 import useSWR from 'swr';
 import Link from 'next/link';
 import type { ProjectInfo } from '@sexy-logger/core/types';
-import { PageContext } from '@/components/PageContext';
+import { PageContext } from '@sexy-logger/ui/PageContext';
 import { formatRelativeTime, formatTokens } from '@sexy-logger/core/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

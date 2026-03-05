@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import useSWR from 'swr';
-import { PageContext } from '@/components/PageContext';
+import { PageContext } from '@sexy-logger/ui/PageContext';
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -21,7 +21,7 @@ const PLANS = [
       'All harness ingestion (Claude, uncloseai, Fetch)',
       'PII anonymization',
       'Cross-session todo tracking',
-      '7-day scrobble history',
+      '7-day sliding window of public firehose data',
       'AGPL-3.0 — self-host forever',
     ],
     price: '$0',
@@ -45,11 +45,11 @@ const PLANS = [
     label: 'Ultra — $420/mo',
     features: [
       'Everything in Starter',
-      'Public firehose data sync (read + write)',
-      'Dedicated bucket provisioning',
+      'S3 bucket sync (full historical firehose data)',
+      'Full firehose to webhooks',
       'KYC verified account',
       'Unlimited hoses + team members',
-      'Webhook integrations',
+      'For labs & teams needing all historical data',
       'SLA & priority support',
     ],
     price: '$420/mo — requires KYC',
@@ -62,6 +62,7 @@ const SETTINGS_KEYS = {
   handle: 'unfirehose_handle',
   bio: 'unfirehose_bio',
   firehoseKey: 'unfirehose_api_key',
+  firehosePublicKey: 'unfirehose_public_key',
   firehoseEndpoint: 'unfirehose_endpoint',
   firehoseEnabled: 'unfirehose_enabled',
   scrobbleEnabled: 'unfirehose_scrobble',
@@ -97,8 +98,9 @@ export default function SettingsPage() {
   const handle = settings?.[SETTINGS_KEYS.handle] ?? '';
   const bio = settings?.[SETTINGS_KEYS.bio] ?? '';
   const firehoseKey = settings?.[SETTINGS_KEYS.firehoseKey] ?? '';
+  const firehosePublicKey = settings?.[SETTINGS_KEYS.firehosePublicKey] ?? '';
   const firehoseEndpoint =
-    settings?.[SETTINGS_KEYS.firehoseEndpoint] ?? 'https://api.unfirehose.com';
+    settings?.[SETTINGS_KEYS.firehoseEndpoint] ?? 'https://api.unfirehose.org';
   const firehoseEnabled = settings?.[SETTINGS_KEYS.firehoseEnabled] === 'true';
   const scrobbleEnabled = settings?.[SETTINGS_KEYS.scrobbleEnabled] === 'true';
 
@@ -280,7 +282,7 @@ export default function SettingsPage() {
             <input
               type="url"
               defaultValue={firehoseEndpoint}
-              placeholder="https://api.unfirehose.com"
+              placeholder="https://api.unfirehose.org"
               className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-base"
               onBlur={(e) => {
                 if (e.target.value && e.target.value !== firehoseEndpoint) {
@@ -291,11 +293,25 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <label className="text-base text-[var(--color-muted)] block mb-1">API Key</label>
+            <label className="text-base text-[var(--color-muted)] block mb-1">Public Key</label>
+            <input
+              type="text"
+              defaultValue={firehosePublicKey}
+              placeholder="unfh-pk-..."
+              className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-base font-mono"
+              onBlur={(e) => {
+                if (e.target.value && e.target.value !== firehosePublicKey) {
+                  saveSetting(SETTINGS_KEYS.firehosePublicKey, e.target.value);
+                }
+              }}
+            />
+          </div>
+          <div>
+            <label className="text-base text-[var(--color-muted)] block mb-1">Secret Key</label>
             <input
               type="password"
               defaultValue={firehoseKey}
-              placeholder="uf_..."
+              placeholder="unfh-sk-..."
               className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-base font-mono"
               onBlur={(e) => {
                 if (e.target.value && e.target.value !== firehoseKey) {

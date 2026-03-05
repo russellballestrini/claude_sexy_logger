@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { formatTokens } from '@sexy-logger/core/format';
-import { PageContext } from '@/components/PageContext';
+import { PageContext } from '@sexy-logger/ui/PageContext';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

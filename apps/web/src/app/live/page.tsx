@@ -3,8 +3,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { formatTimestamp } from '@sexy-logger/core/format';
 import { decodeProjectName } from '@sexy-logger/core/claude-paths-client';
-import { PageContext } from '@/components/PageContext';
-import { SessionPopover } from '@/components/SessionPopover';
+import { PageContext } from '@sexy-logger/ui/PageContext';
+import { SessionPopover } from '@sexy-logger/ui/SessionPopover';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

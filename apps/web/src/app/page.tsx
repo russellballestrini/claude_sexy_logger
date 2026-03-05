@@ -2,8 +2,8 @@
 
 import useSWR from 'swr';
 import { formatTokens } from '@sexy-logger/core/format';
-import { PageContext } from '@/components/PageContext';
-import { TimeRangeSelect, useTimeRange } from '@/components/TimeRangeSelect';
+import { PageContext } from '@sexy-logger/ui/PageContext';
+import { TimeRangeSelect, useTimeRange } from '@sexy-logger/ui/TimeRangeSelect';
 import {
   BarChart,
   Bar,

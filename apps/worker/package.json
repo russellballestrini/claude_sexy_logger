@@ -1,0 +1,22 @@
+{
+  "name": "@sexy-logger/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "build": "echo 'worker: no build step (tsx runtime)'",
+    "lint": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@sexy-logger/core": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4",
+    "typescript": "^5",
+    "vitest": "^4.0.18"
+  }
+}

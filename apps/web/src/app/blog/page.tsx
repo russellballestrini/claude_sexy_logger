@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import useSWR from 'swr';
-import { PageContext } from '@/components/PageContext';
+import { PageContext } from '@sexy-logger/ui/PageContext';
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 

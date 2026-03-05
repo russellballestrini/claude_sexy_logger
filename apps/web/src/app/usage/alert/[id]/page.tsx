@@ -9,7 +9,7 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts';
 import type { ProjectMetadata } from '@sexy-logger/core/types';
-import { PageContext } from '@/components/PageContext';
+import { PageContext } from '@sexy-logger/ui/PageContext';
 import { formatTokens, formatCost, formatRelativeTime, formatTimestamp, gitRemoteToWebUrl, commitUrl } from '@sexy-logger/core/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */

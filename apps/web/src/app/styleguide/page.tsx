@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, Fragment } from 'react';
-import { TimeRangeSelect, useTimeRange } from '@/components/TimeRangeSelect';
+import { TimeRangeSelect, useTimeRange } from '@sexy-logger/ui/TimeRangeSelect';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
   AreaChart, Area,
 } from 'recharts';
-import { PageContext } from '@/components/PageContext';
+import { PageContext } from '@sexy-logger/ui/PageContext';
 
 // --- Mock data ---
 
@@ -322,7 +322,7 @@ export default function StyleguidePage() {
             <TimeRangeSelect value={timeRange} onChange={setTimeRange} />
             <span className="text-base text-[var(--color-muted)]">Current: {timeRange}</span>
           </div>
-          <pre className="text-sm text-[var(--color-muted)] bg-[var(--color-background)] p-3 rounded overflow-x-auto">{`import { TimeRangeSelect, useTimeRange, getTimeRangeFrom } from '@/components/TimeRangeSelect';
+          <pre className="text-sm text-[var(--color-muted)] bg-[var(--color-background)] p-3 rounded overflow-x-auto">{`import { TimeRangeSelect, useTimeRange, getTimeRangeFrom } from '@sexy-logger/ui/TimeRangeSelect';
 
 const [range, setRange] = useTimeRange('my_page_range', '7d');
 const from = getTimeRangeFrom(range); // ISO string or undefined
