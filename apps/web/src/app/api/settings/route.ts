@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { userInfo } from 'os';
 import {
   getAllSettings,
   setSetting,
@@ -7,7 +8,19 @@ import {
 
 export async function GET() {
   const settings = getAllSettings();
-  return NextResponse.json(settings);
+  const username = userInfo().username;
+
+  // Auto-set display name and handle from system user on first access
+  if (!settings.unfirehose_display_name) {
+    setSetting('unfirehose_display_name', username);
+    settings.unfirehose_display_name = username;
+  }
+  if (!settings.unfirehose_handle) {
+    setSetting('unfirehose_handle', username);
+    settings.unfirehose_handle = username;
+  }
+
+  return NextResponse.json({ ...settings, _system_username: username });
 }
 
 export async function POST(req: NextRequest) {

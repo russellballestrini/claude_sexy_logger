@@ -92,6 +92,7 @@ export default function SettingsPage() {
   );
 
   const accentColor = settings?.[SETTINGS_KEYS.accentColor] ?? '#10b981';
+  const systemUser = settings?._system_username ?? '';
   const [lightMode, setLightMode] = useState(false);
 
   useEffect(() => {
@@ -163,7 +164,7 @@ export default function SettingsPage() {
           <input
             type="text"
             defaultValue={displayName}
-            placeholder="fox"
+            placeholder={systemUser}
             className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-base"
             onBlur={(e) => {
               if (e.target.value !== displayName) saveSetting(SETTINGS_KEYS.displayName, e.target.value);
@@ -177,7 +178,7 @@ export default function SettingsPage() {
             <input
               type="text"
               defaultValue={handle}
-              placeholder="fox"
+              placeholder={systemUser}
               className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-base font-mono"
               onBlur={(e) => {
                 if (e.target.value !== handle) saveSetting(SETTINGS_KEYS.handle, e.target.value);
