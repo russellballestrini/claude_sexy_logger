@@ -6,7 +6,7 @@ digraph pages {
   edge [color="#666688" fontcolor="#999999" fontsize=8]
 
   // Layout
-  sidebar [label="Sidebar\nnavigation\n8 routes" fillcolor="#2a2a4a" shape=component]
+  sidebar [label="Sidebar\nnavigation\n11 routes" fillcolor="#2a2a4a" shape=component]
 
   // Pages
   subgraph cluster_pages {
@@ -26,6 +26,9 @@ digraph pages {
     usage [label="/usage\nUsage Monitor\ntimeline + alerts\nper-project cost" fillcolor="#3a1a2a"]
     alert [label="/usage/alert/[id]\nAlert Drill-down\ntimeline + prompts\nthinking blocks" fillcolor="#3a1a1a"]
     styleguide [label="/styleguide\nComponent Ref\ncolor tokens" fillcolor="#1a1a3a"]
+    todos [label="/todos\nTodo Kanban\nby-project view\ntask injection" fillcolor="#1a3a3a"]
+    scrobble [label="/scrobble\nVisibility Controls\nauto-detection\npreview" fillcolor="#1a3a3a"]
+    active [label="/active\nActive Sessions\nlive session list" fillcolor="#1a3a3a"]
   }
 
   // API dependencies
@@ -49,6 +52,10 @@ digraph pages {
     a_alerts [label="/api/alerts" fillcolor="#1a2a3a"]
     a_alert [label="/api/alerts/[id]" fillcolor="#1a2a3a"]
     a_ingest [label="/api/ingest (POST)" fillcolor="#1a3a2a"]
+    a_todos [label="/api/todos\nGET/POST/PATCH" fillcolor="#1a3a3a"]
+    a_scrobble [label="/api/scrobble/preview" fillcolor="#1a3a3a"]
+    a_proj_vis [label="/api/projects/{name}/visibility\nPOST" fillcolor="#1a3a3a"]
+    a_active [label="/api/active-sessions" fillcolor="#1a3a3a"]
   }
 
   // Sidebar -> pages
@@ -60,6 +67,9 @@ digraph pages {
   sidebar -> tokens
   sidebar -> usage
   sidebar -> styleguide
+  sidebar -> todos
+  sidebar -> scrobble
+  sidebar -> active
 
   // Page navigation
   projects -> project_detail [label="click\nproject"]
@@ -79,6 +89,12 @@ digraph pages {
   usage -> a_usage
   usage -> a_alerts
   alert -> a_alert
+
+  // New page -> API
+  todos -> a_todos
+  scrobble -> a_scrobble
+  scrobble -> a_proj_vis
+  active -> a_active
 
   // Detail panel APIs
   projects -> a_proj_meta [style=dashed label="expand\ncard"]

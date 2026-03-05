@@ -55,6 +55,10 @@ digraph architecture {
     api_alerts [label="/api/alerts\nthreshold breaches" fillcolor="#1a2a3a"]
     api_stats [label="/api/stats\naggregated metrics" fillcolor="#1a2a3a"]
     api_live [label="/api/live\nSSE stream" fillcolor="#3a2a1a"]
+    api_todos [label="/api/todos\nGET/POST/PATCH\nkanban + inject" fillcolor="#1a3a3a"]
+    api_scrobble [label="/api/scrobble/preview\nGET visibility check" fillcolor="#1a3a3a"]
+    api_proj_vis [label="/api/projects/{name}/visibility\nPOST set visibility" fillcolor="#1a3a3a"]
+    api_active [label="/api/active-sessions\nGET active list" fillcolor="#1a3a3a"]
   }
 
   // Frontend
@@ -72,6 +76,9 @@ digraph architecture {
     pg_tokens [label="/tokens\nmodel breakdown" fillcolor="#2a1a3a"]
     pg_usage [label="/usage\nmonitor + alerts" fillcolor="#2a1a3a"]
     pg_live [label="/live\nreal-time tail" fillcolor="#2a1a3a"]
+    pg_todos [label="/todos\nkanban + by-project\ntask injection" fillcolor="#2a1a3a"]
+    pg_scrobble [label="/scrobble\nvisibility controls\nauto-detection" fillcolor="#2a1a3a"]
+    pg_active [label="/active\nactive sessions list" fillcolor="#2a1a3a"]
   }
 
   // Shared component
@@ -98,6 +105,10 @@ digraph architecture {
   db -> api_tokens [label="messages\ntoken sums"]
   db -> api_stats [label="aggregates"]
   db -> api_projects [label="project\nactivity" style=dotted]
+  db -> api_todos [label="todos\ntodo_events"]
+  db -> api_active [label="sessions\nactivity"]
+  db -> api_scrobble [label="project_visibility"]
+  db -> api_proj_vis [label="project_visibility"]
 
   // Page -> API
   pg_dash -> api_stats
@@ -109,6 +120,10 @@ digraph architecture {
   pg_usage -> api_usage
   pg_usage -> api_alerts
   pg_live -> api_live
+  pg_todos -> api_todos
+  pg_scrobble -> api_scrobble
+  pg_scrobble -> api_proj_vis
+  pg_active -> api_active
 
   // PageContext on every page
   pg_dash -> page_context [style=dotted color="#666633"]

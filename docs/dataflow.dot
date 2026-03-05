@@ -64,6 +64,44 @@ digraph dataflow {
     thinking_scan [label="Thinking Scan\ncross-project\nJSONL direct" fillcolor="#2a1a3a"]
   }
 
+  // Todo extraction
+  subgraph cluster_todo {
+    label="Todo Extraction"
+    style=dashed
+    color="#336666"
+    fontcolor="#669999"
+
+    tool_use_scan [label="content_blocks\ntool_use filter\nTaskCreate/TaskUpdate\nTodoWrite" fillcolor="#1a3a3a"]
+    todo_normalize [label="normalize todo\nstatus + metadata" fillcolor="#1a3a3a"]
+  }
+
+  // Scrobble detection
+  subgraph cluster_scrobble {
+    label="Scrobble Detection"
+    style=dashed
+    color="#663366"
+    fontcolor="#996699"
+
+    git_remote [label="git remote -v\nparse forge URL" fillcolor="#3a2a3a"]
+    forge_verify [label="forge API\nverify repo exists" fillcolor="#3a2a3a"]
+    vis_store [label="project_visibility\nauto_detected flag" fillcolor="#3a2a3a"]
+  }
+
+  // Manual todo injection
+  subgraph cluster_inject {
+    label="Manual Todo Injection"
+    style=dashed
+    color="#336633"
+    fontcolor="#669966"
+
+    todo_ui [label="Todo UI\nform input" fillcolor="#1a3a2a"]
+    todo_api [label="POST /api/todos\nvalidate + insert" fillcolor="#1a3a2a"]
+  }
+
+  // Storage
+  todos_table [label="todos table\n+ todo_events" fillcolor="#1a3a3a" shape=cylinder]
+  vis_table [label="project_visibility\ntable" fillcolor="#3a2a3a" shape=cylinder]
+
   // Browser
   browser [label="React SPA\nuseSWR\nEventSource" fillcolor="#2a1a3a" shape=component]
 
@@ -87,6 +125,23 @@ digraph dataflow {
 
   // DB to API
   sqlite -> rest [label="prepared\nstatements"]
+
+  // Todo extraction flow
+  dedup -> tool_use_scan [label="content_blocks\nwith tool_use"]
+  tool_use_scan -> todo_normalize -> todos_table
+
+  // Scrobble detection flow
+  claude_code -> git_remote [label="project\npath"]
+  git_remote -> forge_verify [label="forge URL"]
+  forge_verify -> vis_store -> vis_table
+
+  // Manual todo injection flow
+  browser -> todo_ui [label="user\ninput"]
+  todo_ui -> todo_api -> todos_table
+
+  // New tables -> API -> browser
+  todos_table -> rest [label="GET /api/todos"]
+  vis_table -> rest [label="GET /api/scrobble"]
 
   // To browser
   sse -> browser [label="EventSource"]

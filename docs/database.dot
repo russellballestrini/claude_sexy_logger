@@ -114,11 +114,57 @@ digraph database {
     </TABLE>
   >]
 
+  todos [fillcolor="#1a3a3a" label=<
+    <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2">
+    <TR><TD COLSPAN="2"><B>todos</B></TD></TR>
+    <TR><TD ALIGN="LEFT">id</TD><TD ALIGN="LEFT">INTEGER PK</TD></TR>
+    <TR><TD ALIGN="LEFT">project_id</TD><TD ALIGN="LEFT">FK projects</TD></TR>
+    <TR><TD ALIGN="LEFT">session_id</TD><TD ALIGN="LEFT">FK sessions</TD></TR>
+    <TR><TD ALIGN="LEFT">external_id</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    <TR><TD ALIGN="LEFT">content</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    <TR><TD ALIGN="LEFT">status</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    <TR><TD ALIGN="LEFT">active_form</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    <TR><TD ALIGN="LEFT">source</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    <TR><TD ALIGN="LEFT">source_session_uuid</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    <TR><TD ALIGN="LEFT">estimated_minutes</TD><TD ALIGN="LEFT">INTEGER</TD></TR>
+    <TR><TD ALIGN="LEFT">created_at</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    <TR><TD ALIGN="LEFT">updated_at</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    <TR><TD ALIGN="LEFT">completed_at</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    <TR><TD ALIGN="LEFT">blocked_by</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    </TABLE>
+  >]
+
+  todo_events [fillcolor="#2a3a3a" label=<
+    <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2">
+    <TR><TD COLSPAN="2"><B>todo_events</B></TD></TR>
+    <TR><TD ALIGN="LEFT">id</TD><TD ALIGN="LEFT">INTEGER PK</TD></TR>
+    <TR><TD ALIGN="LEFT">todo_id</TD><TD ALIGN="LEFT">FK todos</TD></TR>
+    <TR><TD ALIGN="LEFT">old_status</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    <TR><TD ALIGN="LEFT">new_status</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    <TR><TD ALIGN="LEFT">event_at</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    </TABLE>
+  >]
+
+  project_visibility [fillcolor="#3a2a3a" label=<
+    <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2">
+    <TR><TD COLSPAN="2"><B>project_visibility</B></TD></TR>
+    <TR><TD ALIGN="LEFT">id</TD><TD ALIGN="LEFT">INTEGER PK</TD></TR>
+    <TR><TD ALIGN="LEFT">project_id</TD><TD ALIGN="LEFT">FK projects (UNIQUE)</TD></TR>
+    <TR><TD ALIGN="LEFT">visibility</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    <TR><TD ALIGN="LEFT">auto_detected</TD><TD ALIGN="LEFT">INTEGER</TD></TR>
+    <TR><TD ALIGN="LEFT">updated_at</TD><TD ALIGN="LEFT">TEXT</TD></TR>
+    </TABLE>
+  >]
+
   // Relationships
   projects -> sessions [label="1:N" headlabel="" taillabel=""]
   sessions -> messages [label="1:N"]
   messages -> content_blocks [label="1:N"]
   projects -> usage_minutes [label="1:N"]
+  projects -> todos [label="1:N"]
+  sessions -> todos [label="1:N"]
+  todos -> todo_events [label="1:N"]
+  projects -> project_visibility [label="1:1"]
 
   // Threshold -> Alert (conceptual)
   alert_thresholds -> alerts [label="triggers" style=dashed]
