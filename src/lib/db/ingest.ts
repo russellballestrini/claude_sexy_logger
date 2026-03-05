@@ -7,6 +7,8 @@ import { claudePaths, decodeProjectName } from '../claude-paths';
 import { uncloseaiPaths, decodeUncloseaiProjectName } from '../uncloseai-paths';
 import { normalizeUncloseaiEntry } from '../uncloseai-adapter';
 import { fetchPaths, decodeFetchProjectName } from '../fetch-paths';
+import { sanitizePII } from '../pii';
+import { generateSessionName } from '../session-name';
 import type { SessionsIndex } from '../types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -56,19 +58,26 @@ function getOrCreateSession(
     .get(sessionUuid) as { id: number } | undefined;
   if (existing) return existing.id;
 
+  // Sanitize PII from first prompt before storage
+  const firstPrompt = meta.firstPrompt
+    ? sanitizePII(meta.firstPrompt).sanitized
+    : null;
+  const displayName = generateSessionName(firstPrompt, sessionUuid);
+
   const result = db
     .prepare(
-      `INSERT INTO sessions (session_uuid, project_id, git_branch, first_prompt, cli_version, created_at, is_sidechain)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO sessions (session_uuid, project_id, git_branch, first_prompt, cli_version, created_at, is_sidechain, display_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       sessionUuid,
       projectId,
       meta.gitBranch ?? null,
-      meta.firstPrompt ?? null,
+      firstPrompt,
       meta.cliVersion ?? null,
       meta.createdAt ?? null,
-      meta.isSidechain ? 1 : 0
+      meta.isSidechain ? 1 : 0,
+      displayName
     );
   return result.lastInsertRowid as number;
 }
@@ -125,6 +134,9 @@ function insertContentBlocks(
     `INSERT INTO content_blocks (message_id, position, block_type, text_content, tool_name, tool_input, tool_use_id, is_error)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
+  const piiStmt = db.prepare(
+    `INSERT INTO pii_replacements (original_hash, token, pii_type, message_id) VALUES (?, ?, ?, ?)`
+  );
 
   let count = 0;
   for (let i = 0; i < content.length; i++) {
@@ -160,6 +172,17 @@ function insertContentBlocks(
       default:
         textContent = JSON.stringify(block);
         break;
+    }
+
+    // Sanitize PII from text content before storage
+    if (textContent) {
+      const { sanitized, replacements } = sanitizePII(textContent);
+      if (replacements.length > 0) {
+        textContent = sanitized;
+        for (const r of replacements) {
+          piiStmt.run(r.originalHash, r.token, r.type, messageId);
+        }
+      }
     }
 
     stmt.run(messageId, i, block.type, textContent, toolName, toolInput, toolUseId, isError);
@@ -710,6 +733,20 @@ export async function ingestAll(): Promise<IngestResult> {
     result.messagesAdded += fetchResult.messagesAdded;
     result.blocksAdded += fetchResult.blocksAdded;
     result.filesScanned += fetchResult.filesScanned;
+  }
+
+  // Backfill display_name for existing sessions that don't have one
+  const nullNames = db.prepare(
+    'SELECT id, first_prompt, session_uuid FROM sessions WHERE display_name IS NULL'
+  ).all() as Array<{ id: number; first_prompt: string | null; session_uuid: string }>;
+  if (nullNames.length > 0) {
+    const updateName = db.prepare('UPDATE sessions SET display_name = ? WHERE id = ?');
+    const backfill = db.transaction(() => {
+      for (const row of nullNames) {
+        updateName.run(generateSessionName(row.first_prompt, row.session_uuid), row.id);
+      }
+    });
+    backfill();
   }
 
   // Check alert thresholds

@@ -80,7 +80,7 @@ export default function ProjectSessionsPage({
           sessions: data.sessions.length,
           path: data.originalPath || '',
         }}
-        details={data.sessions.slice(0, 20).map((s) => `${s.sessionId.slice(0, 8)}: ${s.firstPrompt ?? 'no prompt'} (${s.messageCount ?? '?'} msgs)`).join('\n')}
+        details={data.sessions.slice(0, 20).map((s: any) => `${s.displayName ?? s.firstPrompt ?? s.sessionId.slice(0, 8)} (${s.messageCount ?? '?'} msgs)`).join('\n')}
       />
       <div>
         <Link
@@ -202,7 +202,7 @@ export default function ProjectSessionsPage({
                     href={`/projects/${project}/${session.sessionId}`}
                     className="hover:text-[var(--color-accent)] transition-colors"
                   >
-                    {session.firstPrompt ?? session.sessionId}
+                    {session.displayName ?? session.firstPrompt ?? session.sessionId.slice(0, 8)}
                   </Link>
                   {session.isSidechain && (
                     <span className="ml-2 text-base px-1.5 py-0.5 rounded bg-[var(--color-surface-hover)] text-[var(--color-muted)]">

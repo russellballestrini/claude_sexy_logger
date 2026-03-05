@@ -5,8 +5,10 @@ import { usePathname } from 'next/navigation';
 
 const NAV_ITEMS = [
   { href: '/live', label: 'Live', icon: '*' },
+  { href: '/active', label: 'Active', icon: '+' },
   { href: '/', label: 'Dashboard', icon: '~' },
   { href: '/projects', label: 'Projects', icon: '>' },
+  { href: '/todos', label: 'Todos', icon: '=' },
   { href: '/thinking', label: 'Thinking', icon: '?' },
   { href: '/logs', label: 'All Logs', icon: '#' },
   { href: '/tokens', label: 'Tokens', icon: '$' },

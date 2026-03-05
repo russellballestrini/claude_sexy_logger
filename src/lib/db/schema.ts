@@ -147,6 +147,17 @@ function migrate(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_posts_published ON posts(published_at);
     CREATE INDEX IF NOT EXISTS idx_posts_type ON posts(post_type);
 
+    -- PII replacement audit log (stores hashes, never raw PII)
+    CREATE TABLE IF NOT EXISTS pii_replacements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      original_hash TEXT NOT NULL,
+      token TEXT NOT NULL,
+      pii_type TEXT NOT NULL,
+      message_id INTEGER REFERENCES messages(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_pii_message ON pii_replacements(message_id);
+
     -- Indexes for fast queries
     CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
     CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
@@ -159,6 +170,12 @@ function migrate(db: Database.Database) {
     CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_id);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_uuid_unique ON messages(message_uuid) WHERE message_uuid IS NOT NULL;
   `);
+
+  // Schema migrations: add columns to existing tables
+  const addColumn = (table: string, col: string, def: string) => {
+    try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); } catch { /* column already exists */ }
+  };
+  addColumn('sessions', 'display_name', 'TEXT');
 
   // Seed default alert thresholds if empty
   const count = db.prepare('SELECT COUNT(*) as c FROM alert_thresholds').get() as { c: number };

@@ -1,6 +1,7 @@
 import { readFile, readdir } from 'fs/promises';
 import { claudePaths } from '@/lib/claude-paths';
 import { NextRequest, NextResponse } from 'next/server';
+import { getDb } from '@/lib/db/schema';
 import type { SessionsIndex } from '@/lib/types';
 
 export async function GET(
@@ -38,10 +39,26 @@ export async function GET(
       return order === 'desc' ? bVal.localeCompare(aVal) : aVal.localeCompare(bVal);
     });
 
+    // Augment with display names from DB
+    const db = getDb();
+    const uuids = sorted.map(s => s.sessionId);
+    const displayNames: Record<string, string> = {};
+    if (uuids.length > 0) {
+      const rows = db.prepare(
+        `SELECT session_uuid, display_name FROM sessions WHERE session_uuid IN (${uuids.map(() => '?').join(',')})`
+      ).all(...uuids) as Array<{ session_uuid: string; display_name: string | null }>;
+      for (const row of rows) {
+        if (row.display_name) displayNames[row.session_uuid] = row.display_name;
+      }
+    }
+
     return NextResponse.json({
       project,
       originalPath: index.originalPath,
-      sessions: sorted,
+      sessions: sorted.map(s => ({
+        ...s,
+        displayName: displayNames[s.sessionId] ?? null,
+      })),
     });
   } catch (err) {
     return NextResponse.json(
