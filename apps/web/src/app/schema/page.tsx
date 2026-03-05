@@ -1,0 +1,266 @@
+'use client';
+
+import { useState } from 'react';
+import useSWR from 'swr';
+import { PageContext } from '@unfirehose/ui/PageContext';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+export default function SchemaPage() {
+  const [selectedFile, setSelectedFile] = useState('README.md');
+  const { data: index } = useSWR('/api/schema', fetcher);
+  const { data: doc, isLoading } = useSWR(
+    `/api/schema?file=${encodeURIComponent(selectedFile)}`,
+    fetcher
+  );
+
+  const files = index?.files ?? [];
+  const schemaFiles = files.filter((f: any) => f.group === 'Schema');
+  const harnessFiles = files.filter((f: any) => f.group === 'Harnesses');
+
+  return (
+    <div className="flex h-[calc(100vh-3rem)]">
+      <PageContext
+        pageType="schema"
+        summary={`Schema spec: ${selectedFile}. ${files.length} docs.`}
+        metrics={{ file: selectedFile, docs: files.length }}
+      />
+
+      {/* Schema file list */}
+      <div className="w-52 shrink-0 border-r border-[var(--color-border)] overflow-y-auto p-3 space-y-4">
+        <div>
+          <h3 className="text-xs font-bold text-[var(--color-muted)] uppercase mb-2">Schema</h3>
+          {schemaFiles.map((f: any) => (
+            <button
+              key={f.path}
+              onClick={() => setSelectedFile(f.path)}
+              className={`block w-full text-left px-2 py-1 text-sm rounded capitalize ${
+                selectedFile === f.path
+                  ? 'bg-[var(--color-surface-hover)] text-[var(--color-foreground)]'
+                  : 'text-[var(--color-muted)] hover:text-[var(--color-foreground)]'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div>
+          <h3 className="text-xs font-bold text-[var(--color-muted)] uppercase mb-2">Harnesses</h3>
+          {harnessFiles.map((f: any) => (
+            <button
+              key={f.path}
+              onClick={() => setSelectedFile(f.path)}
+              className={`block w-full text-left px-2 py-1 text-sm rounded capitalize ${
+                selectedFile === f.path
+                  ? 'bg-[var(--color-surface-hover)] text-[var(--color-foreground)]'
+                  : 'text-[var(--color-muted)] hover:text-[var(--color-foreground)]'
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Markdown content */}
+      <div className="flex-1 overflow-y-auto p-6">
+        {isLoading && <div className="text-[var(--color-muted)]">Loading...</div>}
+        {doc?.content && <MarkdownRenderer content={doc.content} />}
+        {doc?.error && <div className="text-[var(--color-error)]">{doc.error}</div>}
+      </div>
+    </div>
+  );
+}
+
+function MarkdownRenderer({ content }: { content: string }) {
+  const lines = content.split('\n');
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Code blocks
+    if (line.startsWith('```')) {
+      const lang = line.slice(3).trim();
+      const codeLines: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing ```
+      elements.push(
+        <pre key={key++} className="bg-[var(--color-background)] border border-[var(--color-border)] rounded p-4 my-3 overflow-x-auto text-sm">
+          {lang && <div className="text-xs text-[var(--color-muted)] mb-2">{lang}</div>}
+          <code>{codeLines.join('\n')}</code>
+        </pre>
+      );
+      continue;
+    }
+
+    // Tables
+    if (line.includes('|') && line.trim().startsWith('|')) {
+      const tableLines: string[] = [];
+      while (i < lines.length && lines[i].includes('|') && lines[i].trim().startsWith('|')) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      elements.push(<MarkdownTable key={key++} lines={tableLines} />);
+      continue;
+    }
+
+    // Headers
+    if (line.startsWith('#')) {
+      const match = line.match(/^(#{1,6})\s+(.*)/);
+      if (match) {
+        const level = match[1].length;
+        const text = match[2];
+        const cls = level === 1 ? 'text-xl font-bold mt-6 mb-3' :
+                    level === 2 ? 'text-lg font-bold mt-5 mb-2' :
+                    level === 3 ? 'text-base font-bold mt-4 mb-2 text-[var(--color-muted)]' :
+                    'text-sm font-bold mt-3 mb-1 text-[var(--color-muted)]';
+        elements.push(<div key={key++} className={cls}>{renderInline(text)}</div>);
+        i++;
+        continue;
+      }
+    }
+
+    // Empty lines
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+
+    // List items
+    if (line.match(/^\s*[-*]\s/)) {
+      const listItems: string[] = [];
+      while (i < lines.length && lines[i].match(/^\s*[-*]\s/)) {
+        listItems.push(lines[i].replace(/^\s*[-*]\s/, ''));
+        i++;
+      }
+      elements.push(
+        <ul key={key++} className="list-disc list-inside my-2 space-y-1 text-sm">
+          {listItems.map((item, j) => <li key={j}>{renderInline(item)}</li>)}
+        </ul>
+      );
+      continue;
+    }
+
+    // Numbered list items
+    if (line.match(/^\s*\d+\.\s/)) {
+      const listItems: string[] = [];
+      while (i < lines.length && lines[i].match(/^\s*\d+\.\s/)) {
+        listItems.push(lines[i].replace(/^\s*\d+\.\s/, ''));
+        i++;
+      }
+      elements.push(
+        <ol key={key++} className="list-decimal list-inside my-2 space-y-1 text-sm">
+          {listItems.map((item, j) => <li key={j}>{renderInline(item)}</li>)}
+        </ol>
+      );
+      continue;
+    }
+
+    // Regular paragraph
+    elements.push(
+      <p key={key++} className="text-sm my-1.5">{renderInline(line)}</p>
+    );
+    i++;
+  }
+
+  return <div className="max-w-4xl">{elements}</div>;
+}
+
+function MarkdownTable({ lines }: { lines: string[] }) {
+  const parseRow = (line: string) =>
+    line.split('|').slice(1, -1).map(cell => cell.trim());
+
+  if (lines.length < 2) return null;
+
+  const headers = parseRow(lines[0]);
+  // Skip separator line (line[1])
+  const rows = lines.slice(2).map(parseRow);
+
+  return (
+    <div className="overflow-x-auto my-3">
+      <table className="w-full text-sm border border-[var(--color-border)]">
+        <thead>
+          <tr className="bg-[var(--color-surface)]">
+            {headers.map((h, i) => (
+              <th key={i} className="px-3 py-2 text-left border-b border-[var(--color-border)] text-[var(--color-muted)]">
+                {renderInline(h)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr key={ri} className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]">
+              {row.map((cell, ci) => (
+                <td key={ci} className="px-3 py-1.5">
+                  {renderInline(cell)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function renderInline(text: string): React.ReactNode {
+  // Simple inline formatting: **bold**, `code`, [links](url)
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let key = 0;
+
+  while (remaining.length > 0) {
+    // Bold
+    const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
+    // Code
+    const codeMatch = remaining.match(/`(.+?)`/);
+    // Link
+    const linkMatch = remaining.match(/\[(.+?)\]\((.+?)\)/);
+
+    const matches = [
+      boldMatch ? { idx: remaining.indexOf(boldMatch[0]), len: boldMatch[0].length, type: 'bold', m: boldMatch } : null,
+      codeMatch ? { idx: remaining.indexOf(codeMatch[0]), len: codeMatch[0].length, type: 'code', m: codeMatch } : null,
+      linkMatch ? { idx: remaining.indexOf(linkMatch[0]), len: linkMatch[0].length, type: 'link', m: linkMatch } : null,
+    ].filter(Boolean).sort((a, b) => a!.idx - b!.idx);
+
+    if (matches.length === 0) {
+      parts.push(remaining);
+      break;
+    }
+
+    const first = matches[0]!;
+    if (first.idx > 0) {
+      parts.push(remaining.slice(0, first.idx));
+    }
+
+    if (first.type === 'bold') {
+      parts.push(<strong key={key++}>{first.m![1]}</strong>);
+    } else if (first.type === 'code') {
+      parts.push(
+        <code key={key++} className="bg-[var(--color-surface-hover)] px-1 py-0.5 rounded text-[var(--color-accent)] text-xs">
+          {first.m![1]}
+        </code>
+      );
+    } else if (first.type === 'link') {
+      parts.push(
+        <a key={key++} href={first.m![2]} className="text-[var(--color-accent)] hover:underline">
+          {first.m![1]}
+        </a>
+      );
+    }
+
+    remaining = remaining.slice(first.idx + first.len);
+  }
+
+  return <>{parts}</>;
+}
