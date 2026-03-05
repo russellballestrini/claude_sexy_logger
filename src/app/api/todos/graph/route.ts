@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
     const url = new URL(request.url);
     const projectFilter = url.searchParams.get('project');
     const statusFilter = url.searchParams.get('status');
+    const layout = url.searchParams.get('layout') === 'LR' ? 'LR' : 'TB';
 
     const db = getDb();
 
@@ -112,7 +113,7 @@ export async function GET(request: NextRequest) {
     // Build DOT
     const lines: string[] = [
       'digraph todos {',
-      '  rankdir=TB;',
+      `  rankdir=${layout};`,
       '  bgcolor="transparent";',
       '  node [shape=box, style="filled,rounded", fontname="monospace", fontsize=10, margin="0.2,0.1"];',
       '  edge [color="#71717a"];',
@@ -128,11 +129,20 @@ export async function GET(request: NextRequest) {
       lines.push('    style=dashed;');
       lines.push('');
 
+      // Collect node IDs that have no edges (isolated) for chaining
+      const clusterNodeIds: number[] = [];
       for (const todo of group.todos) {
         const color = STATUS_COLORS[todo.status] || '#71717a';
         const content = truncate(todo.content.replace(/\n/g, ' '), 40);
         const nodeLabel = `${escapeLabel(content)}\\n[${todo.status}]`;
         lines.push(`    "t_${todo.id}" [label="${nodeLabel}" fillcolor="${color}" fontcolor="#000"];`);
+        clusterNodeIds.push(todo.id);
+      }
+
+      // Chain isolated nodes with invisible edges to enforce ordering
+      if (clusterNodeIds.length > 1) {
+        const chain = clusterNodeIds.map(id => `"t_${id}"`).join(' -> ');
+        lines.push(`    ${chain} [style=invis];`);
       }
 
       lines.push('  }');

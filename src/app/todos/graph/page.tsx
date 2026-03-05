@@ -29,6 +29,7 @@ const STATUS_OPTIONS = [
 export default function TodoGraphPage() {
   const [project, setProject] = useState('');
   const [status, setStatus] = useState('pending,in_progress');
+  const [layout, setLayout] = useState<'TB' | 'LR'>('TB');
   const [showDot, setShowDot] = useState(false);
 
   // Fetch project list from byProject grouping
@@ -43,6 +44,7 @@ export default function TodoGraphPage() {
   const qs = new URLSearchParams();
   if (project) qs.set('project', project);
   if (status) qs.set('status', status);
+  if (layout !== 'TB') qs.set('layout', layout);
   const queryString = qs.toString();
   const { data, error, isLoading } = useSWR<GraphData>(
     `/api/todos/graph${queryString ? `?${queryString}` : ''}`,
@@ -56,6 +58,22 @@ export default function TodoGraphPage() {
           Todo Dependency Graph
         </h1>
         <div className="flex items-center gap-3">
+          <div className="flex rounded border border-[var(--color-border)] overflow-hidden">
+            <button
+              onClick={() => setLayout('TB')}
+              className={`px-3 py-1.5 text-sm cursor-pointer ${layout === 'TB' ? 'bg-[var(--color-accent)] text-black' : 'bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-foreground)]'}`}
+              title="Vertical layout (top to bottom)"
+            >
+              Vertical
+            </button>
+            <button
+              onClick={() => setLayout('LR')}
+              className={`px-3 py-1.5 text-sm cursor-pointer ${layout === 'LR' ? 'bg-[var(--color-accent)] text-black' : 'bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-foreground)]'}`}
+              title="Horizontal layout (left to right)"
+            >
+              Horizontal
+            </button>
+          </div>
           <select
             value={status}
             onChange={e => setStatus(e.target.value)}
