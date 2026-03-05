@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFile } from 'child_process';
-import { stat } from 'fs/promises';
+import { stat, writeFile, unlink } from 'fs/promises';
 import path from 'path';
+import { tmpdir } from 'os';
 import { getDb } from '@/lib/db/schema';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -13,6 +14,31 @@ function execAsync(cmd: string, args: string[], opts: { timeout: number }): Prom
       else resolve({ stdout, stderr });
     });
   });
+}
+
+async function spawnAgent(tmuxName: string, projectPath: string, prompt: string): Promise<void> {
+  // Step 1: Create tmux session with bash login shell
+  await execAsync('tmux', [
+    'new-session', '-d',
+    '-s', tmuxName,
+    '-c', projectPath,
+    'bash', '-l',
+  ], { timeout: 5000 });
+
+  // Step 2: Write prompt to temp file (avoids shell escaping issues)
+  const promptFile = path.join(tmpdir(), `claude-prompt-${tmuxName}.txt`);
+  await writeFile(promptFile, prompt, 'utf-8');
+
+  // Step 3: Send claude command via send-keys (unset CLAUDECODE to allow nesting)
+  const cmd = `unset CLAUDECODE && claude --dangerously-skip-permissions "$(cat ${promptFile})"`;
+  await execAsync('tmux', [
+    'send-keys', '-t', tmuxName,
+    cmd,
+    'Enter',
+  ], { timeout: 5000 });
+
+  // Clean up prompt file after claude reads it
+  setTimeout(() => unlink(promptFile).catch(() => {}), 15000);
 }
 
 // POST: Spawn one agent per project with active todos
@@ -93,21 +119,20 @@ export async function POST(request: NextRequest) {
       .map(t => `- [#${t.id}] ${t.content}${t.estimated_minutes ? ` (~${t.estimated_minutes}m)` : ''}`)
       .join('\n');
 
-    const prompt = `You have ${todoIds.length} pending todos for this project. Work through them, marking each completed via the API when done:\n\ncurl -X PATCH localhost:3000/api/todos -H 'Content-Type: application/json' -d '{"id": TODO_ID, "status": "completed"}'\n\nTodos:\n${todoList}`;
+    const prompt = [
+      `You have ${todoIds.length} pending todos for this project. Work through them, marking each completed via the API when done:`,
+      '',
+      `curl -X PATCH localhost:3000/api/todos -H 'Content-Type: application/json' -d '{"id": TODO_ID, "status": "completed"}'`,
+      '',
+      'Todos:',
+      todoList,
+    ].join('\n');
 
-    // Build claude command
-    const safePrompt = prompt.replace(/'/g, "'\\''");
-    const claudeCmd = `claude --dangerously-skip-permissions '${safePrompt}'`;
     const repoName = path.basename(proj.path).replace(/[^a-zA-Z0-9_-]/g, '-') || 'claude';
     const tmuxName = `mega-${repoName}-${ts}`;
 
     try {
-      await execAsync('tmux', [
-        'new-session', '-d',
-        '-s', tmuxName,
-        '-c', proj.path,
-        claudeCmd,
-      ], { timeout: 5000 });
+      await spawnAgent(tmuxName, proj.path, prompt);
 
       // Record deployment
       db.prepare(`
@@ -122,6 +147,8 @@ export async function POST(request: NextRequest) {
         todoCount: todoIds.length,
       });
     } catch (err: any) {
+      // Clean up partial tmux session if it was created
+      try { await execAsync('tmux', ['kill-session', '-t', tmuxName], { timeout: 3000 }); } catch { /* ignore */ }
       results.push({
         project: proj.display_name,
         status: 'failed',
@@ -231,7 +258,6 @@ export async function DELETE() {
     const alive = tmuxSessions.has(d.tmux_session);
 
     if (!alive) {
-      // Session already dead — mark it
       db.prepare(
         "UPDATE agent_deployments SET status = 'failed', stopped_at = datetime('now') WHERE id = ?"
       ).run(d.id);
@@ -249,7 +275,6 @@ export async function DELETE() {
       : 0;
 
     if (completed >= todoIds.length) {
-      // All done — kill the tmux session
       try {
         await execAsync('tmux', ['kill-session', '-t', d.tmux_session], { timeout: 3000 });
       } catch { /* session may already be gone */ }
