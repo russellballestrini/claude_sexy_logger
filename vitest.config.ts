@@ -12,10 +12,6 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.{ts,tsx}'],
     environment: 'node',
-    environmentMatchGlobs: [
-      ['src/components/**/*.test.tsx', 'jsdom'],
-      ['src/app/**/page.test.tsx', 'jsdom'],
-    ],
     setupFiles: ['./src/test/setup.ts'],
     coverage: {
       provider: 'v8',
