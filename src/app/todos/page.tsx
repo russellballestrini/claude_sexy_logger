@@ -67,6 +67,7 @@ export default function TodosPage() {
   const [megaStatus, setMegaStatus] = useState<any>(null);
   const [megaLoading, setMegaLoading] = useState(false);
   const [megaPanelOpen, setMegaPanelOpen] = useState(false);
+  const [autoCull, setAutoCull] = useState(false);
 
   const fetchTodos = useCallback(() => {
     setLoading(true);
@@ -181,6 +182,27 @@ export default function TodosPage() {
     setMegaLoading(false);
   }, [megaRefresh, fetchTodos]);
 
+  // Auto-cull: poll every 60s, refresh status + cull finished agents + refresh todos
+  useEffect(() => {
+    if (!autoCull) return;
+    const interval = setInterval(async () => {
+      try {
+        // Cull finished
+        await fetch('/api/boot/mega', { method: 'DELETE' });
+        // Refresh status
+        const res = await fetch('/api/boot/mega');
+        const data = await res.json();
+        setMegaStatus(data);
+        setMegaPanelOpen(true);
+        // Refresh todos to pick up completed ones
+        fetchTodos();
+        // Auto-disable if no agents left
+        if (data.active === 0) setAutoCull(false);
+      } catch { /* silent */ }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [autoCull, fetchTodos]);
+
   // Collect all todos into columns
   const columns: Record<string, Todo[]> = { pending: [], in_progress: [], completed: [] };
   for (const group of byProject) {
@@ -271,6 +293,15 @@ export default function TodosPage() {
           >
             Cull
           </button>
+          <label className="flex items-center gap-1 text-sm text-[var(--color-muted)] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={autoCull}
+              onChange={(e) => setAutoCull(e.target.checked)}
+              className="accent-green-400"
+            />
+            Auto
+          </label>
         </div>
       </div>
 
