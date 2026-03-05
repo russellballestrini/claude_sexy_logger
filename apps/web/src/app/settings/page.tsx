@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import useSWR from 'swr';
 import { PageContext } from '@sexy-logger/ui/PageContext';
 
@@ -208,7 +208,7 @@ export default function SettingsPage() {
             <button
               key={preset.value}
               onClick={() => saveSetting(SETTINGS_KEYS.accentColor, preset.value)}
-              className={`w-10 h-10 rounded-lg border-2 transition-all ${
+              className={`w-10 h-10 rounded-lg border-2 transition-all cursor-pointer ${
                 accentColor === preset.value
                   ? 'border-white scale-110'
                   : 'border-transparent hover:border-[var(--color-muted)]'
@@ -217,20 +217,8 @@ export default function SettingsPage() {
               title={preset.label}
             />
           ))}
-          <label className="relative w-10 h-10 rounded-lg border-2 border-[var(--color-border)] hover:border-[var(--color-muted)] cursor-pointer overflow-hidden"
-            title="Custom color">
-            <input
-              type="color"
-              value={accentColor}
-              onChange={(e) => saveSetting(SETTINGS_KEYS.accentColor, e.target.value)}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            />
-            <span className="absolute inset-0 flex items-center justify-center text-xs text-[var(--color-muted)]">+</span>
-          </label>
         </div>
-        <div className="text-base text-[var(--color-muted)]">
-          Current: <span className="font-mono" style={{ color: accentColor }}>{accentColor}</span>
-        </div>
+        <HexColorPicker value={accentColor} onChange={(v) => saveSetting(SETTINGS_KEYS.accentColor, v)} />
       </div>
 
       {/* Plan */}
@@ -452,6 +440,98 @@ function HoseToggle({
         {enabled && <span className="text-[var(--color-accent)] text-base">on</span>}
       </div>
       <div className="text-base text-[var(--color-muted)]">{desc}</div>
+    </div>
+  );
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  return '#' + [r, g, b].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
+}
+
+function HexColorPicker({ value, onChange }: { value: string; onChange: (hex: string) => void }) {
+  const [hexInput, setHexInput] = useState(value);
+  const [r, g, b] = hexToRgb(value);
+
+  // Sync when value changes externally (e.g. preset click)
+  useEffect(() => {
+    setHexInput(value);
+  }, [value]);
+
+  function commitHex(hex: string) {
+    const clean = hex.replace(/[^0-9a-fA-F]/g, '');
+    if (clean.length === 6 || clean.length === 3) {
+      const full = clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean;
+      onChange('#' + full.toLowerCase());
+    }
+  }
+
+  function setChannel(channel: 0 | 1 | 2, val: number) {
+    const rgb: [number, number, number] = [r, g, b];
+    rgb[channel] = Math.max(0, Math.min(255, val));
+    onChange(rgbToHex(...rgb));
+  }
+
+  const channels = [
+    { label: 'R', val: r, ch: 0 as const, color: '#f87171' },
+    { label: 'G', val: g, ch: 1 as const, color: '#4ade80' },
+    { label: 'B', val: b, ch: 2 as const, color: '#60a5fa' },
+  ];
+
+  return (
+    <div className="space-y-3">
+      {/* Hex input + preview swatch */}
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-lg border border-[var(--color-border)]" style={{ backgroundColor: value }} />
+        <div className="flex items-center gap-1">
+          <span className="text-base text-[var(--color-muted)]">#</span>
+          <input
+            type="text"
+            value={hexInput.replace('#', '')}
+            onChange={(e) => {
+              const v = e.target.value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6);
+              setHexInput('#' + v);
+            }}
+            onBlur={() => commitHex(hexInput)}
+            onKeyDown={(e) => { if (e.key === 'Enter') commitHex(hexInput); }}
+            className="w-24 bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-1.5 text-base font-mono"
+            maxLength={6}
+            spellCheck={false}
+          />
+        </div>
+      </div>
+
+      {/* RGB sliders */}
+      {channels.map(({ label, val, ch, color }) => (
+        <div key={label} className="flex items-center gap-3">
+          <span className="w-4 text-base font-bold text-center" style={{ color }}>{label}</span>
+          <input
+            type="range"
+            min={0}
+            max={255}
+            value={val}
+            onChange={(e) => setChannel(ch, Number(e.target.value))}
+            className="flex-1 h-2 rounded appearance-none cursor-pointer"
+            style={{
+              background: `linear-gradient(to right, ${rgbToHex(...([r, g, b].map((v, i) => i === ch ? 0 : v) as [number, number, number]))}, ${rgbToHex(...([r, g, b].map((v, i) => i === ch ? 255 : v) as [number, number, number]))})`,
+              accentColor: color,
+            }}
+          />
+          <input
+            type="number"
+            min={0}
+            max={255}
+            value={val}
+            onChange={(e) => setChannel(ch, Number(e.target.value))}
+            className="w-16 bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-1 text-base font-mono text-center"
+          />
+        </div>
+      ))}
     </div>
   );
 }
