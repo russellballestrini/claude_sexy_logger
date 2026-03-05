@@ -10,6 +10,7 @@ db.exec(`
     project_id INTEGER NOT NULL REFERENCES projects(id),
     session_id INTEGER REFERENCES sessions(id),
     external_id TEXT,
+    uuid TEXT,
     content TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     active_form TEXT,

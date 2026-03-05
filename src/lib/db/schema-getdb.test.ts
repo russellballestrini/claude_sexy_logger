@@ -82,6 +82,12 @@ describe('getDb()', () => {
     expect(names).toContain('idx_alerts_triggered');
     expect(names).toContain('idx_sessions_project');
     expect(names).toContain('idx_messages_uuid_unique');
-    expect(names).toContain('idx_posts_created');
+    expect(names).toContain('idx_posts_published');
+    expect(names).toContain('idx_posts_type');
+    expect(names).toContain('idx_todos_project');
+    expect(names).toContain('idx_todos_status');
+    expect(names).toContain('idx_todo_events_todo');
+    expect(names).toContain('idx_pii_message');
+    expect(names).toContain('idx_todos_uuid');
   });
 });
