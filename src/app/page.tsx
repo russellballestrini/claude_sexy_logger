@@ -1,9 +1,9 @@
 'use client';
 
-import { useState } from 'react';
 import useSWR from 'swr';
 import { formatTokens } from '@/lib/format';
 import { PageContext } from '@/components/PageContext';
+import { TimeRangeSelect, useTimeRange } from '@/components/TimeRangeSelect';
 import {
   BarChart,
   Bar,
@@ -38,15 +38,6 @@ function shortModel(model: string): string {
     .replace(/-\d{8}$/, '');
 }
 
-const TIME_RANGES = [
-  { label: '1h', value: '1h' },
-  { label: '3h', value: '3h' },
-  { label: '6h', value: '6h' },
-  { label: '24h', value: '24h' },
-  { label: '7d', value: '7d' },
-  { label: '14d', value: '14d' },
-  { label: '28d', value: '28d' },
-];
 
 const DAY_COLORS = [
   '#ef4444', // Sun - red
@@ -61,13 +52,7 @@ const DAY_COLORS = [
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export default function DashboardPage() {
-  const [range, _setRange] = useState(() => {
-    if (typeof globalThis.localStorage !== 'undefined') {
-      return localStorage.getItem('dashboard_range') ?? '7d';
-    }
-    return '7d';
-  });
-  const setRange = (v: string) => { _setRange(v); localStorage.setItem('dashboard_range', v); };
+  const [range, setRange] = useTimeRange('dashboard_range', '7d');
   const { data, error } = useSWR(`/api/dashboard?range=${range}`, fetcher, {
     refreshInterval: 30000,
   });
@@ -110,15 +95,7 @@ export default function DashboardPage() {
       {/* Header with time range dropdown */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold">Dashboard</h2>
-        <select
-          value={range}
-          onChange={(e) => setRange(e.target.value)}
-          className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base text-[var(--color-foreground)] cursor-pointer"
-        >
-          {TIME_RANGES.map((r) => (
-            <option key={r.value} value={r.value}>{r.label}</option>
-          ))}
-        </select>
+        <TimeRangeSelect value={range} onChange={setRange} />
       </div>
 
       {/* Stats cards */}

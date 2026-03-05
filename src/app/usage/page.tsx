@@ -5,6 +5,7 @@ import useSWR from 'swr';
 import Link from 'next/link';
 import { formatTokens, formatRelativeTime } from '@/lib/format';
 import { PageContext } from '@/components/PageContext';
+import { TimeRangeSelect, useTimeRange, getTimeRangeMinutes } from '@/components/TimeRangeSelect';
 import {
   AreaChart,
   Area,
@@ -19,14 +20,8 @@ import {
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 export default function UsageMonitorPage() {
-  const [window, _setWindow] = useState(() => {
-    if (typeof globalThis.localStorage !== 'undefined') {
-      const saved = localStorage.getItem('usage_window');
-      return saved ? Number(saved) : 1440;
-    }
-    return 1440;
-  });
-  const setWindow = (v: number) => { _setWindow(v); localStorage.setItem('usage_window', String(v)); };
+  const [range, setRange] = useTimeRange('usage_range', '24h');
+  const window = getTimeRangeMinutes(range);
   const [ingesting, setIngesting] = useState(false);
   const [lastIngest, setLastIngest] = useState<any>(null);
 
@@ -171,21 +166,7 @@ export default function UsageMonitorPage() {
       <div className="grid grid-cols-[1fr_auto] items-center">
         <h2 className="text-lg font-bold">Usage Monitor</h2>
         <div className="grid grid-flow-col auto-cols-max items-center gap-3">
-          <select
-            value={window}
-            onChange={(e) => setWindow(Number(e.target.value))}
-            className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base"
-          >
-            <option value={60}>1 hour</option>
-            <option value={180}>3 hours</option>
-            <option value={360}>6 hours</option>
-            <option value={720}>12 hours</option>
-            <option value={1440}>24 hours</option>
-            <option value={10080}>7 days</option>
-            <option value={20160}>14 days</option>
-            <option value={40320}>28 days</option>
-            <option value={0}>Lifetime</option>
-          </select>
+          <TimeRangeSelect value={range} onChange={setRange} />
           <button
             onClick={runIngest}
             disabled={ingesting}

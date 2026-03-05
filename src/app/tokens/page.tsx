@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useMemo } from 'react';
 import useSWR from 'swr';
 import { formatTokens } from '@/lib/format';
 import { PageContext } from '@/components/PageContext';
+import { TimeRangeSelect, useTimeRange, getTimeRangeFrom } from '@/components/TimeRangeSelect';
 import {
   BarChart,
   Bar,
@@ -23,26 +23,6 @@ import {
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-const DATE_PRESETS = [
-  { label: '1h', value: '1h' },
-  { label: '3h', value: '3h' },
-  { label: '1d', value: '1d' },
-  { label: '7d', value: '7d' },
-  { label: '28d', value: '28d' },
-  { label: 'Lifetime', value: 'all' },
-] as const;
-
-function getDateRange(preset: string): { from?: string; to?: string } {
-  if (preset === 'all') return {};
-  const now = new Date();
-  const d = new Date();
-  if (preset === '1h') d.setTime(now.getTime() - 60 * 60 * 1000);
-  else if (preset === '3h') d.setTime(now.getTime() - 3 * 60 * 60 * 1000);
-  else if (preset === '1d') d.setTime(now.getTime() - 24 * 60 * 60 * 1000);
-  else if (preset === '7d') d.setTime(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  else if (preset === '28d') d.setTime(now.getTime() - 28 * 24 * 60 * 60 * 1000);
-  return { from: d.toISOString() };
-}
 
 const MODEL_COLORS: Record<string, string> = {
   'claude-opus-4-6': '#a78bfa',
@@ -80,21 +60,11 @@ function formatCost(usd: number): string {
 
 
 export default function TokensPage() {
-  const [datePreset, _setDatePreset] = useState(() => {
-    if (typeof globalThis.localStorage !== 'undefined') {
-      return localStorage.getItem('tokens_range') ?? '28d';
-    }
-    return '28d';
-  });
-  const setDatePreset = (v: string) => { _setDatePreset(v); localStorage.setItem('tokens_range', v); };
-  const dateRange = useMemo(() => getDateRange(datePreset), [datePreset]);
+  const [range, setRange] = useTimeRange('tokens_range', '7d');
+  const from = getTimeRangeFrom(range);
+  const qs = from ? `?from=${encodeURIComponent(from)}` : '';
 
-  const params = new URLSearchParams();
-  if (dateRange.from) params.set('from', dateRange.from);
-  if (dateRange.to) params.set('to', dateRange.to);
-  const qs = params.toString();
-
-  const { data, error } = useSWR(`/api/tokens${qs ? `?${qs}` : ''}`, fetcher);
+  const { data, error } = useSWR(`/api/tokens${qs}`, fetcher);
 
   if (error) {
     return (
@@ -198,21 +168,7 @@ export default function TokensPage() {
       />
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold">Token Usage</h2>
-        <div className="flex gap-1">
-          {DATE_PRESETS.map(p => (
-            <button
-              key={p.value}
-              onClick={() => setDatePreset(p.value)}
-              className={`px-3 py-1 rounded text-sm border transition-colors ${
-                datePreset === p.value
-                  ? 'bg-[var(--color-accent)] text-white border-[var(--color-accent)]'
-                  : 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-accent)]'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        <TimeRangeSelect value={range} onChange={setRange} />
       </div>
 
       {/* Summary cards */}

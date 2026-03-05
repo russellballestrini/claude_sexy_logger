@@ -27,10 +27,12 @@ const TIME_RANGES: Record<string, number> = {
   '1h': 60,
   '3h': 180,
   '6h': 360,
+  '12h': 720,
   '24h': 1440,
   '7d': 10080,
   '14d': 20160,
   '28d': 40320,
+  'all': 0,
 };
 
 export async function GET(request: NextRequest) {
@@ -39,7 +41,9 @@ export async function GET(request: NextRequest) {
 
   try {
     const db = getDb();
-    const windowStart = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+    const windowStart = minutes > 0
+      ? new Date(Date.now() - minutes * 60 * 1000).toISOString()
+      : '1970-01-01T00:00:00.000Z';
 
     // Summary stats
     const summary = db.prepare(`

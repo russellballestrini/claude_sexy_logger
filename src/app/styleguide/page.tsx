@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, Fragment } from 'react';
+import { TimeRangeSelect, useTimeRange } from '@/components/TimeRangeSelect';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
@@ -105,6 +106,7 @@ export default function StyleguidePage() {
   const [numberVal, setNumberVal] = useState(30);
   const [selectVal, setSelectVal] = useState('opus');
   const [checked, setChecked] = useState(true);
+  const [timeRange, setTimeRange] = useTimeRange('styleguide_range', '7d');
 
   const hBarMax = Math.max(...horizontalBarData.map((d) => d.input + d.output), 1);
 
@@ -305,6 +307,27 @@ export default function StyleguidePage() {
               </div>
             </div>
           </div>
+        </div>
+      </Section>
+
+      {/* Time Range Select */}
+      <Section title="Time Range Select">
+        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
+          <p className="text-base text-[var(--color-muted)]">
+            Shared <code className="text-[var(--color-accent)]">&lt;TimeRangeSelect&gt;</code> dropdown used on all pages.
+            Options: 1h, 3h, 6h, 12h, 24h, 7d, 14d, 28d, Lifetime.
+            Persists selection in localStorage via <code className="text-[var(--color-accent)]">useTimeRange(key, default)</code>.
+          </p>
+          <div className="grid grid-flow-col auto-cols-max gap-3 items-center">
+            <TimeRangeSelect value={timeRange} onChange={setTimeRange} />
+            <span className="text-base text-[var(--color-muted)]">Current: {timeRange}</span>
+          </div>
+          <pre className="text-sm text-[var(--color-muted)] bg-[var(--color-background)] p-3 rounded overflow-x-auto">{`import { TimeRangeSelect, useTimeRange, getTimeRangeFrom } from '@/components/TimeRangeSelect';
+
+const [range, setRange] = useTimeRange('my_page_range', '7d');
+const from = getTimeRangeFrom(range); // ISO string or undefined
+
+<TimeRangeSelect value={range} onChange={setRange} />`}</pre>
         </div>
       </Section>
 

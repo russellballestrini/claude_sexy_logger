@@ -1,48 +1,22 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
 import { formatTimestamp, formatRelativeTime } from '@/lib/format';
 import { PageContext } from '@/components/PageContext';
+import { TimeRangeSelect, useTimeRange, getTimeRangeFrom } from '@/components/TimeRangeSelect';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
-
-const DATE_PRESETS = [
-  { label: 'Today', value: 'today' },
-  { label: '24h', value: '24h' },
-  { label: '3d', value: '3d' },
-  { label: '7d', value: '7d' },
-  { label: '30d', value: '30d' },
-  { label: 'All', value: 'all' },
-] as const;
-
-function getDateRange(preset: string): { from?: string; to?: string } {
-  if (preset === 'all') return {};
-  const now = new Date();
-  const d = new Date();
-  if (preset === 'today') {
-    d.setHours(0, 0, 0, 0);
-  } else if (preset === '24h') {
-    d.setTime(now.getTime() - 24 * 60 * 60 * 1000);
-  } else if (preset === '3d') {
-    d.setTime(now.getTime() - 3 * 24 * 60 * 60 * 1000);
-  } else if (preset === '7d') {
-    d.setTime(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  } else if (preset === '30d') {
-    d.setTime(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-  }
-  return { from: d.toISOString().slice(0, 10) };
-}
 
 export default function AllLogsPage() {
   const [limit, setLimit] = useState(100);
   const [typeFilter, setTypeFilter] = useState('user,assistant,system');
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
-  const [datePreset, setDatePreset] = useState('24h');
+  const [range, setRange] = useTimeRange('logs_range', '24h');
   const [page, setPage] = useState(0);
 
   // Debounce search
@@ -53,7 +27,7 @@ export default function AllLogsPage() {
     setDebounceTimer(setTimeout(() => { setSearchDebounced(val); setPage(0); }, 300));
   };
 
-  const dateRange = useMemo(() => getDateRange(datePreset), [datePreset]);
+  const from = getTimeRangeFrom(range);
 
   const params = new URLSearchParams({
     limit: String(limit),
@@ -61,8 +35,7 @@ export default function AllLogsPage() {
     offset: String(page * limit),
   });
   if (searchDebounced) params.set('search', searchDebounced);
-  if (dateRange.from) params.set('from', dateRange.from);
-  if (dateRange.to) params.set('to', dateRange.to);
+  if (from) params.set('from', from);
 
   const { data, error, isLoading } = useSWR(`/api/logs?${params}`, fetcher);
   const entries = data?.entries ?? [];
@@ -73,8 +46,8 @@ export default function AllLogsPage() {
     <div className="flex flex-col h-[calc(100vh-3rem)]">
       <PageContext
         pageType="logs"
-        summary={`All logs. ${total} entries. Filter: ${typeFilter}. Date: ${datePreset}. Search: "${searchDebounced || 'none'}".`}
-        metrics={{ entries: total, type_filter: typeFilter, date: datePreset }}
+        summary={`All logs. ${total} entries. Filter: ${typeFilter}. Date: ${range}. Search: "${searchDebounced || 'none'}".`}
+        metrics={{ entries: total, type_filter: typeFilter, date: range }}
       />
       <div className="flex items-center justify-between mb-2 shrink-0">
         <h2 className="text-lg font-bold">All Logs</h2>
@@ -92,21 +65,7 @@ export default function AllLogsPage() {
           onChange={(e) => handleSearch(e.target.value)}
           className="flex-1 min-w-[200px] bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[var(--color-accent)]"
         />
-        <div className="flex gap-1">
-          {DATE_PRESETS.map(p => (
-            <button
-              key={p.value}
-              onClick={() => { setDatePreset(p.value); setPage(0); }}
-              className={`px-2 py-1 text-xs rounded border transition-colors ${
-                datePreset === p.value
-                  ? 'border-[var(--color-accent)] text-[var(--color-accent)]'
-                  : 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-accent)]'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        <TimeRangeSelect value={range} onChange={(v) => { setRange(v); setPage(0); }} />
         <select
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}

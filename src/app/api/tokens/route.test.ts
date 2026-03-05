@@ -32,7 +32,9 @@ describe('GET /api/tokens', () => {
       .mockReturnValueOnce([{ model: 'claude-opus-4-6', count: 50 }])
       .mockReturnValueOnce([{ block_type: 'text', count: 100 }]);
 
-    const res = await GET();
+    const req = new Request('http://localhost/api/tokens');
+    const { NextRequest } = await import('next/server');
+    const res = await GET(new NextRequest(req));
     const data = await res.json();
     expect(res.status).toBe(200);
     expect(data.modelBreakdown).toHaveLength(1);
