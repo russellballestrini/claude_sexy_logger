@@ -213,6 +213,7 @@ function migrate(db: Database.Database) {
     try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); } catch { /* column already exists */ }
   };
   addColumn('sessions', 'display_name', 'TEXT');
+  addColumn('todos', 'estimated_minutes', 'INTEGER');
 
   // Seed default alert thresholds if empty
   const count = db.prepare('SELECT COUNT(*) as c FROM alert_thresholds').get() as { c: number };

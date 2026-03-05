@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { formatRelativeTime } from '@/lib/format';
+import { formatRelativeTime, formatTimestamp } from '@/lib/format';
 import { PageContext } from '@/components/PageContext';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -17,9 +17,11 @@ interface Todo {
   blockedBy: string[];
   sessionUuid: string | null;
   sessionDisplay: string | null;
+  projectName: string;
   createdAt: string;
   updatedAt: string;
   completedAt: string | null;
+  estimatedMinutes: number | null;
 }
 
 interface ProjectGroup {
@@ -35,6 +37,8 @@ interface Counts {
   total: number;
 }
 
+const TICKET_THRESHOLD = 15; // minutes — tasks bigger than this need a ticket
+
 const STATUS_COLUMNS = [
   { key: 'pending', label: 'Pending', color: 'var(--color-muted)' },
   { key: 'in_progress', label: 'In Progress', color: '#fbbf24' },
@@ -47,13 +51,15 @@ const SOURCE_BADGE: Record<string, { label: string; color: string }> = {
   manual: { label: 'manual', color: '#34d399' },
 };
 
+const TIME_PRESETS = [5, 10, 15, 30, 60, 120];
+
 export default function TodosPage() {
   const [byProject, setByProject] = useState<ProjectGroup[]>([]);
   const [counts, setCounts] = useState<Counts>({ pending: 0, inProgress: 0, completed: 0, total: 0 });
-  const [filter, setFilter] = useState<string>('active'); // active, all, project:<name>
+  const [filter, setFilter] = useState<string>('active');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchTodos = useCallback(() => {
     setLoading(true);
     const statusParam = filter === 'active' ? '?status=pending,in_progress' : '';
     fetch(`/api/todos${statusParam}`)
@@ -70,15 +76,36 @@ export default function TodosPage() {
       .finally(() => setLoading(false));
   }, [filter]);
 
+  useEffect(() => { fetchTodos(); }, [fetchTodos]);
+
+  const updateTodo = useCallback(async (id: number, updates: { estimatedMinutes?: number; status?: string }) => {
+    await fetch('/api/todos', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...updates }),
+    });
+    fetchTodos();
+  }, [fetchTodos]);
+
   // Collect all todos into columns
   const columns: Record<string, Todo[]> = { pending: [], in_progress: [], completed: [] };
   for (const group of byProject) {
     for (const todo of group.todos) {
       if (columns[todo.status]) {
-        columns[todo.status].push({ ...todo, content: `[${group.display}] ${todo.content}` });
+        columns[todo.status].push(todo);
       }
     }
   }
+
+  // Stats
+  const needsTicket = [...(columns.pending ?? []), ...(columns.in_progress ?? [])]
+    .filter(t => (t.estimatedMinutes ?? 0) > TICKET_THRESHOLD);
+  const quickTasks = [...(columns.pending ?? []), ...(columns.in_progress ?? [])]
+    .filter(t => t.estimatedMinutes !== null && t.estimatedMinutes <= TICKET_THRESHOLD);
+  const unestimated = [...(columns.pending ?? []), ...(columns.in_progress ?? [])]
+    .filter(t => t.estimatedMinutes === null);
+  const totalEstMinutes = [...(columns.pending ?? []), ...(columns.in_progress ?? [])]
+    .reduce((s, t) => s + (t.estimatedMinutes ?? 0), 0);
 
   return (
     <div className="p-6">
@@ -87,7 +114,7 @@ export default function TodosPage() {
         summary={`Todos. ${counts.total} total, ${counts.pending} pending, ${counts.inProgress} in progress.`}
         metrics={{ pending: counts.pending, in_progress: counts.inProgress, completed: counts.completed, total: counts.total }}
       />
-      <div className="flex items-center gap-4 mb-6">
+      <div className="flex items-center gap-4 mb-4">
         <h1 className="text-xl font-bold">Todos</h1>
         <div className="flex gap-2 text-sm">
           <span className="px-2 py-0.5 rounded bg-[var(--color-surface-hover)]">
@@ -116,6 +143,24 @@ export default function TodosPage() {
         </div>
       </div>
 
+      {/* Triage summary */}
+      {!loading && counts.total > 0 && (
+        <div className="flex gap-4 mb-6 text-sm text-[var(--color-muted)]">
+          {totalEstMinutes > 0 && (
+            <span>~{totalEstMinutes < 60 ? `${totalEstMinutes}m` : `${Math.floor(totalEstMinutes / 60)}h ${totalEstMinutes % 60}m`} remaining</span>
+          )}
+          {quickTasks.length > 0 && (
+            <span className="text-green-400">{quickTasks.length} quick (&lt;{TICKET_THRESHOLD}m)</span>
+          )}
+          {needsTicket.length > 0 && (
+            <span className="text-yellow-400">{needsTicket.length} need ticket (&gt;{TICKET_THRESHOLD}m)</span>
+          )}
+          {unestimated.length > 0 && (
+            <span>{unestimated.length} unestimated</span>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <p className="text-[var(--color-muted)]">Loading...</p>
       ) : counts.total === 0 ? (
@@ -143,7 +188,7 @@ export default function TodosPage() {
                 </div>
                 <div className="space-y-2 max-h-[70vh] overflow-y-auto">
                   {(columns[col.key] ?? []).map(todo => (
-                    <TodoCard key={todo.id} todo={todo} />
+                    <TodoCard key={todo.id} todo={todo} onUpdate={updateTodo} />
                   ))}
                   {(columns[col.key]?.length ?? 0) === 0 && (
                     <p className="text-sm text-[var(--color-muted)] text-center py-4">
@@ -160,39 +205,64 @@ export default function TodosPage() {
             By Project
           </h2>
           <div className="space-y-4">
-            {byProject.map(group => (
-              <div
-                key={group.project}
-                className="border border-[var(--color-border)] rounded p-4"
-              >
-                <Link
-                  href={`/projects/${encodeURIComponent(group.project)}`}
-                  className="font-medium hover:text-[var(--color-accent)] transition-colors"
+            {byProject.map(group => {
+              const groupEst = group.todos
+                .filter(t => t.status !== 'completed')
+                .reduce((s, t) => s + (t.estimatedMinutes ?? 0), 0);
+              return (
+                <div
+                  key={group.project}
+                  className="border border-[var(--color-border)] rounded p-4"
                 >
-                  {group.display}
-                </Link>
-                <span className="text-sm text-[var(--color-muted)] ml-2">
-                  {group.todos.length} todos
-                </span>
-                <div className="mt-3 space-y-1">
-                  {group.todos.slice(0, 10).map(todo => (
-                    <div
-                      key={todo.id}
-                      className="flex items-center gap-2 text-sm"
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/projects/${encodeURIComponent(group.project)}`}
+                      className="font-medium hover:text-[var(--color-accent)] transition-colors"
                     >
-                      <StatusDot status={todo.status} />
-                      <span className="flex-1 truncate">{todo.content}</span>
-                      <SourceBadge source={todo.source} />
-                    </div>
-                  ))}
-                  {group.todos.length > 10 && (
-                    <p className="text-sm text-[var(--color-muted)]">
-                      +{group.todos.length - 10} more
-                    </p>
-                  )}
+                      {group.display}
+                    </Link>
+                    <span className="text-sm text-[var(--color-muted)]">
+                      {group.todos.length} todos
+                    </span>
+                    {groupEst > 0 && (
+                      <span className="text-sm text-[var(--color-muted)] ml-auto">
+                        ~{groupEst < 60 ? `${groupEst}m` : `${Math.floor(groupEst / 60)}h ${groupEst % 60}m`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3 space-y-1">
+                    {group.todos.slice(0, 15).map(todo => (
+                      <div
+                        key={todo.id}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <StatusDot status={todo.status} />
+                        <span className="flex-1 truncate">{todo.content}</span>
+                        {todo.estimatedMinutes !== null && (
+                          <span className={`text-xs shrink-0 ${
+                            todo.estimatedMinutes > TICKET_THRESHOLD
+                              ? 'text-yellow-400'
+                              : 'text-[var(--color-muted)]'
+                          }`}>
+                            {todo.estimatedMinutes}m
+                            {todo.estimatedMinutes > TICKET_THRESHOLD && ' [ticket]'}
+                          </span>
+                        )}
+                        <SourceBadge source={todo.source} />
+                        <span className="text-xs text-[var(--color-muted)] shrink-0">
+                          {formatRelativeTime(todo.updatedAt)}
+                        </span>
+                      </div>
+                    ))}
+                    {group.todos.length > 15 && (
+                      <p className="text-sm text-[var(--color-muted)]">
+                        +{group.todos.length - 15} more
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}
@@ -200,10 +270,67 @@ export default function TodosPage() {
   );
 }
 
-function TodoCard({ todo }: { todo: Todo }) {
+function TodoCard({ todo, onUpdate }: { todo: Todo; onUpdate: (id: number, updates: { estimatedMinutes?: number; status?: string }) => void }) {
+  const [showEstimate, setShowEstimate] = useState(false);
+  const needsTicket = (todo.estimatedMinutes ?? 0) > TICKET_THRESHOLD;
+
   return (
-    <div className="border border-[var(--color-border)] rounded p-3 text-sm">
-      <p className="mb-2">{todo.content}</p>
+    <div className={`border rounded p-3 text-sm ${
+      needsTicket
+        ? 'border-yellow-400/40 bg-yellow-400/5'
+        : 'border-[var(--color-border)]'
+    }`}>
+      <div className="flex items-start gap-2 mb-2">
+        <span className="flex-1">{todo.content}</span>
+        {needsTicket && (
+          <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-400/20 text-yellow-400 shrink-0">
+            ticket
+          </span>
+        )}
+      </div>
+
+      {/* Time estimate */}
+      <div className="flex items-center gap-2 mb-2">
+        {todo.estimatedMinutes !== null ? (
+          <span
+            className={`text-xs px-1.5 py-0.5 rounded cursor-pointer ${
+              needsTicket
+                ? 'bg-yellow-400/20 text-yellow-400'
+                : 'bg-[var(--color-surface-hover)] text-[var(--color-muted)]'
+            }`}
+            onClick={() => setShowEstimate(!showEstimate)}
+            title="Click to change estimate"
+          >
+            ~{todo.estimatedMinutes}m
+          </span>
+        ) : (
+          <span
+            className="text-xs px-1.5 py-0.5 rounded bg-[var(--color-surface-hover)] text-[var(--color-muted)] cursor-pointer"
+            onClick={() => setShowEstimate(!showEstimate)}
+            title="Set time estimate"
+          >
+            ?m
+          </span>
+        )}
+        {showEstimate && (
+          <div className="flex gap-1">
+            {TIME_PRESETS.map(m => (
+              <button
+                key={m}
+                onClick={() => { onUpdate(todo.id, { estimatedMinutes: m }); setShowEstimate(false); }}
+                className={`text-xs px-1.5 py-0.5 rounded border transition-colors ${
+                  m > TICKET_THRESHOLD
+                    ? 'border-yellow-400/40 text-yellow-400 hover:bg-yellow-400/10'
+                    : 'border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-accent)]'
+                }`}
+              >
+                {m}m
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center gap-2 text-xs text-[var(--color-muted)]">
         <SourceBadge source={todo.source} />
         {todo.blockedBy.length > 0 && (
@@ -211,8 +338,26 @@ function TodoCard({ todo }: { todo: Todo }) {
             blocked by {todo.blockedBy.join(', ')}
           </span>
         )}
-        <span className="ml-auto">{formatRelativeTime(todo.updatedAt)}</span>
+        {todo.sessionDisplay && todo.sessionUuid && todo.projectName && (
+          <Link
+            href={`/projects/${encodeURIComponent(todo.projectName)}/${todo.sessionUuid}`}
+            className="hover:text-[var(--color-accent)] truncate max-w-[120px]"
+            title={todo.sessionDisplay}
+          >
+            {todo.sessionDisplay}
+          </Link>
+        )}
+        <span className="ml-auto shrink-0" title={formatTimestamp(todo.createdAt)}>
+          {formatRelativeTime(todo.updatedAt)}
+        </span>
       </div>
+
+      {/* Timestamps detail */}
+      {todo.completedAt && (
+        <div className="mt-1 text-xs text-green-400">
+          Completed {formatRelativeTime(todo.completedAt)}
+        </div>
+      )}
     </div>
   );
 }

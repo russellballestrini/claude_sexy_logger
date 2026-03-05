@@ -3,6 +3,29 @@ import { getDb } from '@/lib/db/schema';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+export async function PATCH(request: NextRequest) {
+  try {
+    const db = getDb();
+    const body = await request.json();
+    const { id, estimatedMinutes, status } = body;
+    if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
+
+    if (estimatedMinutes !== undefined) {
+      db.prepare('UPDATE todos SET estimated_minutes = ?, updated_at = datetime(\'now\') WHERE id = ?')
+        .run(estimatedMinutes, id);
+    }
+    if (status) {
+      const completedAt = status === 'completed' ? "datetime('now')" : 'NULL';
+      db.prepare(`UPDATE todos SET status = ?, updated_at = datetime('now'), completed_at = ${completedAt} WHERE id = ?`)
+        .run(status, id);
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     const db = getDb();
@@ -59,9 +82,11 @@ export async function GET(request: NextRequest) {
         blockedBy: todo.blocked_by ? JSON.parse(todo.blocked_by) : [],
         sessionUuid: todo.session_uuid,
         sessionDisplay: todo.session_display,
+        projectName: todo.project_name,
         createdAt: todo.created_at,
         updatedAt: todo.updated_at,
         completedAt: todo.completed_at,
+        estimatedMinutes: todo.estimated_minutes,
       });
     }
 
