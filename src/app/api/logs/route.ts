@@ -1,63 +1,126 @@
-import { readdir, readFile } from 'fs/promises';
-import { claudePaths } from '@/lib/claude-paths';
-import { streamJsonl } from '@/lib/jsonl-reader';
 import { NextRequest, NextResponse } from 'next/server';
-import type { SessionsIndex, SessionEntry } from '@/lib/types';
+import { getDb } from '@/lib/db/schema';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const projectFilter = url.searchParams.get('project');
-  const limit = parseInt(url.searchParams.get('limit') ?? '100');
+  const limit = Math.min(parseInt(url.searchParams.get('limit') ?? '100'), 500);
+  const offset = parseInt(url.searchParams.get('offset') ?? '0');
   const typesParam = url.searchParams.get('types');
   const types = typesParam?.split(',') ?? ['user', 'assistant', 'system'];
+  const search = url.searchParams.get('search')?.trim();
+  const dateFrom = url.searchParams.get('from');
+  const dateTo = url.searchParams.get('to');
 
   try {
-    const projectDirs = await readdir(claudePaths.projects);
-    const allEntries: (SessionEntry & { _project: string })[] = [];
+    const db = getDb();
+    const params: any[] = [];
 
-    for (const dir of projectDirs) {
-      if (projectFilter && dir !== projectFilter) continue;
+    let where = `m.type IN (${types.map(() => '?').join(',')})`;
+    params.push(...types);
 
-      let sessionIds: string[] = [];
-      try {
-        const indexRaw = await readFile(claudePaths.sessionsIndex(dir), 'utf-8');
-        const index: SessionsIndex = JSON.parse(indexRaw);
-        // Take the most recent sessions only
-        sessionIds = index.entries
-          .sort((a, b) => (b.modified ?? '').localeCompare(a.modified ?? ''))
-          .slice(0, 5)
-          .map((e) => e.sessionId);
-      } catch {
-        continue;
-      }
-
-      for (const sid of sessionIds) {
-        const filePath = claudePaths.sessionFile(dir, sid);
-        try {
-          for await (const entry of streamJsonl<SessionEntry>(filePath, {
-            types,
-            limit: 50,
-          })) {
-            (entry as SessionEntry & { _project: string })._project = dir;
-            allEntries.push(entry as SessionEntry & { _project: string });
-          }
-        } catch {
-          // skip
-        }
-      }
+    if (projectFilter) {
+      where += ' AND p.name = ?';
+      params.push(projectFilter);
+    }
+    if (dateFrom) {
+      where += ' AND m.timestamp >= ?';
+      params.push(dateFrom);
+    }
+    if (dateTo) {
+      where += ' AND m.timestamp <= ?';
+      params.push(dateTo + 'T23:59:59');
+    }
+    if (search) {
+      where += ' AND cb_search.text_content LIKE ?';
+      params.push(`%${search}%`);
     }
 
-    // Sort all entries by timestamp
-    allEntries.sort((a, b) => {
-      const ta = ('timestamp' in a ? String(a.timestamp) : '') ?? '';
-      const tb = ('timestamp' in b ? String(b.timestamp) : '') ?? '';
-      return tb.localeCompare(ta);
+    // When searching, join content_blocks to filter by text
+    const searchJoin = search
+      ? 'JOIN content_blocks cb_search ON cb_search.message_id = m.id AND cb_search.block_type IN (\'text\', \'thinking\')'
+      : '';
+
+    const query = `
+      SELECT DISTINCT m.id, m.type, m.subtype, m.timestamp, m.model,
+             m.input_tokens, m.output_tokens,
+             s.session_uuid, s.display_name as session_display,
+             p.name as project_name, p.display_name as project_display
+      FROM messages m
+      JOIN sessions s ON m.session_id = s.id
+      JOIN projects p ON s.project_id = p.id
+      ${searchJoin}
+      WHERE ${where}
+      ORDER BY m.timestamp DESC
+      LIMIT ? OFFSET ?
+    `;
+    params.push(limit, offset);
+
+    const messages = db.prepare(query).all(...params) as any[];
+
+    // Get text preview for each message
+    const previewStmt = db.prepare(`
+      SELECT text_content, block_type, tool_name
+      FROM content_blocks
+      WHERE message_id = ? AND block_type IN ('text', 'thinking', 'tool_use')
+      ORDER BY position
+      LIMIT 5
+    `);
+
+    const entries = messages.map(msg => {
+      const blocks = previewStmt.all(msg.id) as any[];
+      let preview = '';
+      for (const b of blocks) {
+        if (b.block_type === 'text' && b.text_content) {
+          preview += (preview ? ' ' : '') + b.text_content;
+        } else if (b.block_type === 'thinking' && b.text_content) {
+          preview += (preview ? ' ' : '') + '[thinking] ' + b.text_content.slice(0, 200);
+        } else if (b.block_type === 'tool_use' && b.tool_name) {
+          preview += (preview ? ' ' : '') + `[${b.tool_name}]`;
+        }
+      }
+
+      return {
+        id: msg.id,
+        type: msg.type,
+        subtype: msg.subtype,
+        timestamp: msg.timestamp,
+        model: msg.model,
+        sessionUuid: msg.session_uuid,
+        sessionDisplay: msg.session_display,
+        projectName: msg.project_name,
+        projectDisplay: msg.project_display,
+        preview: preview.slice(0, 500),
+        inputTokens: msg.input_tokens,
+        outputTokens: msg.output_tokens,
+      };
     });
 
-    return NextResponse.json(allEntries.slice(0, limit));
-  } catch (err) {
+    // Total count for pagination info
+    const countParams: any[] = [];
+    let countWhere = `m.type IN (${types.map(() => '?').join(',')})`;
+    countParams.push(...types);
+    if (projectFilter) { countWhere += ' AND p.name = ?'; countParams.push(projectFilter); }
+    if (dateFrom) { countWhere += ' AND m.timestamp >= ?'; countParams.push(dateFrom); }
+    if (dateTo) { countWhere += ' AND m.timestamp <= ?'; countParams.push(dateTo + 'T23:59:59'); }
+    if (search) { countWhere += ' AND cb_search.text_content LIKE ?'; countParams.push(`%${search}%`); }
+
+    const countQuery = `
+      SELECT COUNT(DISTINCT m.id) as total
+      FROM messages m
+      JOIN sessions s ON m.session_id = s.id
+      JOIN projects p ON s.project_id = p.id
+      ${searchJoin}
+      WHERE ${countWhere}
+    `;
+    const { total } = db.prepare(countQuery).get(...countParams) as { total: number };
+
+    return NextResponse.json({ entries, total, limit, offset });
+  } catch (err: any) {
     return NextResponse.json(
-      { error: 'Failed to aggregate logs', detail: String(err) },
+      { error: 'Failed to query logs', detail: err.message },
       { status: 500 }
     );
   }
