@@ -44,7 +44,7 @@ const horizontalBarData = [
   { name: 'funlooper-com', input: 12000, output: 35000 },
 ];
 
-const PIE_COLORS = ['#10b981', '#60a5fa', '#fbbf24'];
+const PIE_COLORS = ['#d40000', '#60a5fa', '#fbbf24'];
 
 const CSS_VARS = [
   { name: '--color-background', hex: '#09090b' },
@@ -53,10 +53,10 @@ const CSS_VARS = [
   { name: '--color-surface-hover', hex: '#27272a' },
   { name: '--color-border', hex: '#3f3f46' },
   { name: '--color-muted', hex: '#a1a1aa' },
-  { name: '--color-accent', hex: '#10b981' },
+  { name: '--color-accent', hex: '#d40000' },
   { name: '--color-thinking', hex: '#a78bfa' },
   { name: '--color-user', hex: '#60a5fa' },
-  { name: '--color-assistant', hex: '#10b981' },
+  { name: '--color-assistant', hex: '#d40000' },
   { name: '--color-tool', hex: '#fbbf24' },
   { name: '--color-error', hex: '#f87171' },
 ];
@@ -245,7 +245,7 @@ export default function StyleguidePage() {
                 <XAxis dataKey="name" tick={{ fontSize: 16 }} />
                 <YAxis tick={{ fontSize: 16 }} />
                 <Tooltip />
-                <Bar dataKey="value" fill="#10b981" radius={[2, 2, 0, 0]} />
+                <Bar dataKey="value" fill="#d40000" radius={[2, 2, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -278,7 +278,7 @@ export default function StyleguidePage() {
                 <XAxis dataKey="date" tick={{ fontSize: 16 }} />
                 <YAxis tick={{ fontSize: 16 }} />
                 <Tooltip />
-                <Area type="monotone" dataKey="tokens" stroke="#10b981" fill="#10b98130" />
+                <Area type="monotone" dataKey="tokens" stroke="#d40000" fill="#d4000030" />
               </AreaChart>
             </ResponsiveContainer>
           </div>

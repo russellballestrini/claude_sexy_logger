@@ -91,7 +91,7 @@ export default function SettingsPage() {
     [mutate]
   );
 
-  const accentColor = settings?.[SETTINGS_KEYS.accentColor] ?? '#10b981';
+  const accentColor = settings?.[SETTINGS_KEYS.accentColor] ?? '#d40000';
   const systemUser = settings?._system_username ?? '';
   const [lightMode, setLightMode] = useState(false);
 
