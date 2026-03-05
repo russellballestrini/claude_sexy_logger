@@ -64,6 +64,9 @@ export default function TodosPage() {
   const [submitting, setSubmitting] = useState(false);
   const [bootResult, setBootResult] = useState<{ key: string; msg: string } | null>(null);
   const [booting, setBooting] = useState<string | null>(null);
+  const [megaStatus, setMegaStatus] = useState<any>(null);
+  const [megaLoading, setMegaLoading] = useState(false);
+  const [megaPanelOpen, setMegaPanelOpen] = useState(false);
 
   const fetchTodos = useCallback(() => {
     setLoading(true);
@@ -133,6 +136,51 @@ export default function TodosPage() {
     setBooting(null);
   }, []);
 
+  const megaDeploy = useCallback(async () => {
+    setMegaLoading(true);
+    setMegaPanelOpen(true);
+    try {
+      const res = await fetch('/api/boot/mega', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ maxAgents: 10 }),
+      });
+      const data = await res.json();
+      setMegaStatus(data);
+    } catch (err) {
+      setMegaStatus({ error: String(err) });
+    }
+    setMegaLoading(false);
+  }, []);
+
+  const megaRefresh = useCallback(async () => {
+    try {
+      const res = await fetch('/api/boot/mega');
+      const data = await res.json();
+      setMegaStatus(data);
+      setMegaPanelOpen(true);
+    } catch (err) {
+      setMegaStatus({ error: String(err) });
+    }
+  }, []);
+
+  const megaCull = useCallback(async () => {
+    setMegaLoading(true);
+    try {
+      const res = await fetch('/api/boot/mega', { method: 'DELETE' });
+      const data = await res.json();
+      setMegaStatus((prev: any) => ({ ...prev, cullResult: data }));
+      // Refresh status after cull
+      setTimeout(() => {
+        megaRefresh();
+        fetchTodos();
+      }, 500);
+    } catch (err) {
+      setMegaStatus({ error: String(err) });
+    }
+    setMegaLoading(false);
+  }, [megaRefresh, fetchTodos]);
+
   // Collect all todos into columns
   const columns: Record<string, Todo[]> = { pending: [], in_progress: [], completed: [] };
   for (const group of byProject) {
@@ -199,8 +247,123 @@ export default function TodosPage() {
           >
             All
           </button>
+          <span className="w-px bg-[var(--color-border)]" />
+          <button
+            onClick={megaDeploy}
+            disabled={megaLoading}
+            className="px-3 py-1 text-sm rounded border border-[var(--color-error)] text-[var(--color-error)] hover:bg-[var(--color-error)]/10 disabled:opacity-50 font-bold"
+            title="Spawn one agent per project with active todos"
+          >
+            {megaLoading ? 'Deploying...' : 'Mega Deploy'}
+          </button>
+          <button
+            onClick={megaRefresh}
+            className="px-3 py-1 text-sm rounded border border-[var(--color-border)] text-[var(--color-muted)] hover:border-[var(--color-accent)]"
+            title="Check status of deployed agents"
+          >
+            Status
+          </button>
+          <button
+            onClick={megaCull}
+            disabled={megaLoading}
+            className="px-3 py-1 text-sm rounded border border-[var(--color-border)] text-[var(--color-muted)] hover:border-green-400 hover:text-green-400 disabled:opacity-50"
+            title="Kill agents that finished all their todos"
+          >
+            Cull
+          </button>
         </div>
       </div>
+
+      {/* Mega Deploy Status Panel */}
+      {megaPanelOpen && megaStatus && (
+        <div className="mb-4 border border-[var(--color-border)] rounded p-4 bg-[var(--color-surface)]">
+          <div className="flex items-center gap-3 mb-3">
+            <h2 className="font-bold text-sm">Agent Fleet</h2>
+            {megaStatus.active != null && (
+              <>
+                <span className="text-xs px-2 py-0.5 rounded bg-green-400/20 text-green-400">
+                  {megaStatus.active} alive
+                </span>
+                {megaStatus.allDone > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded bg-blue-400/20 text-blue-400">
+                    {megaStatus.allDone} done (cullable)
+                  </span>
+                )}
+                {megaStatus.dead > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded bg-[var(--color-error)]/20 text-[var(--color-error)]">
+                    {megaStatus.dead} dead
+                  </span>
+                )}
+              </>
+            )}
+            {megaStatus.launched != null && (
+              <span className="text-xs px-2 py-0.5 rounded bg-[var(--color-error)]/20 text-[var(--color-error)]">
+                {megaStatus.launched}/{megaStatus.total} launched
+              </span>
+            )}
+            {megaStatus.cullResult && (
+              <span className="text-xs text-green-400">
+                Culled {megaStatus.cullResult.culled}, dead {megaStatus.cullResult.dead}
+              </span>
+            )}
+            <button
+              onClick={() => setMegaPanelOpen(false)}
+              className="ml-auto text-[var(--color-muted)] hover:text-[var(--color-foreground)] text-sm"
+            >
+              Close
+            </button>
+          </div>
+
+          {/* Deployment results (after POST) */}
+          {megaStatus.results && (
+            <div className="space-y-1 text-sm">
+              {megaStatus.results.map((r: any, i: number) => (
+                <div key={i} className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${
+                    r.status === 'launched' ? 'bg-green-400' :
+                    r.status === 'skipped' ? 'bg-yellow-400' : 'bg-[var(--color-error)]'
+                  }`} />
+                  <span className="font-medium">{r.project}</span>
+                  <span className="text-[var(--color-muted)]">
+                    {r.status === 'launched' ? `${r.tmuxSession} (${r.todoCount} todos)` :
+                     r.status === 'skipped' ? r.reason : r.reason}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Live deployments (after GET) */}
+          {megaStatus.deployments && (
+            <div className="space-y-1 text-sm">
+              {megaStatus.deployments.map((d: any) => (
+                <div key={d.id} className="flex items-center gap-2">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${
+                    d.allDone ? 'bg-blue-400' : d.alive ? 'bg-green-400' : 'bg-[var(--color-error)]'
+                  }`} />
+                  <span className="font-medium">{d.project}</span>
+                  <span className="font-mono text-xs text-[var(--color-muted)]">{d.tmuxSession}</span>
+                  <span className="text-xs">
+                    {d.todosCompleted}/{d.todoCount} done
+                  </span>
+                  {d.allDone && <span className="text-xs text-blue-400">ready to cull</span>}
+                  {!d.alive && <span className="text-xs text-[var(--color-error)]">dead</span>}
+                  <span className="text-xs text-[var(--color-muted)] ml-auto">
+                    {formatRelativeTime(d.startedAt)}
+                  </span>
+                </div>
+              ))}
+              {megaStatus.deployments.length === 0 && (
+                <p className="text-[var(--color-muted)]">No active deployments</p>
+              )}
+            </div>
+          )}
+
+          {megaStatus.error && (
+            <p className="text-[var(--color-error)] text-sm">{megaStatus.error}</p>
+          )}
+        </div>
+      )}
 
       {/* Add todo */}
       <div className="flex gap-2 mb-4">

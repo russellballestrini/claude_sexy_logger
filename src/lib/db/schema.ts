@@ -187,6 +187,18 @@ function migrate(db: Database.Database) {
     );
     CREATE INDEX IF NOT EXISTS idx_todo_events_todo ON todo_events(todo_id);
 
+    -- Agent deployments: tracks tmux sessions spawned by mega deploy
+    CREATE TABLE IF NOT EXISTS agent_deployments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tmux_session TEXT NOT NULL,
+      project_id INTEGER NOT NULL REFERENCES projects(id),
+      todo_ids TEXT NOT NULL,              -- JSON array of todo IDs assigned
+      status TEXT NOT NULL DEFAULT 'running', -- running, completed, failed, culled
+      started_at TEXT NOT NULL DEFAULT (datetime('now')),
+      stopped_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_deployments_status ON agent_deployments(status);
+
     -- Project visibility for scrobbling
     CREATE TABLE IF NOT EXISTS project_visibility (
       project_id INTEGER PRIMARY KEY REFERENCES projects(id),
