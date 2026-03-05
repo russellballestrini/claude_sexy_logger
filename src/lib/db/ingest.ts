@@ -250,6 +250,10 @@ function upsertTodo(
   const now = new Date().toISOString();
   const source = todo.source ?? 'claude';
 
+  // Terminal statuses are sticky — ingest can never reopen a closed todo.
+  // This prevents re-ingestion from overwriting manual triage decisions.
+  const TERMINAL_STATUSES = ['completed', 'obsolete'];
+
   if (todo.externalId) {
     // TaskCreate/TaskUpdate style: key on project + external_id
     const existing = db.prepare(
@@ -257,7 +261,7 @@ function upsertTodo(
     ).get(projectId, todo.externalId, source) as { id: number; status: string } | undefined;
 
     if (existing) {
-      if (existing.status !== todo.status) {
+      if (existing.status !== todo.status && !TERMINAL_STATUSES.includes(existing.status)) {
         db.prepare(
           'UPDATE todos SET status = ?, active_form = ?, blocked_by = ?, updated_at = ?, completed_at = CASE WHEN ? = \'completed\' THEN ? ELSE completed_at END WHERE id = ?'
         ).run(todo.status, todo.activeForm ?? null, todo.blockedBy ? JSON.stringify(todo.blockedBy) : null, now, todo.status, now, existing.id);
@@ -282,7 +286,7 @@ function upsertTodo(
     ).get(projectId, sessionId, todo.content, source) as { id: number; status: string } | undefined;
 
     if (existing) {
-      if (existing.status !== todo.status) {
+      if (existing.status !== todo.status && !TERMINAL_STATUSES.includes(existing.status)) {
         db.prepare(
           'UPDATE todos SET status = ?, active_form = ?, updated_at = ?, completed_at = CASE WHEN ? = \'completed\' THEN ? ELSE completed_at END WHERE id = ?'
         ).run(todo.status, todo.activeForm ?? null, now, todo.status, now, existing.id);
@@ -303,6 +307,14 @@ function upsertTodo(
   }
 }
 
+function isSessionClosed(
+  db: ReturnType<typeof getDb>,
+  sessionId: number
+): boolean {
+  const row = db.prepare('SELECT status FROM sessions WHERE id = ?').get(sessionId) as { status: string | null } | undefined;
+  return row?.status === 'closed';
+}
+
 function extractTodosFromEntry(
   db: ReturnType<typeof getDb>,
   projectId: number,
@@ -310,6 +322,8 @@ function extractTodosFromEntry(
   entry: any,
   sessionUuid: string
 ) {
+  // Skip todo extraction for closed sessions — their todos are already triaged
+  if (isSessionClosed(db, sessionId)) return;
   // 1. UserEntry.todos snapshot (legacy TodoWrite format)
   if (entry.todos && Array.isArray(entry.todos)) {
     for (const todo of entry.todos) {
@@ -711,6 +725,9 @@ async function ingestFetch(
               result.blocksAdded += insertContentBlocks(db, messageId, content);
             }
 
+            // Extract todos from TaskCreate/TaskUpdate/TodoWrite tool calls
+            extractTodosFromEntry(db, projectId, sessionId, entry, sessionUuid);
+
             const usage = entry.message?.usage;
             if (usage && entry.timestamp) {
               updateUsageMinutes(db, projectId, entry.timestamp, {
@@ -851,6 +868,9 @@ async function ingestUncloseai(
                 content
               );
             }
+
+            // Extract todos from TaskCreate/TaskUpdate/TodoWrite tool calls
+            extractTodosFromEntry(db, projectId, sessionId, normalized, sessionUuid);
           } catch {
             // skip malformed lines
           }
@@ -1125,6 +1145,26 @@ export async function ingestAll(): Promise<IngestResult> {
     });
     uuidBackfill();
     console.log(`[backfill] Assigned UUIDv7 to ${nullUuids.length} todos`);
+  }
+
+  // Backfill last_message_at from actual message timestamps
+  const nullLastMsg = db.prepare(`
+    SELECT s.id FROM sessions s WHERE s.last_message_at IS NULL
+    AND EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id AND m.timestamp IS NOT NULL)
+  `).all() as Array<{ id: number }>;
+  if (nullLastMsg.length > 0) {
+    const updateLastMsg = db.prepare(`
+      UPDATE sessions SET last_message_at = (
+        SELECT MAX(m.timestamp) FROM messages m WHERE m.session_id = ?
+      ) WHERE id = ?
+    `);
+    const backfillLastMsg = db.transaction(() => {
+      for (const row of nullLastMsg) {
+        updateLastMsg.run(row.id, row.id);
+      }
+    });
+    backfillLastMsg();
+    console.log(`[backfill] Set last_message_at for ${nullLastMsg.length} sessions`);
   }
 
   // Check alert thresholds
