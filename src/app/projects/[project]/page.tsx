@@ -8,9 +8,34 @@ import { formatRelativeTime, formatTokens, gitRemoteToWebUrl, commitUrl } from '
 import { PageContext } from '@/components/PageContext';
 import { SessionPopover } from '@/components/SessionPopover';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-export default function ProjectSessionsPage({
+function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+  return (
+    <div className="border border-[var(--color-border)] rounded p-3">
+      <div className="text-lg font-bold">{value}</div>
+      <div className="text-xs text-[var(--color-muted)]">{label}</div>
+      {sub && <div className="text-xs text-[var(--color-muted)] mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function ProgressBar({ value, max, label, detail }: { value: number; max: number; label: string; detail: string }) {
+  const pct = max > 0 ? (value / max) * 100 : 0;
+  return (
+    <div className="flex items-center gap-3 text-sm">
+      <span className="w-14 text-[var(--color-muted)] shrink-0">{label}</span>
+      <div className="flex-1 h-2.5 bg-[var(--color-surface-hover)] rounded overflow-hidden">
+        <div className="h-full bg-[var(--color-accent)] rounded transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
+      </div>
+      <span className="w-36 text-right text-[var(--color-muted)] shrink-0">{pct.toFixed(1)}% ({detail})</span>
+    </div>
+  );
+}
+
+export default function ProjectPage({
   params,
 }: {
   params: Promise<{ project: string }>;
@@ -20,6 +45,7 @@ export default function ProjectSessionsPage({
   const [yolo, setYolo] = useState(false);
   const [booting, setBooting] = useState(false);
   const [bootResult, setBootResult] = useState<string | null>(null);
+  const [showAllSessions, setShowAllSessions] = useState(false);
 
   const { data, error } = useSWR<{
     project: string;
@@ -32,9 +58,14 @@ export default function ProjectSessionsPage({
     fetcher
   );
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: full } = useSWR<any>(
     `/api/projects/${project}/full`,
+    fetcher
+  );
+
+  // Fetch global activity for progress bars
+  const { data: globalActivity } = useSWR<any[]>(
+    '/api/projects/activity?days=30',
     fetcher
   );
 
@@ -65,38 +96,37 @@ export default function ProjectSessionsPage({
     setBooting(false);
   }
 
-  if (error) {
-    return (
-      <div className="text-[var(--color-error)]">
-        Failed to load sessions: {String(error)}
-      </div>
-    );
-  }
-  if (!data) {
-    return <div className="text-[var(--color-muted)]">Loading sessions...</div>;
-  }
+  if (error) return <div className="text-[var(--color-error)]">Failed to load: {String(error)}</div>;
+  if (!data) return <div className="text-[var(--color-muted)]">Loading...</div>;
+
+  const thisActivity = (globalActivity ?? []).find((a: any) => a.name === decodedProject);
+  const globalTotals = (globalActivity ?? []).reduce(
+    (acc: any, a: any) => ({
+      input: acc.input + (a.total_input ?? 0),
+      output: acc.output + (a.total_output ?? 0),
+      cost: acc.cost + (a.cost_estimate ?? 0),
+    }),
+    { input: 0, output: 0, cost: 0 }
+  );
+
+  const visibleSessions = showAllSessions ? data.sessions : data.sessions.slice(0, 25);
+  const fetchRemotes = meta?.remotes?.filter((r: any) => r.type === 'fetch') ?? [];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 max-w-6xl">
       <PageContext
-        pageType="project-sessions"
-        summary={`Project: ${decodedProject}. ${data.sessions.length} sessions.${data.originalPath ? ` Path: ${data.originalPath}` : ''}`}
-        metrics={{
-          project: decodedProject,
-          sessions: data.sessions.length,
-          path: data.originalPath || '',
-        }}
-        details={data.sessions.slice(0, 20).map((s: any) => `${s.displayName ?? s.firstPrompt ?? s.sessionId.slice(0, 8)} (${s.messageCount ?? '?'} msgs)`).join('\n')}
+        pageType="project-detail"
+        summary={`Project: ${decodedProject}. ${data.sessions.length} sessions.`}
+        metrics={{ project: decodedProject, sessions: data.sessions.length, path: data.originalPath || '' }}
       />
+
+      {/* Header */}
       <div>
-        <Link
-          href="/projects"
-          className="text-base text-[var(--color-muted)] hover:text-[var(--color-foreground)]"
-        >
+        <Link href="/projects" className="text-sm text-[var(--color-muted)] hover:text-[var(--color-foreground)]">
           &larr; Projects
         </Link>
-        <div className="flex items-center gap-2 mt-1">
-          <h2 className="text-lg font-bold">{decodedProject}</h2>
+        <div className="flex items-center gap-3 mt-1">
+          <h1 className="text-xl font-bold">{full?.project?.displayName ?? decodedProject}</h1>
           {full?.visibility && (
             <span className={`text-xs px-1.5 py-0.5 rounded ${
               full.visibility === 'public' ? 'text-green-400 bg-green-400/10' :
@@ -106,116 +136,95 @@ export default function ProjectSessionsPage({
               {full.visibility}
             </span>
           )}
+          {data.originalPath && (
+            <button
+              onClick={() => bootSession()}
+              disabled={booting}
+              className="ml-auto px-3 py-1 text-sm font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {booting ? 'Booting...' : 'Boot Session'}
+            </button>
+          )}
+          {data.originalPath && (
+            <label className="flex items-center gap-1.5 text-sm text-[var(--color-muted)] cursor-pointer">
+              <input type="checkbox" checked={yolo} onChange={(e) => setYolo(e.target.checked)} className="accent-[var(--color-error)]" />
+              Yolo
+            </label>
+          )}
         </div>
         {data.originalPath && (
-          <p className="text-base text-[var(--color-muted)]">
-            {data.originalPath}
+          <p className="text-sm text-[var(--color-muted)] font-mono mt-1">{data.originalPath}</p>
+        )}
+        {bootResult && (
+          <p className={`text-sm font-mono mt-1 ${bootResult.startsWith('Error') ? 'text-[var(--color-error)]' : 'text-[var(--color-accent)]'}`}>
+            {bootResult}
           </p>
         )}
       </div>
 
-      {/* Git info */}
-      {meta && (meta.remotes.length > 0 || meta.recentCommits.length > 0) && (() => {
-        const fetchRemotes = meta.remotes.filter((r: any) => r.type === 'fetch');
-        return (
-          <div className="space-y-2">
-            <div className="flex items-center gap-3 flex-wrap">
-              {meta.branch && (
-                <span className="inline-block text-base bg-[var(--color-surface-hover)] text-[var(--color-accent)] px-2 py-0.5 rounded font-mono">
-                  {meta.branch}
-                </span>
-              )}
-              {fetchRemotes.map((r: any) => {
-                const webUrl = gitRemoteToWebUrl(r.url);
-                return webUrl ? (
-                  <a key={`${r.name}-${r.url}`} href={webUrl} target="_blank" rel="noopener noreferrer" className="text-base text-[var(--color-accent)] hover:underline">
-                    {r.name}: {webUrl.replace(/^https?:\/\//, '')}
-                  </a>
-                ) : (
-                  <span key={`${r.name}-${r.url}`} className="text-base font-mono text-[var(--color-muted)]">{r.name}: {r.url}</span>
-                );
-              })}
-            </div>
-            {meta.recentCommits.length > 0 && (
-              <div className="text-base space-y-1 font-mono">
-                {meta.recentCommits.slice(0, 5).map((c) => {
-                  const commitLinks = fetchRemotes
-                    .map((r: any) => ({ name: r.name, url: commitUrl(r.url, c.hash) }))
-                    .filter((l: any) => l.url);
-                  return (
-                    <div key={c.hash} className="flex gap-2">
-                      {commitLinks.length > 0 ? (
-                        <span className="shrink-0 flex gap-1">
-                          {commitLinks.map((l: any, i: number) => (
-                            <a key={l.name} href={l.url} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline" title={l.name}>
-                              {i === 0 ? c.hash : l.name}
-                            </a>
-                          ))}
-                        </span>
-                      ) : (
-                        <span className="text-[var(--color-accent)] shrink-0">{c.hash}</span>
-                      )}
-                      <span className="break-words">{c.subject}</span>
-                      <span className="text-[var(--color-muted)] shrink-0">{formatRelativeTime(c.date)}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })()}
-
-      {/* Boot controls */}
-      {data.originalPath && (
-        <div className="grid grid-flow-col auto-cols-max gap-4 items-center">
-          <button
-            onClick={() => bootSession()}
-            disabled={booting}
-            className="px-3 py-1.5 text-base font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {booting ? 'Booting...' : 'Boot New Session'}
-          </button>
-          <label className="grid grid-flow-col auto-cols-max items-center gap-1.5 text-base text-[var(--color-muted)] cursor-pointer">
-            <input
-              type="checkbox"
-              checked={yolo}
-              onChange={(e) => setYolo(e.target.checked)}
-              className="accent-[var(--color-error)]"
-            />
-            Yolo
-          </label>
-          {bootResult && (
-            <span className={`text-base font-mono ${bootResult.startsWith('Error') ? 'text-[var(--color-error)]' : 'text-[var(--color-accent)]'}`}>
-              {bootResult}
+      {/* Git + Branch */}
+      {meta && (fetchRemotes.length > 0 || meta.branch) && (
+        <div className="flex items-center gap-3 flex-wrap">
+          {meta.branch && (
+            <span className="text-sm bg-[var(--color-surface-hover)] text-[var(--color-accent)] px-2 py-0.5 rounded font-mono">
+              {meta.branch}
             </span>
           )}
+          {fetchRemotes.map((r: any) => {
+            const webUrl = gitRemoteToWebUrl(r.url);
+            return webUrl ? (
+              <a key={`${r.name}-${r.url}`} href={webUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-[var(--color-accent)] hover:underline">
+                {r.name}: {webUrl.replace(/^https?:\/\//, '')}
+              </a>
+            ) : (
+              <span key={`${r.name}-${r.url}`} className="text-sm font-mono text-[var(--color-muted)]">{r.name}: {r.url}</span>
+            );
+          })}
         </div>
       )}
 
-      {/* Project Stats */}
+      {/* Stats grid */}
       {full?.stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-          {[
-            { label: 'Sessions', value: full.stats.sessionCount },
-            { label: 'Messages', value: full.stats.messageCount.toLocaleString() },
-            { label: 'Input', value: formatTokens(full.stats.totalInput) },
-            { label: 'Output', value: formatTokens(full.stats.totalOutput) },
-            { label: 'Active Days', value: full.stats.activeDays },
-            { label: 'Equiv Cost', value: `$${full.stats.totalCost.toFixed(2)}` },
-          ].map(({ label, value }) => (
-            <div key={label} className="border border-[var(--color-border)] rounded p-3 text-center">
-              <div className="text-lg font-bold">{value}</div>
-              <div className="text-xs text-[var(--color-muted)]">{label}</div>
-            </div>
-          ))}
+        <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+          <StatCard label="Sessions" value={full.stats.sessionCount} />
+          <StatCard label="Messages" value={full.stats.messageCount.toLocaleString()} />
+          <StatCard label="Input" value={formatTokens(full.stats.totalInput)} />
+          <StatCard label="Output" value={formatTokens(full.stats.totalOutput)} />
+          <StatCard label="Active Days" value={full.stats.activeDays} sub={full.stats.firstActivity ? `since ${formatRelativeTime(full.stats.firstActivity)}` : undefined} />
+          <StatCard label="Equiv Cost" value={`$${full.stats.totalCost.toFixed(2)}`} />
         </div>
       )}
 
-      {/* Models + Tools row */}
-      {full && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {full.models?.length > 0 && (
+      {/* Usage share (30d progress bars) */}
+      {thisActivity && globalTotals.cost > 0 && (
+        <div className="border border-[var(--color-border)] rounded p-4 space-y-2">
+          <h3 className="text-sm font-bold text-[var(--color-muted)]">30-Day Usage Share</h3>
+          <ProgressBar
+            label="Input"
+            value={thisActivity.total_input}
+            max={globalTotals.input}
+            detail={`${formatTokens(thisActivity.total_input)} / ${formatTokens(globalTotals.input)}`}
+          />
+          <ProgressBar
+            label="Output"
+            value={thisActivity.total_output}
+            max={globalTotals.output}
+            detail={`${formatTokens(thisActivity.total_output)} / ${formatTokens(globalTotals.output)}`}
+          />
+          <ProgressBar
+            label="Cost"
+            value={thisActivity.cost_estimate}
+            max={globalTotals.cost}
+            detail={`$${thisActivity.cost_estimate.toFixed(0)} / $${globalTotals.cost.toFixed(0)}`}
+          />
+        </div>
+      )}
+
+      {/* Two-column: Models + Tools | Commits */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Models + Tools */}
+        <div className="space-y-4">
+          {full?.models?.length > 0 && (
             <div className="border border-[var(--color-border)] rounded p-4">
               <h3 className="text-sm font-bold mb-2 text-[var(--color-muted)]">Models</h3>
               <div className="space-y-1">
@@ -228,30 +237,74 @@ export default function ProjectSessionsPage({
               </div>
             </div>
           )}
-          {full.toolUsage?.length > 0 && (
+          {full?.toolUsage?.length > 0 && (
             <div className="border border-[var(--color-border)] rounded p-4">
               <h3 className="text-sm font-bold mb-2 text-[var(--color-muted)]">Top Tools</h3>
               <div className="space-y-1">
-                {full.toolUsage.map((t: any) => (
-                  <div key={t.tool_name} className="flex justify-between text-sm">
-                    <span className="font-mono">{t.tool_name}</span>
-                    <span className="text-[var(--color-muted)]">{t.count}</span>
-                  </div>
-                ))}
+                {full.toolUsage.map((t: any) => {
+                  const maxCount = full.toolUsage[0]?.count ?? 1;
+                  return (
+                    <div key={t.tool_name} className="flex items-center gap-2 text-sm">
+                      <span className="font-mono w-28 shrink-0 truncate">{t.tool_name}</span>
+                      <div className="flex-1 h-1.5 bg-[var(--color-surface-hover)] rounded overflow-hidden">
+                        <div className="h-full bg-[var(--color-accent)] rounded" style={{ width: `${(t.count / maxCount) * 100}%` }} />
+                      </div>
+                      <span className="text-[var(--color-muted)] w-12 text-right shrink-0">{t.count}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
         </div>
-      )}
+
+        {/* Recent Commits + CLAUDE.md */}
+        <div className="space-y-4">
+          {meta?.recentCommits && meta.recentCommits.length > 0 && (
+            <div className="border border-[var(--color-border)] rounded p-4">
+              <h3 className="text-sm font-bold mb-2 text-[var(--color-muted)]">Recent Commits</h3>
+              <div className="space-y-1.5 font-mono text-sm">
+                {meta.recentCommits.slice(0, 10).map((c) => {
+                  const commitLinks = fetchRemotes
+                    .map((r: any) => ({ name: r.name, url: commitUrl(r.url, c.hash) }))
+                    .filter((l: any) => l.url);
+                  return (
+                    <div key={c.hash} className="flex gap-2">
+                      {commitLinks.length > 0 ? (
+                        <a href={commitLinks[0].url!} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline shrink-0">
+                          {c.hash}
+                        </a>
+                      ) : (
+                        <span className="text-[var(--color-accent)] shrink-0">{c.hash}</span>
+                      )}
+                      <span className="truncate flex-1">{c.subject}</span>
+                      <span className="text-[var(--color-muted)] shrink-0">{formatRelativeTime(c.date)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {meta?.claudeMdExists && (
+            <div className="border border-[var(--color-border)] rounded p-4">
+              <h3 className="text-sm font-bold mb-2 text-[var(--color-muted)]">CLAUDE.md</h3>
+              <pre className="text-sm bg-[var(--color-background)] border border-[var(--color-border)] rounded p-3 whitespace-pre-wrap max-h-48 overflow-auto">
+                {meta.claudeMd}
+                {meta.claudeMd && meta.claudeMd.length >= 500 && <span className="text-[var(--color-muted)]">&hellip;</span>}
+              </pre>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Open Todos */}
       {full?.todos?.length > 0 && (
         <div className="border border-[var(--color-border)] rounded p-4">
           <div className="flex items-center gap-2 mb-3">
             <h3 className="text-sm font-bold text-[var(--color-muted)]">Open Todos</h3>
-            <Link href="/todos" className="text-xs text-[var(--color-accent)] hover:underline ml-auto">
-              View all
-            </Link>
+            <span className="text-xs text-[var(--color-muted)]">{full.todos.length}</span>
+            <Link href="/todos" className="text-xs text-[var(--color-accent)] hover:underline ml-auto">View all</Link>
           </div>
           <div className="space-y-1">
             {full.todos.map((t: any) => (
@@ -278,10 +331,16 @@ export default function ProjectSessionsPage({
           <div className="space-y-2">
             {full.prompts.map((p: any, i: number) => (
               <div key={i} className="text-sm border-l-2 border-[var(--color-border)] pl-3">
-                <p className="text-[var(--color-foreground)]">{p.text}</p>
+                <Link
+                  href={`/projects/${project}/${p.sessionUuid}`}
+                  className="text-[var(--color-foreground)] hover:text-[var(--color-accent)] transition-colors"
+                >
+                  {p.text}
+                </Link>
                 <div className="flex gap-2 text-xs text-[var(--color-muted)] mt-1">
                   <span>{formatRelativeTime(p.timestamp)}</span>
                   {p.sessionDisplay && <span>{p.sessionDisplay}</span>}
+                  {p.model && <span className="font-mono">{p.model.replace('claude-', '')}</span>}
                 </div>
               </div>
             ))}
@@ -289,65 +348,69 @@ export default function ProjectSessionsPage({
         </div>
       )}
 
-      <div className="text-base text-[var(--color-muted)]">
-        {data.sessions.length} sessions
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full text-base">
-          <thead>
-            <tr className="text-left text-[var(--color-muted)] border-b border-[var(--color-border)]">
-              <th className="pb-2 pr-4">First Prompt</th>
-              <th className="pb-2 pr-4 w-20">Messages</th>
-              <th className="pb-2 pr-4 w-28">Branch</th>
-              <th className="pb-2 pr-4 w-36">Modified</th>
-              <th className="pb-2 w-20"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.sessions.map((session) => (
-              <tr
-                key={session.sessionId}
-                className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]"
-              >
-                <td className="py-2 pr-4">
-                  <Link
-                    href={`/projects/${project}/${session.sessionId}`}
-                    className="hover:text-[var(--color-accent)] transition-colors"
-                  >
-                    {session.displayName ?? session.firstPrompt ?? session.sessionId.slice(0, 8)}
-                  </Link>
-                  {session.isSidechain && (
-                    <span className="ml-2 text-base px-1.5 py-0.5 rounded bg-[var(--color-surface-hover)] text-[var(--color-muted)]">
-                      sidechain
-                    </span>
-                  )}
-                </td>
-                <td className="py-2 pr-4 text-[var(--color-muted)]">
-                  {session.messageCount ?? '?'}
-                </td>
-                <td className="py-2 pr-4 text-[var(--color-muted)] break-words">
-                  {session.gitBranch ?? '-'}
-                </td>
-                <td className="py-2 pr-4 text-[var(--color-muted)]">
-                  {session.modified
-                    ? formatRelativeTime(session.modified)
-                    : '-'}
-                </td>
-                <td className="py-2">
-                  <SessionPopover
-                    sessionId={session.sessionId}
-                    project={project}
-                    projectPath={data.originalPath}
-                    firstPrompt={session.firstPrompt ?? undefined}
-                    messageCount={session.messageCount ?? undefined}
-                    gitBranch={session.gitBranch ?? undefined}
-                  />
-                </td>
+      {/* Sessions table */}
+      <div>
+        <h3 className="text-sm font-bold text-[var(--color-muted)] mb-3">
+          Sessions ({data.sessions.length})
+        </h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[var(--color-muted)] border-b border-[var(--color-border)]">
+                <th className="pb-2 pr-4">Session</th>
+                <th className="pb-2 pr-4 w-20">Msgs</th>
+                <th className="pb-2 pr-4 w-28">Branch</th>
+                <th className="pb-2 pr-4 w-36">Modified</th>
+                <th className="pb-2 w-10"></th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {visibleSessions.map((session) => (
+                <tr
+                  key={session.sessionId}
+                  className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]"
+                >
+                  <td className="py-2 pr-4">
+                    <Link
+                      href={`/projects/${project}/${session.sessionId}`}
+                      className="hover:text-[var(--color-accent)] transition-colors"
+                    >
+                      {session.displayName ?? session.firstPrompt ?? session.sessionId.slice(0, 8)}
+                    </Link>
+                    {session.isSidechain && (
+                      <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-[var(--color-surface-hover)] text-[var(--color-muted)]">
+                        sidechain
+                      </span>
+                    )}
+                  </td>
+                  <td className="py-2 pr-4 text-[var(--color-muted)]">{session.messageCount ?? '?'}</td>
+                  <td className="py-2 pr-4 text-[var(--color-muted)] truncate max-w-28">{session.gitBranch ?? '-'}</td>
+                  <td className="py-2 pr-4 text-[var(--color-muted)]">
+                    {session.modified ? formatRelativeTime(session.modified) : '-'}
+                  </td>
+                  <td className="py-2">
+                    <SessionPopover
+                      sessionId={session.sessionId}
+                      project={project}
+                      projectPath={data.originalPath}
+                      firstPrompt={session.firstPrompt ?? undefined}
+                      messageCount={session.messageCount ?? undefined}
+                      gitBranch={session.gitBranch ?? undefined}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {data.sessions.length > 25 && !showAllSessions && (
+          <button
+            onClick={() => setShowAllSessions(true)}
+            className="mt-2 text-sm text-[var(--color-accent)] hover:underline"
+          >
+            Show all {data.sessions.length} sessions
+          </button>
+        )}
       </div>
     </div>
   );
