@@ -206,32 +206,33 @@ In cloud mode, `getDb()` becomes `getTenantDb(accountId)` — all existing API r
 ## Milestones
 
 ### M0: Foundation
-- [ ] `MULTI_TENANT` env flag, conditional middleware
-- [ ] Control plane DB: `control.db` with accounts, api_keys, usage_log tables
-- [ ] `unfh_` key generation, SHA-256 hashing, validation
-- [ ] Tenant DB pool (LRU cache of per-account SQLite connections)
-- [ ] `getDb()` → `getTenantDb()` in cloud mode
+- [x] `MULTI_TENANT` env flag, conditional middleware
+- [x] Control plane DB: `control.db` with accounts, api_keys, usage_log tables
+- [x] `unfh_` key generation, SHA-256 hashing, validation
+- [x] Tenant DB pool (LRU cache of per-account SQLite connections)
+- [x] `getDb()` → `getTenantDb()` in cloud mode
 
 ### M1: Webhook + Ingest
-- [ ] `POST /api/webhooks/tier-sync` — receive from unsandbox.com, verify HMAC signature
-- [ ] `POST /api/ingest` — accept JSONL, validate key, write to tenant DB
-- [ ] Rate limiting per key based on tier
-- [ ] Usage logging per key
+- [x] `POST /api/webhooks/tier-sync` — receive from unsandbox.com, verify HMAC signature
+- [x] `POST /api/ingest` — accept JSONL, validate key, write to tenant DB
+- [x] Rate limiting per key based on tier
+- [x] Usage logging per key
 
 ### M2: Lightweight router
-- [ ] `@unfirehose/router` package — file watcher + batch POST
-- [ ] `~/.unfirehose.json` config
-- [ ] Cursor tracking (resume after restart)
-- [ ] Exponential backoff retry
+- [x] `@unfirehose/router` package — file watcher + batch POST
+- [x] `~/.unfirehose.json` config
+- [x] Cursor tracking (resume after restart)
+- [x] Exponential backoff retry
 
 ### M3: Dashboard auth
-- [ ] Key-based login flow (paste unfh_ key to access dashboard)
-- [ ] Session cookies for web UI
-- [ ] API key management page (create, revoke, label, list)
+- [x] Key-based login flow (paste unfh_ key to access dashboard)
+- [x] Session cookies for web UI
+- [x] API key management page (create, revoke, label, list)
 - [ ] Team sub-key management (team tier only)
 
 ### M4: Tier features
-- [ ] 7-day sliding window enforcement for free tier
+- [x] 7-day sliding window enforcement for free tier (prune on ingest)
+- [x] Account info API (`/api/account` — tier, limits, usage stats)
 - [ ] Team usage aggregation (per sub-key breakdown)
 - [ ] Data export/delete (GDPR)
 
