@@ -13,13 +13,13 @@ unfirehose currently runs locally, reading Claude Code JSONL from `~/.claude/` i
 
 Already built and wired up:
 
-- **`Unsandbox.Schemas.UnfirehoseAccount`** — Ecto schema: `account_id`, `email`, `tier` (free/pro/team), `stripe_customer_id`, `payment_id`
+- **`Unsandbox.Schemas.UnfirehoseAccount`** — Ecto schema: `account_id`, `email`, `tier` (free/pro/team as strings — we map to ints: 0/14/33), `stripe_customer_id`, `payment_id`
 - **`Unsandbox.Storage.UnfirehoseAccounts`** — Full CRUD, upsert by account_id, lapse detection for expired payments (auto-downgrade)
 - **`Unsandbox.Webhooks.UnfirehoseSync`** — POSTs tier changes to `https://api.unfirehose.org/webhooks/tier-sync` with HMAC-SHA256 signature, 3 retries with exponential backoff, audit-logged
 - **Pricing page** — 3 tiers with crypto (XMR/BTC/LTC/DOGE) + Stripe card/USDC payments:
-  - **Free** ($0) — 7-day sliding window, rate limited
-  - **Pro** ($14/mo, $97/yr) — Full access, unlimited history, priority rate limits
-  - **Trust** ($420/mo) — Everything in Pro + cloud bucket sync, dedicated endpoint, SLA, KYC
+  - **Free / tier 0** ($0) — 7-day sliding window, rate limited
+  - **Solo / tier 14** ($14/mo) — Full access, unlimited history, priority rate limits
+  - **Team / tier 33** ($420/mo) — Everything in Solo + unlimited sub-keys for team members
 - **Purchase flow** — Routes through `/purchase/custom?product_type=unfirehose&product_tier=pro` etc.
 - **Account flow** — User purchases on unsandbox.com, gets an `account_id`, generates their own `unfh-` prefixed keys on unfirehose.com
 
@@ -61,10 +61,12 @@ No teams, no keys                        Teams, sub-keys, usage tracking
 ```sql
 -- Shared control plane DB: /data/control.db
 
+-- Tier integers: 0=free, 14=solo ($14/mo), 33=team ($33/mo, unlimited sub-keys)
+
 CREATE TABLE accounts (
   id TEXT PRIMARY KEY,            -- account_id from unsandbox.com
   email TEXT NOT NULL,
-  tier TEXT NOT NULL DEFAULT 'free',  -- free, pro, team (matches unsandbox schema)
+  tier INTEGER NOT NULL DEFAULT 0,  -- 0=free, 14=solo, 33=team
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now')),
   active INTEGER DEFAULT 1
@@ -96,7 +98,7 @@ CREATE TABLE usage_log (
 
 Each account gets its own SQLite file at `/data/{account_id}.db` using the EXACT same schema as the local `unfirehose.db`. No schema changes needed for tenant data.
 
-Team sub-keys: when `tier = 'team'`, the root key holder can generate child keys (`parent_key_id` set). All sub-keys write to the same tenant DB but usage is tracked per key.
+Team sub-keys: when `tier >= 33`, the root key holder can generate child keys (`parent_key_id` set). All sub-keys write to the same tenant DB but usage is tracked per key.
 
 ### API key format
 
@@ -121,8 +123,9 @@ Content-Type: application/json
 
 Must match what `Unsandbox.Webhooks.UnfirehoseSync` sends:
 - Verify HMAC-SHA256 signature using `UNFIREHOSE_WEBHOOK_SECRET`
+- Map string tier to int: `{"free": 0, "pro": 14, "team": 33}` (unsandbox sends strings, we store ints)
 - Upsert account record in control.db
-- Enforce tier limits (e.g., revoke sub-keys if downgraded from team to pro)
+- Enforce tier limits (e.g., revoke sub-keys if downgraded from team to solo)
 
 ### Ingest API
 
@@ -191,13 +194,14 @@ In cloud mode, `getDb()` becomes `getTenantDb(accountId)` — all existing API r
 
 ### Tier enforcement
 
-| Feature | Free | Pro | Team |
-|---------|------|-----|------|
+| Feature | Free (0) | Solo (14) | Team (33) |
+|---------|----------|-----------|-----------|
 | Data window | 7 days | Unlimited | Unlimited |
 | Ingest rate | 100 events/min | 10K events/min | Unlimited |
 | API keys | 1 | 5 | Unlimited sub-keys |
 | Dashboard | Read-only | Full | Full + team view |
 | Backfill | No | Yes | Yes |
+| Price | $0 | $14/mo | $420/mo |
 
 ## Milestones
 
