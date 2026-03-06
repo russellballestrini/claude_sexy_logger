@@ -1,6 +1,6 @@
 # unfirehose.com: Multi-Tenant Cloud Dashboard
 
-**Status:** open
+**Status:** complete
 **Project:** unfirehose-nextjs-logger
 **Estimated:** multi-week
 **Blocked by:** fox approval on architecture
@@ -228,13 +228,13 @@ In cloud mode, `getDb()` becomes `getTenantDb(accountId)` — all existing API r
 - [x] Key-based login flow (paste unfh_ key to access dashboard)
 - [x] Session cookies for web UI
 - [x] API key management page (create, revoke, label, list)
-- [ ] Team sub-key management (team tier only)
+- [x] Team sub-key management (team tier only)
 
 ### M4: Tier features
 - [x] 7-day sliding window enforcement for free tier (prune on ingest)
 - [x] Account info API (`/api/account` — tier, limits, usage stats)
-- [ ] Team usage aggregation (per sub-key breakdown)
-- [ ] Data export/delete (GDPR)
+- [x] Team usage aggregation (per sub-key breakdown)
+- [x] Data export/delete (GDPR)
 
 ## Required env vars (cloud mode)
 
