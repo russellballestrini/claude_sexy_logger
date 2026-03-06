@@ -72,7 +72,10 @@ export default function ProjectPage({
   );
 
   async function bootSession(sessionId?: string) {
-    if (!data?.originalPath) return;
+    if (!data?.originalPath) {
+      setBootResult('Error: No project path — cannot boot session.');
+      return;
+    }
     setBooting(true);
     setBootResult(null);
     try {
@@ -114,7 +117,9 @@ export default function ProjectPage({
         }),
       });
       const todoResult = await todoRes.json();
-      if (startNow && data?.originalPath) {
+      if (startNow && !data?.originalPath) {
+        setBootResult('Error: No project path — cannot spawn agent. Set path in project settings or re-ingest.');
+      } else if (startNow && data?.originalPath) {
         const res = await fetch('/api/boot', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
