@@ -493,7 +493,25 @@ function NodeCard({ node, sshHost, econ, geoip, isSelected, onSelect }: {
             {!geoip?.city && econ.location && <span className="text-[var(--color-accent)]/70">{econ.location}</span>}
             {geoip?.isp && <span className="truncate max-w-[120px]">{geoip.isp}</span>}
             {!geoip?.isp && econ.provider !== 'home' && <span>{PROVIDERS.find(p => p.value === econ.provider)?.label ?? econ.provider}</span>}
-            <span className="ml-auto">${econ.ispCostMonthly}/mo</span>
+          </div>
+          {/* Power + cost row */}
+          <div className="flex items-center gap-3 text-xs text-[var(--color-muted)] mt-1.5">
+            {(() => {
+              const cpuW = node.powerWatts ?? (cpuCores * (10 + (loadPct / 100) * 30));
+              const gpuW = node.gpuPowerWatts ?? 0;
+              const totalW = cpuW + gpuW;
+              const kwhMonth = (totalW * 24 * 30) / 1000;
+              const elecCost = kwhMonth * econ.electricityCostKwh;
+              const totalCost = elecCost + econ.ispCostMonthly;
+              const sourceTag = node.powerSource === 'rapl' ? 'rapl' : node.powerSource === 'nvidia' ? 'nvidia' : 'est';
+              return (
+                <>
+                  <span>{Math.round(totalW)}W <span className="opacity-60">[{sourceTag}]</span></span>
+                  <span>${Math.round(elecCost)}/mo elec</span>
+                  <span className="ml-auto font-bold text-[var(--color-foreground)]">${Math.round(totalCost)}/mo</span>
+                </>
+              );
+            })()}
           </div>
         </>
       ) : (
