@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import useSWR from 'swr';
 import { PageContext } from '@unfirehose/ui/PageContext';
 
@@ -28,65 +28,86 @@ interface SshHost {
   forwardAgent?: string;
 }
 
+// ============================================================
+// Main Page
+// ============================================================
+
 export default function PermacomputerPage() {
-  const { data: mesh } = useSWR('/api/mesh', fetcher, { refreshInterval: 30000 });
+  const { data: mesh, mutate: mutateMesh } = useSWR('/api/mesh', fetcher, { refreshInterval: 30000 });
   const { data: sshData, mutate: mutateSsh } = useSWR<{ hosts: SshHost[]; keys: string[] }>('/api/ssh-config', fetcher);
-  const { data: settings } = useSWR('/api/settings', fetcher);
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
 
   const hosts = sshData?.hosts ?? [];
   const meshNodes: any[] = mesh?.nodes ?? [];
   const reachable = meshNodes.filter((n: any) => n.reachable);
 
+  // Build combined node list: mesh nodes enriched with SSH config
+  const allNodes = useMemo(() => {
+    const nodes: { meshNode: any; sshHost?: SshHost; key: string }[] = [];
+    const seen = new Set<string>();
+
+    for (const mn of meshNodes) {
+      const host = hosts.find(h => h.name === mn.hostname || h.hostname === mn.hostname);
+      const key = mn.hostname;
+      seen.add(key);
+      if (host) { seen.add(host.name); if (host.hostname) seen.add(host.hostname); }
+      nodes.push({ meshNode: mn, sshHost: host, key });
+    }
+
+    // SSH hosts not in mesh
+    for (const h of hosts) {
+      if (!seen.has(h.name) && !seen.has(h.hostname ?? '')) {
+        nodes.push({ meshNode: null, sshHost: h, key: h.name });
+      }
+    }
+
+    return nodes;
+  }, [meshNodes, hosts]);
+
   return (
     <div className="space-y-6">
       <PageContext
         pageType="permacomputer"
-        summary={`Permacomputer. ${hosts.length} SSH nodes, ${reachable.length} reachable, ${mesh?.summary?.totalClaudes ?? 0} claudes.`}
-        metrics={{ nodes: hosts.length, reachable: reachable.length, claudes: mesh?.summary?.totalClaudes ?? 0 }}
+        summary={`Permacomputer. ${allNodes.length} nodes, ${reachable.length} reachable, ${mesh?.summary?.totalClaudes ?? 0} claudes.`}
+        metrics={{ nodes: allNodes.length, reachable: reachable.length, claudes: mesh?.summary?.totalClaudes ?? 0 }}
       />
 
       <div>
         <h2 className="text-lg font-bold">Permacomputer</h2>
         <p className="text-base text-[var(--color-muted)]">
-          Configure your personal compute mesh. SSH nodes, cloud compute, agent harnesses.
+          Your personal compute mesh. Click a node for deep diagnostics.
         </p>
       </div>
 
-      {/* Mesh Summary */}
-      {mesh?.summary && (
-        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
-          <h3 className="text-base font-bold text-[var(--color-muted)]">Mesh</h3>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <Stat label="Nodes" value={`${mesh.summary.reachableNodes}/${mesh.summary.totalNodes}`} />
-            <Stat label="Claudes" value={mesh.summary.totalClaudes} />
-            <Stat label="Cores" value={mesh.summary.totalCores} />
-            <Stat label="Memory" value={`${mesh.summary.totalMemUsedGB}/${mesh.summary.totalMemGB} GB`} />
-            <Stat label="Status" value={mesh.summary.reachableNodes === mesh.summary.totalNodes ? 'all green' : 'degraded'} accent={mesh.summary.reachableNodes === mesh.summary.totalNodes} />
-          </div>
-        </div>
+      {/* Mesh Summary Bar */}
+      {mesh?.summary && <MeshSummaryBar summary={mesh.summary} />}
+
+      {/* Node Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {allNodes.map(({ meshNode, sshHost, key }) => (
+          <NodeCard
+            key={key}
+            node={meshNode}
+            sshHost={sshHost}
+            isSelected={selectedNode === key}
+            onSelect={() => setSelectedNode(selectedNode === key ? null : key)}
+          />
+        ))}
+        <AddNodeButton hosts={hosts} keys={sshData?.keys ?? []} mutate={() => { mutateSsh(); mutateMesh(); }} />
+      </div>
+
+      {/* Node Detail Panel */}
+      {selectedNode && (
+        <NodeDetailPanel
+          hostname={selectedNode}
+          sshHost={hosts.find(h => h.name === selectedNode || h.hostname === selectedNode)}
+          meshNode={meshNodes.find((n: any) => n.hostname === selectedNode)}
+          onClose={() => setSelectedNode(null)}
+          keys={sshData?.keys ?? []}
+          mutateSsh={mutateSsh}
+          mutateMesh={mutateMesh}
+        />
       )}
-
-      {/* SSH Nodes */}
-      <SshNodesPanel hosts={hosts} keys={sshData?.keys ?? []} meshNodes={meshNodes} mutate={mutateSsh} mutateMesh={() => {}} />
-
-      {/* SSH Keys */}
-      <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
-        <h3 className="text-base font-bold text-[var(--color-muted)]">SSH Keys</h3>
-        {(sshData?.keys ?? []).length === 0 ? (
-          <p className="text-base text-[var(--color-muted)]">No SSH keys found in ~/.ssh/</p>
-        ) : (
-          <div className="flex flex-wrap gap-2">
-            {(sshData?.keys ?? []).map(k => (
-              <span key={k} className="px-3 py-1 text-base font-mono rounded border border-[var(--color-border)] bg-[var(--color-background)]">
-                {k}
-              </span>
-            ))}
-          </div>
-        )}
-        <p className="text-base text-[var(--color-muted)]">
-          To add a key to a remote node: <code className="font-mono text-[var(--color-foreground)]">ssh-copy-id -i ~/.ssh/KEY user@host</code>
-        </p>
-      </div>
 
       {/* Unsandbox */}
       <UnsandboxPanel />
@@ -97,154 +118,820 @@ export default function PermacomputerPage() {
   );
 }
 
-// --- SSH Nodes ---
+// ============================================================
+// Mesh Summary Bar
+// ============================================================
 
-function SshNodesPanel({
-  hosts, keys, meshNodes, mutate, mutateMesh,
-}: {
-  hosts: SshHost[];
+function MeshSummaryBar({ summary }: { summary: any }) {
+  const memPct = summary.totalMemGB > 0 ? Math.round((summary.totalMemUsedGB / summary.totalMemGB) * 100) : 0;
+  const allGreen = summary.reachableNodes === summary.totalNodes;
+
+  return (
+    <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+      <div className="flex items-center gap-6 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className={`text-lg ${allGreen ? 'text-green-400' : 'text-yellow-400'}`}>
+            {allGreen ? '●' : '◐'}
+          </span>
+          <span className="text-base font-bold">
+            {summary.reachableNodes}/{summary.totalNodes} nodes
+          </span>
+        </div>
+        <MiniStat label="claudes" value={summary.totalClaudes} accent />
+        <MiniStat label="cores" value={summary.totalCores} />
+        <div className="flex items-center gap-2">
+          <span className="text-base text-[var(--color-muted)]">mem</span>
+          <div className="w-24 h-2 bg-[var(--color-background)] rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${memPct}%`,
+                backgroundColor: memPct > 85 ? '#ef4444' : memPct > 60 ? '#eab308' : 'var(--color-accent)',
+              }}
+            />
+          </div>
+          <span className="text-base font-mono">{summary.totalMemUsedGB}/{summary.totalMemGB}G</span>
+        </div>
+        <span className={`text-base font-bold ${allGreen ? 'text-green-400' : 'text-yellow-400'}`}>
+          {allGreen ? 'all green' : 'degraded'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function MiniStat({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-base text-[var(--color-muted)]">{label}</span>
+      <span className={`text-base font-bold font-mono ${accent ? 'text-[var(--color-accent)]' : ''}`}>{value}</span>
+    </div>
+  );
+}
+
+// ============================================================
+// Node Card (compact, clickable)
+// ============================================================
+
+function NodeCard({ node, sshHost, isSelected, onSelect }: {
+  node: any; sshHost?: SshHost; isSelected: boolean; onSelect: () => void;
+}) {
+  const reachable = node?.reachable;
+  const name = sshHost?.name ?? node?.hostname ?? '?';
+  const hostname = sshHost?.hostname ?? node?.hostname;
+  const cpuCores = node?.cpuCores ?? 0;
+  const memTotal = node?.memTotalGB ?? 0;
+  const memUsed = node?.memUsedGB ?? 0;
+  const memPct = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : 0;
+  const load1 = node?.loadAvg?.[0] ?? 0;
+  const loadPct = cpuCores > 0 ? Math.min(100, Math.round((load1 / cpuCores) * 100)) : 0;
+  const claudes = node?.claudeProcesses ?? 0;
+  const swap = node?.swapUsedGB ?? 0;
+
+  return (
+    <button
+      onClick={onSelect}
+      className={`text-left bg-[var(--color-surface)] rounded border p-4 transition-all cursor-pointer hover:border-[var(--color-accent)]/50 ${
+        isSelected
+          ? 'border-[var(--color-accent)] shadow-[0_0_12px_rgba(var(--accent-rgb,212,0,0),0.3)]'
+          : 'border-[var(--color-border)]'
+      }`}
+    >
+      {/* Header row */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className={`text-sm ${reachable ? 'text-green-400' : node ? 'text-red-400' : 'text-[var(--color-muted)]'}`}>
+          {reachable ? '●' : '○'}
+        </span>
+        <span className="text-base font-bold font-mono truncate">{name}</span>
+        {hostname && hostname !== name && (
+          <span className="text-xs text-[var(--color-muted)] font-mono truncate">{hostname}</span>
+        )}
+        {claudes > 0 && (
+          <span className="ml-auto text-xs font-bold text-[var(--color-accent)] bg-[var(--color-accent)]/10 px-1.5 py-0.5 rounded">
+            {claudes} claude{claudes !== 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
+
+      {reachable ? (
+        <>
+          {/* Mini gauges */}
+          <div className="space-y-2 mb-3">
+            <MiniGauge label="CPU" value={`${load1}/${cpuCores}`} pct={loadPct} />
+            <MiniGauge label="MEM" value={`${memUsed}/${memTotal}G`} pct={memPct} />
+          </div>
+
+          {/* Stats row */}
+          <div className="flex items-center gap-3 text-xs text-[var(--color-muted)]">
+            <span>{cpuCores} cores</span>
+            {swap > 0 && <span className="text-yellow-400">swap {swap}G</span>}
+            {node.uptime && <span>up {node.uptime}</span>}
+          </div>
+        </>
+      ) : (
+        <div className="text-xs text-[var(--color-muted)]">
+          {node?.error ?? (node ? 'unreachable' : 'not probed')}
+          {sshHost && (
+            <div className="mt-1">
+              {sshHost.user && <span>user: {sshHost.user} </span>}
+              {sshHost.port && sshHost.port !== '22' && <span>port: {sshHost.port}</span>}
+            </div>
+          )}
+        </div>
+      )}
+    </button>
+  );
+}
+
+function MiniGauge({ label, value, pct }: { label: string; value: string; pct: number }) {
+  const color = pct > 85 ? '#ef4444' : pct > 60 ? '#eab308' : 'var(--color-accent)';
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-[var(--color-muted)] w-6">{label}</span>
+      <div className="flex-1 h-1.5 bg-[var(--color-background)] rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+      </div>
+      <span className="text-xs font-mono w-16 text-right">{value}</span>
+    </div>
+  );
+}
+
+// ============================================================
+// Add Node Button (inline card)
+// ============================================================
+
+function AddNodeButton({ hosts, keys, mutate }: { hosts: SshHost[]; keys: string[]; mutate: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState<SshHost>({ name: '', hostname: '', port: '22', user: '', identityFile: '', forwardAgent: 'yes' });
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!form.name) return;
+    setSaving(true);
+    try {
+      const res = await fetch('/api/ssh-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      if (res.ok) { mutate(); setAdding(false); setForm({ name: '', hostname: '', port: '22', user: '', identityFile: '', forwardAgent: 'yes' }); }
+    } finally { setSaving(false); }
+  };
+
+  if (!adding) {
+    return (
+      <button
+        onClick={() => setAdding(true)}
+        className="border border-dashed border-[var(--color-border)] rounded p-4 flex items-center justify-center gap-2 text-base text-[var(--color-muted)] hover:text-[var(--color-foreground)] hover:border-[var(--color-accent)]/50 transition-colors cursor-pointer min-h-[120px]"
+      >
+        <span className="text-lg">+</span> Add Node
+      </button>
+    );
+  }
+
+  return (
+    <div className="border border-[var(--color-accent)]/30 rounded p-4 space-y-3 col-span-1 md:col-span-2 xl:col-span-3">
+      <HostForm form={form} setForm={setForm} keys={keys} onSave={save} onCancel={() => setAdding(false)} saving={saving} isNew />
+    </div>
+  );
+}
+
+// ============================================================
+// Node Detail Panel (expanded view with deep probe data)
+// ============================================================
+
+function NodeDetailPanel({ hostname, sshHost, meshNode, onClose, keys, mutateSsh, mutateMesh }: {
+  hostname: string;
+  sshHost?: SshHost;
+  meshNode?: any;
+  onClose: () => void;
   keys: string[];
-  meshNodes: any[];
-  mutate: () => void;
+  mutateSsh: () => void;
   mutateMesh: () => void;
 }) {
-  const [editing, setEditing] = useState<string | null>(null);
-  const [form, setForm] = useState<SshHost>({ name: '' });
+  const probeHost = sshHost?.hostname ?? sshHost?.name ?? hostname;
+  const { data: detail, isLoading, mutate: mutateDetail } = useSWR(
+    `/api/mesh/node?host=${encodeURIComponent(probeHost)}`,
+    fetcher,
+    { refreshInterval: 0 }
+  );
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState<SshHost>(sshHost ?? { name: hostname });
   const [saving, setSaving] = useState(false);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [testing, setTesting] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, 'ok' | 'fail' | 'testing'>>({});
+  const [activeTab, setActiveTab] = useState<'overview' | 'processes' | 'gpu' | 'disk' | 'network' | 'sessions'>('overview');
 
-  const getMeshNode = (hostName: string) =>
-    meshNodes.find((n: any) => n.hostname === hostName || n.hostname === hosts.find(h => h.name === hostName)?.hostname);
-
-  const startEdit = (host: SshHost) => { setEditing(host.name); setForm({ ...host }); };
-  const startNew = () => { setEditing('__new__'); setForm({ name: '', hostname: '', port: '22', user: '', identityFile: '', forwardAgent: 'yes' }); };
-  const cancel = () => { setEditing(null); setForm({ name: '' }); };
+  const refresh = () => mutateDetail();
 
   const saveHost = async () => {
     if (!form.name) return;
     setSaving(true);
     try {
       const res = await fetch('/api/ssh-config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
-      if (res.ok) { mutate(); mutateMesh(); setEditing(null); setForm({ name: '' }); }
+      if (res.ok) { mutateSsh(); mutateMesh(); setEditing(false); }
     } finally { setSaving(false); }
   };
 
-  const deleteHost = async (name: string) => {
-    const res = await fetch('/api/ssh-config', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
-    if (res.ok) { mutate(); mutateMesh(); setDeleting(null); }
-  };
-
-  const testHost = async (name: string) => {
-    setTesting(name);
-    setTestResults(prev => ({ ...prev, [name]: 'testing' }));
-    try {
-      const res = await fetch('/api/mesh');
-      const meshData = await res.json();
-      const host = hosts.find(h => h.name === name);
-      const node = meshData.nodes?.find((n: any) => n.hostname === name || n.hostname === host?.hostname);
-      setTestResults(prev => ({ ...prev, [name]: node?.reachable ? 'ok' : 'fail' }));
-    } catch { setTestResults(prev => ({ ...prev, [name]: 'fail' })); }
-    finally { setTesting(null); }
-  };
+  const TABS = [
+    { id: 'overview' as const, label: 'Overview', icon: '◇' },
+    { id: 'processes' as const, label: 'Processes', icon: '▸' },
+    { id: 'gpu' as const, label: 'GPU', icon: '◈', hide: !detail?.gpu?.hasGpu },
+    { id: 'disk' as const, label: 'Disk', icon: '■' },
+    { id: 'network' as const, label: 'Network', icon: '◎' },
+    { id: 'sessions' as const, label: 'Sessions', icon: '≡' },
+  ].filter(t => !t.hide);
 
   return (
-    <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-base font-bold text-[var(--color-muted)]">SSH Nodes</h3>
+    <div className="bg-[var(--color-surface)] rounded border border-[var(--color-accent)]/30 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-background)]">
         <div className="flex items-center gap-3">
-          <span className="text-base text-[var(--color-muted)]">
-            {hosts.length} host{hosts.length !== 1 ? 's' : ''} in ~/.ssh/config
+          <span className={`text-sm ${detail?.reachable ? 'text-green-400' : 'text-red-400'}`}>
+            {detail?.reachable ? '●' : '○'}
           </span>
-          <button onClick={startNew} disabled={editing !== null}
-            className="px-3 py-1.5 text-base font-bold rounded border border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors disabled:opacity-50 cursor-pointer">
-            + Add Node
-          </button>
+          <span className="text-base font-bold font-mono">{hostname}</span>
+          {detail?.system && (
+            <span className="text-xs text-[var(--color-muted)]">
+              {detail.system.os} / {detail.system.arch} / {detail.system.kernel}
+            </span>
+          )}
+          {isLoading && <span className="text-xs text-[var(--color-muted)] animate-pulse">probing...</span>}
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={refresh} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-foreground)] cursor-pointer">refresh</button>
+          {sshHost && (
+            <button onClick={() => setEditing(!editing)} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-foreground)] cursor-pointer">
+              {editing ? 'cancel edit' : 'edit host'}
+            </button>
+          )}
+          <button onClick={onClose} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-foreground)] cursor-pointer ml-2">close</button>
         </div>
       </div>
 
-      {editing === '__new__' && (
-        <HostForm form={form} setForm={setForm} keys={keys} onSave={saveHost} onCancel={cancel} saving={saving} isNew />
+      {/* Edit form */}
+      {editing && sshHost && (
+        <div className="px-5 py-3 border-b border-[var(--color-border)]">
+          <HostForm form={form} setForm={setForm} keys={keys} onSave={saveHost} onCancel={() => setEditing(false)} saving={saving} />
+        </div>
       )}
 
-      {hosts.length === 0 && editing !== '__new__' && (
-        <p className="text-base text-[var(--color-muted)]">No SSH hosts configured. Add a node to get started.</p>
-      )}
+      {/* Tabs */}
+      <div className="flex items-center gap-0.5 px-5 pt-2 border-b border-[var(--color-border)]">
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-3 py-1.5 text-xs rounded-t border-b-2 transition-colors cursor-pointer ${
+              activeTab === tab.id
+                ? 'border-[var(--color-accent)] text-[var(--color-foreground)] font-bold'
+                : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-foreground)]'
+            }`}
+          >
+            <span className={activeTab === tab.id ? 'text-[var(--color-accent)]' : ''}>{tab.icon}</span>
+            <span className="ml-1.5">{tab.label}</span>
+          </button>
+        ))}
+      </div>
 
-      <div className="space-y-2">
-        {hosts.map(host => {
-          const node = getMeshNode(host.name);
-          const isEditing = editing === host.name;
-          const isDeleting = deleting === host.name;
-          const testStatus = testResults[host.name];
-
-          if (isEditing) {
-            return <HostForm key={host.name} form={form} setForm={setForm} keys={keys} onSave={saveHost} onCancel={cancel} saving={saving} />;
-          }
-
-          return (
-            <div key={host.name} className="bg-[var(--color-background)] rounded border border-[var(--color-border)] px-4 py-3 flex items-center gap-4">
-              <span className={`text-base ${node?.reachable ? 'text-green-400' : 'text-[var(--color-muted)]'}`}>
-                {node?.reachable ? '●' : '○'}
-              </span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-base font-bold font-mono">{host.name}</span>
-                  {host.hostname && host.hostname !== host.name && (
-                    <span className="text-base text-[var(--color-muted)] font-mono">{host.hostname}</span>
-                  )}
-                  {host.port && host.port !== '22' && (
-                    <span className="text-base text-[var(--color-muted)]">:{host.port}</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 text-base text-[var(--color-muted)]">
-                  {host.user && <span>user: {host.user}</span>}
-                  {host.identityFile && <span>key: {host.identityFile.replace(/.*\//, '')}</span>}
-                  {host.forwardAgent === 'yes' && <span>agent fwd</span>}
-                </div>
-              </div>
-              {node?.reachable && (
-                <div className="text-base text-[var(--color-muted)] text-right shrink-0">
-                  {node.claudeProcesses !== undefined && <div>{node.claudeProcesses} claude{node.claudeProcesses !== 1 ? 's' : ''}</div>}
-                  {node.loadAvg && <div>load {node.loadAvg[0]}</div>}
-                </div>
-              )}
-              {testStatus && testStatus !== 'testing' && (
-                <span className={`text-base font-bold ${testStatus === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
-                  {testStatus === 'ok' ? 'reachable' : 'unreachable'}
-                </span>
-              )}
-              <div className="flex items-center gap-2 shrink-0">
-                <button onClick={() => testHost(host.name)} disabled={testing === host.name}
-                  className="text-base text-[var(--color-muted)] hover:text-[var(--color-foreground)] transition-colors cursor-pointer disabled:opacity-50">
-                  {testing === host.name ? 'testing...' : 'test'}
-                </button>
-                <button onClick={() => startEdit(host)} disabled={editing !== null}
-                  className="text-base text-[var(--color-muted)] hover:text-[var(--color-foreground)] transition-colors cursor-pointer disabled:opacity-50">
-                  edit
-                </button>
-                {isDeleting ? (
-                  <div className="flex gap-1">
-                    <button onClick={() => deleteHost(host.name)} className="text-base text-red-400 hover:text-red-300 cursor-pointer">confirm</button>
-                    <button onClick={() => setDeleting(null)} className="text-base text-[var(--color-muted)] hover:text-[var(--color-foreground)] cursor-pointer">cancel</button>
-                  </div>
-                ) : (
-                  <button onClick={() => setDeleting(host.name)} disabled={editing !== null}
-                    className="text-base text-[var(--color-muted)] hover:text-red-400 transition-colors cursor-pointer disabled:opacity-50">
-                    remove
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
+      {/* Tab content */}
+      <div className="p-5">
+        {!detail?.reachable && !isLoading && (
+          <div className="text-base text-red-400">{detail?.error ?? 'Node unreachable'}</div>
+        )}
+        {detail?.reachable && activeTab === 'overview' && <OverviewTab detail={detail} />}
+        {detail?.reachable && activeTab === 'processes' && <ProcessesTab detail={detail} />}
+        {detail?.reachable && activeTab === 'gpu' && <GpuTab detail={detail} />}
+        {detail?.reachable && activeTab === 'disk' && <DiskTab detail={detail} />}
+        {detail?.reachable && activeTab === 'network' && <NetworkTab detail={detail} />}
+        {detail?.reachable && activeTab === 'sessions' && <SessionsTab detail={detail} />}
       </div>
     </div>
   );
 }
 
-// --- Unsandbox ---
+// ============================================================
+// Overview Tab
+// ============================================================
+
+function OverviewTab({ detail }: { detail: any }) {
+  const sys = detail.system;
+  const mem = detail.memory;
+  const load = detail.loadAvg;
+  const cores = sys?.cpuCores ?? 1;
+  const uptimeHours = Math.round((detail.uptimeSeconds ?? 0) / 3600);
+
+  // Build load sparkline from 1/5/15 min averages
+  const loadPoints = load ? [load[0], load[1], load[2]] : [0, 0, 0];
+  const maxLoad = Math.max(...loadPoints, cores) || 1;
+
+  const memPct = mem ? Math.round((mem.usedGB / mem.totalGB) * 100) : 0;
+  const swapPct = mem && mem.swapTotalGB > 0 ? Math.round((mem.swapUsedGB / mem.swapTotalGB) * 100) : 0;
+
+  return (
+    <div className="space-y-5">
+      {/* System info */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="CPU" value={sys?.cpuModel?.replace(/\(R\)|\(TM\)/g, '').replace(/CPU\s+/i, '').trim() ?? 'n/a'} sub={`${cores} cores${sys?.cpuMhz ? ` @ ${Math.round(sys.cpuMhz)}MHz` : ''}`} />
+        <StatCard label="Architecture" value={sys?.arch ?? 'n/a'} sub={sys?.kernel ?? ''} />
+        <StatCard label="OS" value={sys?.os ?? 'Linux'} sub={`up ${formatDuration(detail.uptimeSeconds)}`} />
+        <StatCard label="Claudes" value={detail.claudeProcesses?.length ?? 0} sub={detail.claudeProcesses?.length > 0 ? detail.claudeProcesses.map((p: any) => `PID ${p.pid}`).join(', ') : 'none running'} accent />
+      </div>
+
+      {/* Load & Memory gauges */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Load */}
+        <div className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-4">
+          <div className="text-xs text-[var(--color-muted)] mb-2">Load Average</div>
+          <div className="flex items-end gap-1 h-16 mb-2">
+            {['1m', '5m', '15m'].map((label, i) => {
+              const val = loadPoints[i];
+              const pct = Math.min(100, (val / maxLoad) * 100);
+              const color = val > cores ? '#ef4444' : val > cores * 0.7 ? '#eab308' : 'var(--color-accent)';
+              return (
+                <div key={label} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-xs font-mono font-bold" style={{ color }}>{val.toFixed(2)}</span>
+                  <div className="w-full bg-[var(--color-surface)] rounded-sm overflow-hidden" style={{ height: '100%' }}>
+                    <div className="w-full rounded-sm transition-all" style={{ height: `${pct}%`, backgroundColor: color, marginTop: `${100 - pct}%` }} />
+                  </div>
+                  <span className="text-[10px] text-[var(--color-muted)]">{label}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-xs text-[var(--color-muted)]">
+            runnable: {detail.runnable} / threshold: {cores} cores
+          </div>
+        </div>
+
+        {/* Memory */}
+        <div className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-4">
+          <div className="text-xs text-[var(--color-muted)] mb-2">Memory</div>
+          {mem && (
+            <>
+              <GaugeBar label="RAM" pct={memPct} value={`${mem.usedGB}/${mem.totalGB}G`} sub={`${mem.availableGB}G available`} />
+              <div className="flex gap-3 text-xs text-[var(--color-muted)] mt-2 mb-3">
+                <span>buffers: {mem.buffersGB}G</span>
+                <span>cached: {mem.cachedGB}G</span>
+                <span>shmem: {mem.shmemGB}G</span>
+                {mem.dirtyMB > 0 && <span className="text-yellow-400">dirty: {mem.dirtyMB}MB</span>}
+              </div>
+              {mem.swapTotalGB > 0 && (
+                <GaugeBar label="Swap" pct={swapPct} value={`${mem.swapUsedGB}/${mem.swapTotalGB}G`} sub={mem.swapCachedGB > 0 ? `${mem.swapCachedGB}G cached` : ''} warn={swapPct > 50} />
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Temperatures */}
+      {detail.temperatures?.length > 0 && (
+        <div className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-4">
+          <div className="text-xs text-[var(--color-muted)] mb-2">Thermal Zones</div>
+          <div className="flex gap-4 flex-wrap">
+            {detail.temperatures.map((t: any, i: number) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className="text-xs text-[var(--color-muted)]">{t.zone}</span>
+                <span className={`text-sm font-mono font-bold ${t.tempC > 80 ? 'text-red-400' : t.tempC > 60 ? 'text-yellow-400' : 'text-green-400'}`}>
+                  {t.tempC}°C
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Processes Tab
+// ============================================================
+
+function ProcessesTab({ detail }: { detail: any }) {
+  const [filter, setFilter] = useState('');
+  const [showAll, setShowAll] = useState(false);
+
+  const allProcesses: any[] = detail.processes ?? [];
+  const claudePs: any[] = detail.claudeProcesses ?? [];
+
+  const filtered = useMemo(() => {
+    let list = allProcesses;
+    if (filter) {
+      const q = filter.toLowerCase();
+      list = list.filter((p: any) => p.command?.toLowerCase().includes(q) || p.user?.toLowerCase().includes(q));
+    }
+    return showAll ? list : list.slice(0, 30);
+  }, [allProcesses, filter, showAll]);
+
+  return (
+    <div className="space-y-4">
+      {/* Claude processes hero section */}
+      {claudePs.length > 0 && (
+        <div className="bg-[var(--color-accent)]/5 border border-[var(--color-accent)]/20 rounded p-4 space-y-2">
+          <div className="text-xs font-bold text-[var(--color-accent)]">
+            {claudePs.length} Claude process{claudePs.length !== 1 ? 'es' : ''} running
+          </div>
+          <div className="space-y-1">
+            {claudePs.map((p: any, i: number) => (
+              <div key={i} className="flex items-center gap-3 text-xs font-mono">
+                <span className="text-[var(--color-accent)] w-12">PID {p.pid}</span>
+                <span className="text-[var(--color-muted)] w-12">{p.user}</span>
+                <GaugePill label="cpu" value={p.cpu} max={100} />
+                <GaugePill label="mem" value={p.mem} max={100} />
+                <span className="text-[var(--color-muted)] w-16">RSS {formatBytes(p.rss * 1024)}</span>
+                <span className="text-[var(--color-muted)] w-16">{p.time}</span>
+                <span className="text-[var(--color-foreground)] truncate flex-1">{p.command}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Process filter */}
+      <div className="flex items-center gap-3">
+        <input
+          type="text" value={filter} onChange={e => setFilter(e.target.value)}
+          placeholder="filter processes..."
+          className="flex-1 bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-xs font-mono"
+        />
+        <span className="text-xs text-[var(--color-muted)]">{filtered.length} of {allProcesses.length}</span>
+      </div>
+
+      {/* Process table */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs font-mono">
+          <thead>
+            <tr className="text-[var(--color-muted)] border-b border-[var(--color-border)]">
+              <th className="text-left py-1 pr-2">USER</th>
+              <th className="text-right py-1 pr-2">PID</th>
+              <th className="text-right py-1 pr-2">%CPU</th>
+              <th className="text-right py-1 pr-2">%MEM</th>
+              <th className="text-right py-1 pr-2">RSS</th>
+              <th className="text-left py-1 pr-2">STAT</th>
+              <th className="text-left py-1 pr-2">TIME</th>
+              <th className="text-left py-1">COMMAND</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((p: any, i: number) => {
+              const isClaude = p.command?.toLowerCase().includes('claude');
+              return (
+                <tr key={i} className={`border-b border-[var(--color-border)]/30 hover:bg-[var(--color-surface-hover)] ${isClaude ? 'bg-[var(--color-accent)]/5' : ''}`}>
+                  <td className="py-0.5 pr-2 text-[var(--color-muted)]">{p.user}</td>
+                  <td className="py-0.5 pr-2 text-right">{p.pid}</td>
+                  <td className={`py-0.5 pr-2 text-right ${p.cpu > 50 ? 'text-red-400 font-bold' : p.cpu > 10 ? 'text-yellow-400' : ''}`}>{p.cpu}</td>
+                  <td className={`py-0.5 pr-2 text-right ${p.mem > 20 ? 'text-red-400 font-bold' : p.mem > 5 ? 'text-yellow-400' : ''}`}>{p.mem}</td>
+                  <td className="py-0.5 pr-2 text-right text-[var(--color-muted)]">{formatBytes(p.rss * 1024)}</td>
+                  <td className="py-0.5 pr-2 text-[var(--color-muted)]">{p.stat}</td>
+                  <td className="py-0.5 pr-2 text-[var(--color-muted)]">{p.time}</td>
+                  <td className={`py-0.5 truncate max-w-md ${isClaude ? 'text-[var(--color-accent)]' : ''}`}>{p.command}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {!showAll && allProcesses.length > 30 && (
+        <button onClick={() => setShowAll(true)} className="text-xs text-[var(--color-accent)] hover:underline cursor-pointer">
+          Show all {allProcesses.length} processes
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// GPU Tab
+// ============================================================
+
+function GpuTab({ detail }: { detail: any }) {
+  const nvidia: any[] = detail.gpu?.nvidia ?? [];
+  const nvidiaPs: any[] = detail.gpu?.nvidiaProcesses ?? [];
+  const amd: any[] = detail.gpu?.amd ?? [];
+
+  return (
+    <div className="space-y-4">
+      {nvidia.map((gpu: any, i: number) => (
+        <div key={i} className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-base font-bold">{gpu.name}</span>
+              <span className="text-xs text-[var(--color-muted)] ml-2">GPU {gpu.index}</span>
+            </div>
+            <span className="text-xs font-mono text-[var(--color-muted)]">{gpu.pstate}</span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <GaugeCard label="GPU Utilization" pct={gpu.gpuUtil} value={`${gpu.gpuUtil}%`} />
+            <GaugeCard label="Memory" pct={gpu.memTotalMB > 0 ? Math.round((gpu.memUsedMB / gpu.memTotalMB) * 100) : 0} value={`${gpu.memUsedMB}/${gpu.memTotalMB}MB`} />
+            <GaugeCard label="Power" pct={gpu.powerLimitW > 0 ? Math.round((gpu.powerDrawW / gpu.powerLimitW) * 100) : 0} value={`${gpu.powerDrawW}/${gpu.powerLimitW}W`} />
+            <div className="bg-[var(--color-surface)] rounded p-3">
+              <div className="text-xs text-[var(--color-muted)] mb-1">Thermal</div>
+              <div className={`text-lg font-mono font-bold ${gpu.tempC > 80 ? 'text-red-400' : gpu.tempC > 65 ? 'text-yellow-400' : 'text-green-400'}`}>
+                {gpu.tempC}°C
+              </div>
+              <div className="text-xs text-[var(--color-muted)]">fan {gpu.fanPct}%</div>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {nvidiaPs.length > 0 && (
+        <div className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-4">
+          <div className="text-xs text-[var(--color-muted)] mb-2">GPU Processes</div>
+          <table className="w-full text-xs font-mono">
+            <thead>
+              <tr className="text-[var(--color-muted)] border-b border-[var(--color-border)]">
+                <th className="text-right py-1 pr-3">PID</th>
+                <th className="text-left py-1 pr-3">Process</th>
+                <th className="text-right py-1">GPU Mem</th>
+              </tr>
+            </thead>
+            <tbody>
+              {nvidiaPs.map((p: any, i: number) => (
+                <tr key={i} className="border-b border-[var(--color-border)]/30">
+                  <td className="py-0.5 pr-3 text-right">{p.pid}</td>
+                  <td className="py-0.5 pr-3">{p.name}</td>
+                  <td className="py-0.5 text-right">{p.memMB}MB</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {amd.length > 0 && (
+        <div className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-4">
+          <div className="text-xs text-[var(--color-muted)] mb-2">AMD GPU</div>
+          <pre className="text-xs font-mono overflow-x-auto">{JSON.stringify(amd, null, 2)}</pre>
+        </div>
+      )}
+
+      {!nvidia.length && !amd.length && (
+        <div className="text-base text-[var(--color-muted)]">No GPU detected on this node.</div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Disk Tab
+// ============================================================
+
+function DiskTab({ detail }: { detail: any }) {
+  const disks: any[] = detail.disk ?? [];
+
+  return (
+    <div className="space-y-3">
+      {disks.map((d: any, i: number) => (
+        <div key={i} className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-3">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <span className="text-xs font-mono font-bold">{d.mount}</span>
+              <span className="text-xs text-[var(--color-muted)] ml-2">{d.device}</span>
+            </div>
+            <span className="text-xs font-mono">{d.used} / {d.size}</span>
+          </div>
+          <div className="h-2 bg-[var(--color-surface)] rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${d.usePct}%`,
+                backgroundColor: d.usePct > 90 ? '#ef4444' : d.usePct > 75 ? '#eab308' : 'var(--color-accent)',
+              }}
+            />
+          </div>
+          <div className="flex justify-between mt-1 text-[10px] text-[var(--color-muted)]">
+            <span>{d.usePct}% used</span>
+            <span>{d.avail} free</span>
+          </div>
+        </div>
+      ))}
+      {disks.length === 0 && <div className="text-base text-[var(--color-muted)]">No disk data available.</div>}
+    </div>
+  );
+}
+
+// ============================================================
+// Network Tab
+// ============================================================
+
+function NetworkTab({ detail }: { detail: any }) {
+  const ifaces: any[] = detail.network?.interfaces ?? [];
+  const throughput: any[] = detail.network?.throughput ?? [];
+
+  return (
+    <div className="space-y-4">
+      {/* Interfaces */}
+      <div className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-4">
+        <div className="text-xs text-[var(--color-muted)] mb-2">Interfaces</div>
+        <div className="space-y-1">
+          {ifaces.map((iface: any, i: number) => (
+            <div key={i} className="flex items-center gap-3 text-xs font-mono">
+              <span className={`w-16 font-bold ${iface.state === 'UP' ? 'text-green-400' : 'text-[var(--color-muted)]'}`}>{iface.name}</span>
+              <span className={`w-10 ${iface.state === 'UP' ? 'text-green-400' : 'text-red-400'}`}>{iface.state}</span>
+              <span className="text-[var(--color-muted)] flex-1 truncate">{iface.addrs}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Throughput */}
+      {throughput.length > 0 && (
+        <div className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-4">
+          <div className="text-xs text-[var(--color-muted)] mb-2">Cumulative Throughput (since boot)</div>
+          <table className="w-full text-xs font-mono">
+            <thead>
+              <tr className="text-[var(--color-muted)] border-b border-[var(--color-border)]">
+                <th className="text-left py-1">Interface</th>
+                <th className="text-right py-1">RX</th>
+                <th className="text-right py-1">TX</th>
+                <th className="text-right py-1">RX pkts</th>
+                <th className="text-right py-1">TX pkts</th>
+              </tr>
+            </thead>
+            <tbody>
+              {throughput.map((n: any, i: number) => (
+                <tr key={i} className="border-b border-[var(--color-border)]/30">
+                  <td className="py-0.5 font-bold">{n.iface}</td>
+                  <td className="py-0.5 text-right text-green-400">{formatBytes(n.rxBytes)}</td>
+                  <td className="py-0.5 text-right text-blue-400">{formatBytes(n.txBytes)}</td>
+                  <td className="py-0.5 text-right text-[var(--color-muted)]">{formatNumber(n.rxPackets)}</td>
+                  <td className="py-0.5 text-right text-[var(--color-muted)]">{formatNumber(n.txPackets)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Sessions Tab
+// ============================================================
+
+function SessionsTab({ detail }: { detail: any }) {
+  const tmux: any[] = detail.sessions?.tmux ?? [];
+  const screen: any[] = detail.sessions?.screen ?? [];
+  const docker: any[] = detail.containers ?? [];
+
+  return (
+    <div className="space-y-4">
+      {/* Tmux */}
+      <div className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-4">
+        <div className="text-xs text-[var(--color-muted)] mb-2">tmux sessions</div>
+        {tmux.length > 0 ? (
+          <div className="space-y-1">
+            {tmux.map((s: any, i: number) => (
+              <div key={i} className="flex items-center gap-3 text-xs font-mono">
+                <span className="text-green-400">●</span>
+                <span className="font-bold">{s.name}</span>
+                <span className="text-[var(--color-muted)]">{s.windows} window{s.windows !== 1 ? 's' : ''}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-xs text-[var(--color-muted)]">No tmux sessions</div>
+        )}
+      </div>
+
+      {/* Screen */}
+      {screen.length > 0 && (
+        <div className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-4">
+          <div className="text-xs text-[var(--color-muted)] mb-2">screen sessions</div>
+          <div className="space-y-1">
+            {screen.map((s: any, i: number) => (
+              <div key={i} className="flex items-center gap-3 text-xs font-mono">
+                <span className="text-green-400">●</span>
+                <span className="font-bold">{s.name}</span>
+                <span className="text-[var(--color-muted)]">PID {s.pid}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Docker */}
+      {docker.length > 0 && (
+        <div className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-4">
+          <div className="text-xs text-[var(--color-muted)] mb-2">Docker Containers</div>
+          <table className="w-full text-xs font-mono">
+            <thead>
+              <tr className="text-[var(--color-muted)] border-b border-[var(--color-border)]">
+                <th className="text-left py-1">Name</th>
+                <th className="text-left py-1">Image</th>
+                <th className="text-left py-1">Status</th>
+                <th className="text-left py-1">Ports</th>
+              </tr>
+            </thead>
+            <tbody>
+              {docker.map((c: any, i: number) => (
+                <tr key={i} className="border-b border-[var(--color-border)]/30">
+                  <td className="py-0.5 font-bold">{c.name}</td>
+                  <td className="py-0.5 text-[var(--color-muted)]">{c.image}</td>
+                  <td className={`py-0.5 ${c.status?.includes('Up') ? 'text-green-400' : 'text-yellow-400'}`}>{c.status}</td>
+                  <td className="py-0.5 text-[var(--color-muted)]">{c.ports}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {tmux.length === 0 && screen.length === 0 && docker.length === 0 && (
+        <div className="text-base text-[var(--color-muted)]">No active sessions or containers.</div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Shared UI Components
+// ============================================================
+
+function StatCard({ label, value, sub, accent }: { label: string; value: string | number; sub?: string; accent?: boolean }) {
+  return (
+    <div className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-3">
+      <div className="text-xs text-[var(--color-muted)] mb-1">{label}</div>
+      <div className={`text-sm font-bold truncate ${accent ? 'text-[var(--color-accent)]' : ''}`}>{value}</div>
+      {sub && <div className="text-[10px] text-[var(--color-muted)] truncate mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function GaugeBar({ label, pct, value, sub, warn }: { label: string; pct: number; value: string; sub?: string; warn?: boolean }) {
+  const color = warn || pct > 85 ? '#ef4444' : pct > 60 ? '#eab308' : 'var(--color-accent)';
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-bold">{label}</span>
+        <span className="text-xs font-mono">{value}</span>
+      </div>
+      <div className="h-2.5 bg-[var(--color-surface)] rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+      </div>
+      {sub && <div className="text-[10px] text-[var(--color-muted)] mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function GaugeCard({ label, pct, value }: { label: string; pct: number; value: string }) {
+  const color = pct > 85 ? '#ef4444' : pct > 60 ? '#eab308' : 'var(--color-accent)';
+  return (
+    <div className="bg-[var(--color-surface)] rounded p-3">
+      <div className="text-xs text-[var(--color-muted)] mb-1">{label}</div>
+      <div className="text-lg font-mono font-bold mb-1" style={{ color }}>{pct}%</div>
+      <div className="h-1.5 bg-[var(--color-background)] rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+      </div>
+      <div className="text-[10px] text-[var(--color-muted)] mt-1">{value}</div>
+    </div>
+  );
+}
+
+function GaugePill({ label, value, max }: { label: string; value: number; max: number }) {
+  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
+  const color = pct > 50 ? '#ef4444' : pct > 20 ? '#eab308' : 'var(--color-accent)';
+  return (
+    <div className="flex items-center gap-1 w-20">
+      <span className="text-[10px] text-[var(--color-muted)]">{label}</span>
+      <div className="flex-1 h-1 bg-[var(--color-background)] rounded-full overflow-hidden">
+        <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: color }} />
+      </div>
+      <span className="text-[10px] font-mono" style={{ color }}>{value.toFixed(1)}</span>
+    </div>
+  );
+}
+
+// ============================================================
+// Helpers
+// ============================================================
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(i > 1 ? 1 : 0)}${units[i]}`;
+}
+
+function formatNumber(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+function formatDuration(seconds: number): string {
+  if (!seconds) return 'n/a';
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+// ============================================================
+// Unsandbox Panel
+// ============================================================
 
 function UnsandboxPanel() {
   const { data: settings, mutate: mutateSettings } = useSWR('/api/settings', fetcher);
@@ -394,7 +1081,9 @@ function UnsandboxPanel() {
   );
 }
 
-// --- Bootstrap Harness ---
+// ============================================================
+// Bootstrap Harness Panel
+// ============================================================
 
 function BootstrapPanel() {
   const { data: mesh } = useSWR('/api/mesh', fetcher, { refreshInterval: 30000 });
@@ -549,52 +1238,45 @@ function BootstrapPanel() {
   );
 }
 
-// --- Shared ---
-
-function Stat({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
-  return (
-    <div>
-      <div className="text-base text-[var(--color-muted)]">{label}</div>
-      <div className={`text-base font-bold ${accent ? 'text-[var(--color-accent)]' : ''}`}>{value}</div>
-    </div>
-  );
-}
+// ============================================================
+// Host Form
+// ============================================================
 
 function HostForm({ form, setForm, keys, onSave, onCancel, saving, isNew }: {
   form: SshHost; setForm: (f: SshHost) => void; keys: string[];
   onSave: () => void; onCancel: () => void; saving: boolean; isNew?: boolean;
 }) {
   return (
-    <div className="bg-[var(--color-background)] rounded border border-[var(--color-accent)]/30 p-4 space-y-3">
+    <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <div>
           <label className="text-base text-[var(--color-muted)] block mb-1">Host Alias</label>
           <input type="text" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })}
             placeholder="e.g. cammy" disabled={!isNew}
-            className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono disabled:opacity-50" />
+            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono disabled:opacity-50" />
         </div>
         <div>
           <label className="text-base text-[var(--color-muted)] block mb-1">HostName</label>
           <input type="text" value={form.hostname ?? ''} onChange={e => setForm({ ...form, hostname: e.target.value })}
             placeholder="e.g. cammy.foxhop.net"
-            className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono" />
+            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono" />
         </div>
         <div>
           <label className="text-base text-[var(--color-muted)] block mb-1">Port</label>
           <input type="text" value={form.port ?? ''} onChange={e => setForm({ ...form, port: e.target.value })}
             placeholder="22"
-            className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono" />
+            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono" />
         </div>
         <div>
           <label className="text-base text-[var(--color-muted)] block mb-1">User</label>
           <input type="text" value={form.user ?? ''} onChange={e => setForm({ ...form, user: e.target.value })}
             placeholder="e.g. fox"
-            className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono" />
+            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono" />
         </div>
         <div>
           <label className="text-base text-[var(--color-muted)] block mb-1">Identity File</label>
           <select value={form.identityFile ?? ''} onChange={e => setForm({ ...form, identityFile: e.target.value })}
-            className="w-full bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono">
+            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono">
             <option value="">default</option>
             {keys.map(k => <option key={k} value={`~/.ssh/${k}`}>~/.ssh/{k}</option>)}
           </select>
