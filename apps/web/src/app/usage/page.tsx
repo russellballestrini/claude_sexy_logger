@@ -111,6 +111,7 @@ export default function UsageMonitorPage() {
     fetcher,
     { refreshInterval: 30000 }
   );
+  const [activeTab, setActiveTab] = useState<'model' | 'infra'>('model');
   const [expandedProject, setExpandedProject] = useState<string | null>(null);
   const { data: projectDetail } = useSWR(
     expandedProject ? `/api/projects/activity?project=${encodeURIComponent(expandedProject)}` : null,
@@ -232,6 +233,30 @@ export default function UsageMonitorPage() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex items-center gap-0.5 border-b border-[var(--color-border)]">
+        {([
+          { id: 'model' as const, label: 'Model Usage', icon: '¤' },
+          { id: 'infra' as const, label: 'Infrastructure', icon: '⚡' },
+        ]).map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`px-4 py-2 text-base rounded-t border-b-2 transition-colors cursor-pointer ${
+              activeTab === tab.id
+                ? 'border-[var(--color-accent)] text-[var(--color-foreground)] font-bold'
+                : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-foreground)]'
+            }`}
+          >
+            <span className={activeTab === tab.id ? 'text-[var(--color-accent)]' : ''}>{tab.icon}</span>
+            <span className="ml-1.5">{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* ============ MODEL USAGE TAB ============ */}
+      {activeTab === 'model' && (<>
+
       {/* Live rate cards */}
       <div className="grid grid-cols-4 gap-4">
         <RateCard label="Input (5min)" value={formatTokens(currentRate.input)} warn={currentRate.input > 5000000} />
@@ -243,183 +268,6 @@ export default function UsageMonitorPage() {
           sub={dbStats ? `${formatTokens(dbStats.thinkingBlocks)} thinking` : ''}
         />
       </div>
-
-      {/* Mesh Status */}
-      {mesh && (
-        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-bold text-[var(--color-muted)]">
-              Permacomputer Mesh
-            </h3>
-            <div className="flex items-center gap-4 text-sm">
-              <span className="text-[var(--color-accent)] font-bold">{mesh.summary?.totalClaudes ?? 0} claudes</span>
-              <span className="text-[var(--color-muted)]">{mesh.summary?.totalCores ?? 0} cores</span>
-              <span className="text-[var(--color-muted)]">{mesh.summary?.totalMemGB ?? 0}GB total</span>
-              <span className="text-[var(--color-muted)]">{mesh.summary?.reachableNodes ?? 0}/{mesh.summary?.totalNodes ?? 0} nodes</span>
-              {(() => {
-                const totalCost = (mesh.nodes ?? [])
-                  .filter((n: any) => n.reachable)
-                  .reduce((sum: number, n: any) => {
-                    const watts = (n.powerWatts ?? estimateWatts(n.cpuCores, n.loadAvg[0])) + (n.gpuPowerWatts ?? 0);
-                    return sum + (watts * 24 * 30 / 1000) * getKwhRate(n.hostname);
-                  }, 0);
-                return <span className="text-[var(--color-accent)]">~${totalCost.toFixed(0)}/mo elec</span>;
-              })()}
-              <span className="text-[var(--color-muted)]">{mesh.summary?.totalPowerWatts ?? 0}W total</span>
-            </div>
-          </div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(mesh.nodes?.length ?? 1, 3)}, 1fr)` }}>
-            {mesh.nodes?.map((node: any) => (
-              <MeshNodeCard key={node.hostname} node={node} kwhRate={getKwhRate(node.hostname)} onRateChange={saveKwhRate} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* APMonitor Network Status */}
-      {apmonitor && apmonitor.summary?.totalResources > 0 && (
-        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-bold text-[var(--color-muted)]">
-              APMonitor Network Status
-            </h3>
-            <div className="flex items-center gap-4 text-sm">
-              <span className="text-[var(--color-accent)] font-bold">{apmonitor.summary.up} up</span>
-              {apmonitor.summary.down > 0 && (
-                <span className="text-[var(--color-error)] font-bold">{apmonitor.summary.down} down</span>
-              )}
-              <span className="text-[var(--color-muted)]">{apmonitor.summary.totalResources} resources</span>
-              <span className="text-[var(--color-muted)]">{apmonitor.summary.nodesWithData}/{apmonitor.summary.nodesPolled} nodes</span>
-            </div>
-          </div>
-          <div className="grid gap-2">
-            {apmonitor.nodes?.filter((n: any) => n.resources?.length > 0).map((node: any) => (
-              <div key={node.host}>
-                <div className="text-xs text-[var(--color-muted)] mb-1 font-bold uppercase tracking-wider">{node.host}</div>
-                <div className="grid gap-1">
-                  {node.resources.map((r: any) => (
-                    <div
-                      key={`${node.host}-${r.name}`}
-                      className={`flex items-center gap-3 px-3 py-1.5 rounded text-sm ${
-                        r.isUp
-                          ? 'text-[var(--color-muted)]'
-                          : 'bg-red-950/30 text-[var(--color-error)]'
-                      }`}
-                    >
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${r.isUp ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-error)] animate-pulse'}`} />
-                      <span className="font-bold min-w-[10rem]">{r.name}</span>
-                      {r.lastResponseTimeMs != null && (
-                        <span className="text-xs">{r.lastResponseTimeMs}ms</span>
-                      )}
-                      {!r.isUp && r.errorReason && (
-                        <span className="text-xs truncate">{r.errorReason}</span>
-                      )}
-                      {!r.isUp && r.downCount > 0 && (
-                        <span className="text-xs">({r.downCount}x)</span>
-                      )}
-                      <span className="text-xs text-[var(--color-muted)] ml-auto">
-                        {r.lastChecked ? formatRelativeTime(r.lastChecked) : 'never'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Mesh Time-Series Charts */}
-      {meshHistory?.timeline?.length > 0 && (
-        <div className="space-y-4">
-          {/* Power Wattage */}
-          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
-            <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
-              Compute Wattage
-              <span className="text-xs font-normal ml-2 text-[var(--color-muted)]">
-                {meshHistory.timeline[meshHistory.timeline.length - 1]?.totalWatts ?? 0}W current
-              </span>
-            </h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={meshHistory.timeline}>
-                <XAxis
-                  dataKey="timestamp"
-                  tick={{ fill: '#71717a', fontSize: 12 }}
-                  tickFormatter={(t: string) => t.slice(11, 16)}
-                />
-                <YAxis tick={{ fill: '#71717a', fontSize: 12 }} unit="W" />
-                <Tooltip
-                  labelFormatter={(t: string) => t}
-                  formatter={(v: number, name: string) => [`${v}W`, name]}
-                  contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 4 }}
-                />
-                <Legend />
-                <Line type="monotone" dataKey="totalWatts" name="Total" stroke="var(--color-accent)" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="cpuWatts" name="CPU" stroke="#f97316" strokeWidth={1.5} dot={false} />
-                {meshHistory.timeline.some((t: any) => t.gpuWatts > 0) && (
-                  <Line type="monotone" dataKey="gpuWatts" name="GPU" stroke="#a78bfa" strokeWidth={1.5} dot={false} />
-                )}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* CPU Load */}
-          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
-            <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
-              CPU Load
-              <span className="text-xs font-normal ml-2 text-[var(--color-muted)]">
-                {meshHistory.timeline[meshHistory.timeline.length - 1]?.totalLoad ?? 0} / {meshHistory.timeline[meshHistory.timeline.length - 1]?.totalCores ?? 0} cores
-              </span>
-            </h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={meshHistory.timeline}>
-                <XAxis
-                  dataKey="timestamp"
-                  tick={{ fill: '#71717a', fontSize: 12 }}
-                  tickFormatter={(t: string) => t.slice(11, 16)}
-                />
-                <YAxis tick={{ fill: '#71717a', fontSize: 12 }} />
-                <Tooltip
-                  labelFormatter={(t: string) => t}
-                  formatter={(v: number, name: string) => [typeof v === 'number' ? v.toFixed(1) : v, name]}
-                  contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 4 }}
-                />
-                <Legend />
-                <Area type="monotone" dataKey="totalCores" name="Total Cores" stroke="#3f3f46" fill="#3f3f46" fillOpacity={0.2} dot={false} />
-                <Area type="monotone" dataKey="totalLoad" name="Load Average" stroke="#f97316" fill="#f97316" fillOpacity={0.3} dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          {/* Memory Usage */}
-          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
-            <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
-              Memory Usage
-              <span className="text-xs font-normal ml-2 text-[var(--color-muted)]">
-                {meshHistory.timeline[meshHistory.timeline.length - 1]?.memUsedGB ?? 0} / {meshHistory.timeline[meshHistory.timeline.length - 1]?.memTotalGB ?? 0} GB
-              </span>
-            </h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <AreaChart data={meshHistory.timeline}>
-                <XAxis
-                  dataKey="timestamp"
-                  tick={{ fill: '#71717a', fontSize: 12 }}
-                  tickFormatter={(t: string) => t.slice(11, 16)}
-                />
-                <YAxis tick={{ fill: '#71717a', fontSize: 12 }} unit="GB" />
-                <Tooltip
-                  labelFormatter={(t: string) => t}
-                  formatter={(v: number, name: string) => [`${v}GB`, name]}
-                  contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 4 }}
-                />
-                <Legend />
-                <Area type="monotone" dataKey="memTotalGB" name="Total" stroke="#3f3f46" fill="#3f3f46" fillOpacity={0.2} dot={false} />
-                <Area type="monotone" dataKey="memUsedGB" name="Used" stroke="#60a5fa" fill="#60a5fa" fillOpacity={0.3} dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
 
       {/* Token usage timeline */}
       <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
@@ -753,6 +601,191 @@ export default function UsageMonitorPage() {
           DB: {lastIngest.db?.messages} total msgs, {lastIngest.db?.thinkingBlocks} thinking blocks.
         </div>
       )}
+
+      </>)}
+
+      {/* ============ INFRASTRUCTURE TAB ============ */}
+      {activeTab === 'infra' && (<>
+
+      {/* Mesh Status */}
+      {mesh && (
+        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-bold text-[var(--color-muted)]">
+              Permacomputer Mesh
+            </h3>
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-[var(--color-accent)] font-bold">{mesh.summary?.totalClaudes ?? 0} claudes</span>
+              <span className="text-[var(--color-muted)]">{mesh.summary?.totalCores ?? 0} cores</span>
+              <span className="text-[var(--color-muted)]">{mesh.summary?.totalMemGB ?? 0}GB total</span>
+              <span className="text-[var(--color-muted)]">{mesh.summary?.reachableNodes ?? 0}/{mesh.summary?.totalNodes ?? 0} nodes</span>
+              {(() => {
+                const totalCost = (mesh.nodes ?? [])
+                  .filter((n: any) => n.reachable)
+                  .reduce((sum: number, n: any) => {
+                    const watts = (n.powerWatts ?? estimateWatts(n.cpuCores, n.loadAvg[0])) + (n.gpuPowerWatts ?? 0);
+                    return sum + (watts * 24 * 30 / 1000) * getKwhRate(n.hostname);
+                  }, 0);
+                return <span className="text-[var(--color-accent)]">~${totalCost.toFixed(0)}/mo elec</span>;
+              })()}
+              <span className="text-[var(--color-muted)]">{mesh.summary?.totalPowerWatts ?? 0}W total</span>
+            </div>
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(mesh.nodes?.length ?? 1, 3)}, 1fr)` }}>
+            {mesh.nodes?.map((node: any) => (
+              <MeshNodeCard key={node.hostname} node={node} kwhRate={getKwhRate(node.hostname)} onRateChange={saveKwhRate} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* APMonitor Network Status */}
+      {apmonitor && apmonitor.summary?.totalResources > 0 && (
+        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-bold text-[var(--color-muted)]">
+              APMonitor Network Status
+            </h3>
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-[var(--color-accent)] font-bold">{apmonitor.summary.up} up</span>
+              {apmonitor.summary.down > 0 && (
+                <span className="text-[var(--color-error)] font-bold">{apmonitor.summary.down} down</span>
+              )}
+              <span className="text-[var(--color-muted)]">{apmonitor.summary.totalResources} resources</span>
+              <span className="text-[var(--color-muted)]">{apmonitor.summary.nodesWithData}/{apmonitor.summary.nodesPolled} nodes</span>
+            </div>
+          </div>
+          <div className="grid gap-2">
+            {apmonitor.nodes?.filter((n: any) => n.resources?.length > 0).map((node: any) => (
+              <div key={node.host}>
+                <div className="text-xs text-[var(--color-muted)] mb-1 font-bold uppercase tracking-wider">{node.host}</div>
+                <div className="grid gap-1">
+                  {node.resources.map((r: any) => (
+                    <div
+                      key={`${node.host}-${r.name}`}
+                      className={`flex items-center gap-3 px-3 py-1.5 rounded text-sm ${
+                        r.isUp
+                          ? 'text-[var(--color-muted)]'
+                          : 'bg-red-950/30 text-[var(--color-error)]'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${r.isUp ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-error)] animate-pulse'}`} />
+                      <span className="font-bold min-w-[10rem]">{r.name}</span>
+                      {r.lastResponseTimeMs != null && (
+                        <span className="text-xs">{r.lastResponseTimeMs}ms</span>
+                      )}
+                      {!r.isUp && r.errorReason && (
+                        <span className="text-xs truncate">{r.errorReason}</span>
+                      )}
+                      {!r.isUp && r.downCount > 0 && (
+                        <span className="text-xs">({r.downCount}x)</span>
+                      )}
+                      <span className="text-xs text-[var(--color-muted)] ml-auto">
+                        {r.lastChecked ? formatRelativeTime(r.lastChecked) : 'never'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Mesh Time-Series Charts */}
+      {meshHistory?.timeline?.length > 0 && (
+        <div className="space-y-4">
+          {/* Power Wattage */}
+          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+            <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
+              Compute Wattage
+              <span className="text-xs font-normal ml-2 text-[var(--color-muted)]">
+                {meshHistory.timeline[meshHistory.timeline.length - 1]?.totalWatts ?? 0}W current
+              </span>
+            </h3>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={meshHistory.timeline}>
+                <XAxis
+                  dataKey="timestamp"
+                  tick={{ fill: '#71717a', fontSize: 12 }}
+                  tickFormatter={(t: string) => t.slice(11, 16)}
+                />
+                <YAxis tick={{ fill: '#71717a', fontSize: 12 }} unit="W" />
+                <Tooltip
+                  labelFormatter={(t: string) => t}
+                  formatter={(v: number, name: string) => [`${v}W`, name]}
+                  contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 4 }}
+                />
+                <Legend />
+                <Line type="monotone" dataKey="totalWatts" name="Total" stroke="var(--color-accent)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="cpuWatts" name="CPU" stroke="#f97316" strokeWidth={1.5} dot={false} />
+                {meshHistory.timeline.some((t: any) => t.gpuWatts > 0) && (
+                  <Line type="monotone" dataKey="gpuWatts" name="GPU" stroke="#a78bfa" strokeWidth={1.5} dot={false} />
+                )}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* CPU Load */}
+          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+            <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
+              CPU Load
+              <span className="text-xs font-normal ml-2 text-[var(--color-muted)]">
+                {meshHistory.timeline[meshHistory.timeline.length - 1]?.totalLoad ?? 0} / {meshHistory.timeline[meshHistory.timeline.length - 1]?.totalCores ?? 0} cores
+              </span>
+            </h3>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={meshHistory.timeline}>
+                <XAxis
+                  dataKey="timestamp"
+                  tick={{ fill: '#71717a', fontSize: 12 }}
+                  tickFormatter={(t: string) => t.slice(11, 16)}
+                />
+                <YAxis tick={{ fill: '#71717a', fontSize: 12 }} />
+                <Tooltip
+                  labelFormatter={(t: string) => t}
+                  formatter={(v: number, name: string) => [typeof v === 'number' ? v.toFixed(1) : v, name]}
+                  contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 4 }}
+                />
+                <Legend />
+                <Area type="monotone" dataKey="totalCores" name="Total Cores" stroke="#3f3f46" fill="#3f3f46" fillOpacity={0.2} dot={false} />
+                <Area type="monotone" dataKey="totalLoad" name="Load Average" stroke="#f97316" fill="#f97316" fillOpacity={0.3} dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Memory Usage */}
+          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+            <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
+              Memory Usage
+              <span className="text-xs font-normal ml-2 text-[var(--color-muted)]">
+                {meshHistory.timeline[meshHistory.timeline.length - 1]?.memUsedGB ?? 0} / {meshHistory.timeline[meshHistory.timeline.length - 1]?.memTotalGB ?? 0} GB
+              </span>
+            </h3>
+            <ResponsiveContainer width="100%" height={200}>
+              <AreaChart data={meshHistory.timeline}>
+                <XAxis
+                  dataKey="timestamp"
+                  tick={{ fill: '#71717a', fontSize: 12 }}
+                  tickFormatter={(t: string) => t.slice(11, 16)}
+                />
+                <YAxis tick={{ fill: '#71717a', fontSize: 12 }} unit="GB" />
+                <Tooltip
+                  labelFormatter={(t: string) => t}
+                  formatter={(v: number, name: string) => [`${v}GB`, name]}
+                  contentStyle={{ background: '#18181b', border: '1px solid #3f3f46', borderRadius: 4 }}
+                />
+                <Legend />
+                <Area type="monotone" dataKey="memTotalGB" name="Total" stroke="#3f3f46" fill="#3f3f46" fillOpacity={0.2} dot={false} />
+                <Area type="monotone" dataKey="memUsedGB" name="Used" stroke="#60a5fa" fill="#60a5fa" fillOpacity={0.3} dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      </>)}
+
     </div>
   );
 }
