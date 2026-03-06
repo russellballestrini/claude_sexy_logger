@@ -30,20 +30,27 @@ export default function UsageMonitorPage() {
   const [lastIngest, setLastIngest] = useState<any>(null);
   const { data: settings } = useSWR('/api/settings', fetcher, { revalidateOnFocus: false });
   const [kwhRates, setKwhRates] = useState<Record<string, number>>({});
+  const [ispCosts, setIspCosts] = useState<Record<string, number>>({});
 
-  // Load per-node electricity rates from settings
+  // Load per-node electricity rates and ISP costs from settings
   useEffect(() => {
     if (!settings) return;
     const rates: Record<string, number> = {};
+    const isps: Record<string, number> = {};
     for (const [k, v] of Object.entries(settings)) {
       if (k.startsWith('electricity_rate_')) {
         rates[k.replace('electricity_rate_', '')] = parseFloat(v as string) || DEFAULT_KWH_RATE;
       }
+      if (k.startsWith('isp_cost_')) {
+        isps[k.replace('isp_cost_', '')] = parseFloat(v as string) || 0;
+      }
     }
     setKwhRates(rates);
+    setIspCosts(isps);
   }, [settings]);
 
   const getKwhRate = (hostname: string) => kwhRates[hostname] ?? DEFAULT_KWH_RATE;
+  const getIspCost = (hostname: string) => ispCosts[hostname] ?? (parseFloat(settings?.mesh_default_isp_cost ?? '0') || 0);
 
   const saveKwhRate = (hostname: string, rate: number) => {
     setKwhRates(prev => ({ ...prev, [hostname]: rate }));
@@ -51,6 +58,15 @@ export default function UsageMonitorPage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'set', key: `electricity_rate_${hostname}`, value: String(rate) }),
+    });
+  };
+
+  const saveIspCost = (hostname: string, cost: number) => {
+    setIspCosts(prev => ({ ...prev, [hostname]: cost }));
+    fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'set', key: `isp_cost_${hostname}`, value: String(cost) }),
     });
   };
 
@@ -329,163 +345,179 @@ export default function UsageMonitorPage() {
         )}
       </div>
 
-      {/* Usage by project — CSS Grid bar chart, labels get priority */}
-      <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
-        <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
-          Usage by Project ({window === 0 ? 'Lifetime' : window < 1440 ? `${window / 60}h` : `${window / 1440}d`})
-        </h3>
-        {byProject && byProject.length > 0 ? (
-          <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center">
-            {byProject.map((p: any) => {
-              const input = p.input_tokens ?? 0;
-              const output = p.output_tokens ?? 0;
-              const total = input + output;
-              const pct = projectMaxTotal > 0 ? (total / projectMaxTotal) * 100 : 0;
-              return (
-                <Fragment key={p.name}>
-                  <span className="text-base text-[var(--color-muted)] whitespace-nowrap">{p.display_name}</span>
-                  <div
-                    className="h-7 rounded bg-[var(--color-background)] overflow-hidden"
-                    title={`Input: ${formatTokens(input)} — Output: ${formatTokens(output)}`}
-                  >
-                    {total > 0 && (
-                      <div
-                        className="h-full grid"
-                        style={{
-                          width: `${Math.max(pct, 0.5)}%`,
-                          gridTemplateColumns: `${input}fr ${output}fr`,
-                        }}
-                      >
-                        <div className="bg-[#22c55e] h-full" />
-                        <div className="bg-[#a78bfa] h-full" />
-                      </div>
-                    )}
-                  </div>
-                </Fragment>
-              );
-            })}
-            {/* Scale */}
-            <span />
-            <div className="grid grid-cols-[auto_1fr_auto] text-base text-[var(--color-muted)]">
-              <span>0</span>
-              <span />
-              <span>{formatTokens(projectMaxTotal)}</span>
-            </div>
-            {/* Legend */}
-            <span />
-            <div className="grid grid-flow-col auto-cols-max gap-4 text-base text-[var(--color-muted)]">
-              <span><span className="inline-block w-3 h-3 rounded bg-[#22c55e] mr-1.5 align-middle" />Input</span>
-              <span><span className="inline-block w-3 h-3 rounded bg-[#a78bfa] mr-1.5 align-middle" />Output</span>
-            </div>
-          </div>
-        ) : (
-          <div className="text-[var(--color-muted)] text-base py-4 text-center">
-            No per-project usage data in window.
-          </div>
-        )}
-      </div>
-
-      {/* Agent Standup — 30-day project activity */}
-      {projectActivity && projectActivity.length > 0 && (
+      {/* Agent Standup + Usage by Project — side by side */}
+      <div className="grid grid-cols-2 gap-4 items-start">
+        {/* Agent Standup — 30-day project activity */}
         <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
           <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
             Agent Standup (30 days)
           </h3>
-          <div className="space-y-1">
-            {projectActivity.map((p: any) => (
-              <div key={p.name}>
-                <div
-                  className={`grid grid-cols-[auto_10rem_minmax(0,1fr)_auto] items-center gap-3 text-base py-2 px-2 rounded cursor-pointer hover:bg-[var(--color-surface-hover)] ${
-                    expandedProject === p.name ? 'bg-[var(--color-surface-hover)]' : ''
-                  }`}
-                  onClick={() => setExpandedProject(expandedProject === p.name ? null : p.name)}
-                >
-                  {/* Status indicator */}
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${
-                    isActiveRecently(p.last_activity)
-                      ? 'bg-[var(--color-accent)] animate-pulse'
-                      : isActiveSameDay(p.last_activity)
-                        ? 'bg-[var(--color-accent)]'
-                        : 'bg-[var(--color-muted)]'
-                  }`} />
-
-                  {/* Project name */}
-                  <span className="font-bold truncate">{p.display_name}</span>
-
-                  {/* Metrics bar */}
-                  <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-base text-[var(--color-muted)] min-w-0">
-                    <span>{p.user_messages.toLocaleString()} prompts</span>
-                    <span>{p.session_count} sessions</span>
-                    <span>{p.active_days}d active</span>
-                    <span>{formatTokens(p.total_output)} out</span>
-                    <span className="text-[var(--color-accent)]">{currency.format(p.cost_estimate)}</span>
-                  </div>
-
-                  {/* Last activity */}
-                  <span className="text-base text-[var(--color-muted)] text-right whitespace-nowrap">
-                    {p.last_activity ? formatRelativeTime(p.last_activity) : '-'}
-                  </span>
-                </div>
-
-                {/* Expanded detail with recent prompts + git context */}
-                {expandedProject === p.name && projectDetail && (
-                  <div className="ml-7 pl-4 border-l-2 border-[var(--color-border)] py-2 space-y-1.5">
-                    {/* Git status summary */}
-                    {projectDetail.git && (projectDetail.git.isDirty || projectDetail.git.unpushedCount > 0) && (
-                      <div className="flex gap-2 mb-1">
-                        {projectDetail.git.isDirty && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-mono">
-                            uncommitted changes
-                          </span>
-                        )}
-                        {projectDetail.git.unpushedCount > 0 && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-mono">
-                            {projectDetail.git.unpushedCount} unpushed
-                          </span>
-                        )}
+          {projectActivity && projectActivity.length > 0 ? (
+            <div className="space-y-1">
+              {projectActivity.map((p: any) => (
+                <div key={p.name}>
+                  <div
+                    className={`grid grid-cols-[auto_1fr_auto] items-center gap-2 text-base py-1.5 px-2 rounded cursor-pointer hover:bg-[var(--color-surface-hover)] ${
+                      expandedProject === p.name ? 'bg-[var(--color-surface-hover)]' : ''
+                    }`}
+                    onClick={() => setExpandedProject(expandedProject === p.name ? null : p.name)}
+                  >
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${
+                      isActiveRecently(p.last_activity)
+                        ? 'bg-[var(--color-accent)] animate-pulse'
+                        : isActiveSameDay(p.last_activity)
+                          ? 'bg-[var(--color-accent)]'
+                          : 'bg-[var(--color-muted)]'
+                    }`} />
+                    <div className="min-w-0">
+                      <span className="font-bold truncate block">{p.display_name}</span>
+                      <div className="flex flex-wrap gap-x-3 gap-y-0 text-xs text-[var(--color-muted)]">
+                        <span>{p.user_messages.toLocaleString()} prompts</span>
+                        <span>{p.session_count} sess</span>
+                        <span>{p.active_days}d</span>
+                        <span>{formatTokens(p.total_output)} out</span>
+                        <span className="text-[var(--color-accent)]">{currency.format(p.cost_estimate)}</span>
                       </div>
-                    )}
-                    {projectDetail.recentPrompts && projectDetail.recentPrompts.length > 0 ? (
-                      <>
-                        <div className="text-base font-bold text-[var(--color-muted)] mb-1">Recent prompts:</div>
-                        {projectDetail.recentPrompts.map((rp: any, i: number) => (
-                          <div key={i} className="text-base grid grid-cols-[8rem_1fr] gap-2">
-                            <span className="text-[var(--color-muted)] flex items-center gap-1.5">
-                              {rp.timestamp ? formatRelativeTime(rp.timestamp) : ''}
-                            </span>
-                            <div className="flex items-start gap-2">
-                              <span className="text-[var(--color-foreground)] break-words flex-1">
-                                {rp.prompt}
-                              </span>
-                              {rp.commitHash && (
-                                <span className="shrink-0 text-xs px-1.5 py-0.5 rounded bg-green-500/20 text-green-400 font-mono" title={rp.commitSubject}>
-                                  {rp.commitHash}
-                                </span>
-                              )}
-                              {rp.gitStatus === 'uncommitted' && (
-                                <span className="shrink-0 text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-mono">
-                                  uncommitted
-                                </span>
-                              )}
-                              {rp.gitStatus === 'unpushed' && (
-                                <span className="shrink-0 text-xs px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-mono">
-                                  unpushed
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </>
-                    ) : (
-                      <div className="text-base text-[var(--color-muted)]">No recent prompts found.</div>
-                    )}
+                    </div>
+                    <span className="text-xs text-[var(--color-muted)] text-right whitespace-nowrap">
+                      {p.last_activity ? formatRelativeTime(p.last_activity) : '-'}
+                    </span>
                   </div>
-                )}
+
+                  {expandedProject === p.name && projectDetail && (
+                    <div className="ml-5 pl-3 border-l-2 border-[var(--color-border)] py-2 space-y-1.5">
+                      {projectDetail.git && (projectDetail.git.isDirty || projectDetail.git.unpushedCount > 0) && (
+                        <div className="flex gap-2 mb-1">
+                          {projectDetail.git.isDirty && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-mono">
+                              uncommitted changes
+                            </span>
+                          )}
+                          {projectDetail.git.unpushedCount > 0 && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-mono">
+                              {projectDetail.git.unpushedCount} unpushed
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {projectDetail.recentPrompts && projectDetail.recentPrompts.length > 0 ? (
+                        <>
+                          <div className="text-xs font-bold text-[var(--color-muted)] mb-1">Recent prompts:</div>
+                          {projectDetail.recentPrompts.map((rp: any, i: number) => (
+                            <div key={i} className="text-xs grid grid-cols-[6rem_1fr] gap-2">
+                              <span className="text-[var(--color-muted)]">
+                                {rp.timestamp ? formatRelativeTime(rp.timestamp) : ''}
+                              </span>
+                              <div className="flex items-start gap-1.5">
+                                <span className="text-[var(--color-foreground)] break-words flex-1">
+                                  {rp.prompt}
+                                </span>
+                                {rp.commitHash && (
+                                  <span className="shrink-0 text-[10px] px-1 py-0.5 rounded bg-green-500/20 text-green-400 font-mono" title={rp.commitSubject}>
+                                    {rp.commitHash}
+                                  </span>
+                                )}
+                                {rp.gitStatus === 'uncommitted' && (
+                                  <span className="shrink-0 text-[10px] px-1 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-mono">
+                                    uncommitted
+                                  </span>
+                                )}
+                                {rp.gitStatus === 'unpushed' && (
+                                  <span className="shrink-0 text-[10px] px-1 py-0.5 rounded bg-orange-500/20 text-orange-400 font-mono">
+                                    unpushed
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </>
+                      ) : (
+                        <div className="text-xs text-[var(--color-muted)]">No recent prompts found.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-[var(--color-muted)] text-base py-4 text-center">
+              No project activity in last 30 days.
+            </div>
+          )}
+        </div>
+
+        {/* Usage by project — CSS Grid bar chart */}
+        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+          <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
+            Usage by Project ({window === 0 ? 'Lifetime' : window < 1440 ? `${window / 60}h` : `${window / 1440}d`})
+          </h3>
+          {byProject && byProject.length > 0 ? (
+            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center">
+              {byProject.map((p: any) => {
+                const input = p.input_tokens ?? 0;
+                const output = p.output_tokens ?? 0;
+                const total = input + output;
+                const pct = projectMaxTotal > 0 ? (total / projectMaxTotal) * 100 : 0;
+                return (
+                  <Fragment key={p.name}>
+                    <span className="text-base text-[var(--color-muted)] whitespace-nowrap">{p.display_name}</span>
+                    <div
+                      className="h-7 rounded bg-[var(--color-background)] overflow-hidden"
+                      title={`Input: ${formatTokens(input)} — Output: ${formatTokens(output)}`}
+                    >
+                      {total > 0 && (
+                        <div
+                          className="h-full grid"
+                          style={{
+                            width: `${Math.max(pct, 0.5)}%`,
+                            gridTemplateColumns: `${input}fr ${output}fr`,
+                          }}
+                        >
+                          <div className="bg-[#22c55e] h-full" />
+                          <div className="bg-[#a78bfa] h-full" />
+                        </div>
+                      )}
+                    </div>
+                  </Fragment>
+                );
+              })}
+              {/* Scale */}
+              <span />
+              <div className="grid grid-cols-[auto_1fr_auto] text-base text-[var(--color-muted)]">
+                <span>0</span>
+                <span />
+                <span>{formatTokens(projectMaxTotal)}</span>
               </div>
-            ))}
-          </div>
+              {/* Legend */}
+              <span />
+              <div className="grid grid-flow-col auto-cols-max gap-4 text-base text-[var(--color-muted)]">
+                <span><span className="inline-block w-3 h-3 rounded bg-[#22c55e] mr-1.5 align-middle" />Input</span>
+                <span><span className="inline-block w-3 h-3 rounded bg-[#a78bfa] mr-1.5 align-middle" />Output</span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-[var(--color-muted)] text-base py-4 text-center">
+              No per-project usage data in window.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Last ingest result */}
+      {lastIngest && (
+        <div className="text-base text-[var(--color-muted)] bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-3">
+          Last ingest: {lastIngest.ingested?.messagesAdded} msgs,{' '}
+          {lastIngest.ingested?.blocksAdded} blocks,{' '}
+          {lastIngest.ingested?.filesScanned} files scanned,{' '}
+          {lastIngest.ingested?.alertsTriggered} alerts triggered.
+          DB: {lastIngest.db?.messages} total msgs, {lastIngest.db?.thinkingBlocks} thinking blocks.
         </div>
       )}
+
+      </>)}
+
+      {/* ============ THRESHOLDS TAB ============ */}
+      {activeTab === 'thresholds' && (<>
 
       {/* Alert thresholds config */}
       <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
@@ -594,17 +626,6 @@ export default function UsageMonitorPage() {
         </div>
       )}
 
-      {/* Last ingest result */}
-      {lastIngest && (
-        <div className="text-base text-[var(--color-muted)] bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-3">
-          Last ingest: {lastIngest.ingested?.messagesAdded} msgs,{' '}
-          {lastIngest.ingested?.blocksAdded} blocks,{' '}
-          {lastIngest.ingested?.filesScanned} files scanned,{' '}
-          {lastIngest.ingested?.alertsTriggered} alerts triggered.
-          DB: {lastIngest.db?.messages} total msgs, {lastIngest.db?.thinkingBlocks} thinking blocks.
-        </div>
-      )}
-
       </>)}
 
       {/* ============ INFRASTRUCTURE TAB ============ */}
@@ -623,20 +644,21 @@ export default function UsageMonitorPage() {
               <span className="text-[var(--color-muted)]">{mesh.summary?.totalMemGB ?? 0}GB total</span>
               <span className="text-[var(--color-muted)]">{mesh.summary?.reachableNodes ?? 0}/{mesh.summary?.totalNodes ?? 0} nodes</span>
               {(() => {
-                const totalCost = (mesh.nodes ?? [])
-                  .filter((n: any) => n.reachable)
-                  .reduce((sum: number, n: any) => {
-                    const watts = (n.powerWatts ?? estimateWatts(n.cpuCores, n.loadAvg[0])) + (n.gpuPowerWatts ?? 0);
-                    return sum + (watts * 24 * 30 / 1000) * getKwhRate(n.hostname);
-                  }, 0);
-                return <span className="text-[var(--color-accent)]">~{currency.format(totalCost)}/mo elec</span>;
+                const reachable = (mesh.nodes ?? []).filter((n: any) => n.reachable);
+                const elecCost = reachable.reduce((sum: number, n: any) => {
+                  const watts = (n.powerWatts ?? estimateWatts(n.cpuCores, n.loadAvg[0])) + (n.gpuPowerWatts ?? 0);
+                  return sum + (watts * 24 * 30 / 1000) * getKwhRate(n.hostname);
+                }, 0);
+                const ispTotal = reachable.reduce((sum: number, n: any) => sum + getIspCost(n.hostname), 0);
+                const totalCost = elecCost + ispTotal;
+                return <span className="text-[var(--color-accent)]">~{currency.format(totalCost)}/mo</span>;
               })()}
               <span className="text-[var(--color-muted)]">{mesh.summary?.totalPowerWatts ?? 0}W total</span>
             </div>
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(mesh.nodes?.length ?? 1, 3)}, 1fr)` }}>
             {mesh.nodes?.map((node: any) => (
-              <MeshNodeCard key={node.hostname} node={node} kwhRate={getKwhRate(node.hostname)} onRateChange={saveKwhRate} formatCost={currency.format} />
+              <MeshNodeCard key={node.hostname} node={node} kwhRate={getKwhRate(node.hostname)} onRateChange={saveKwhRate} ispCost={getIspCost(node.hostname)} onIspCostChange={saveIspCost} formatCost={currency.format} />
             ))}
           </div>
         </div>
@@ -817,7 +839,7 @@ function estimateWatts(cores: number, loadAvg1: number): number {
   return cores * (idleWattsPerCore + utilization * (loadedWattsPerCore - idleWattsPerCore));
 }
 
-function MeshNodeCard({ node, kwhRate, onRateChange, formatCost }: { node: any; kwhRate: number; onRateChange: (hostname: string, rate: number) => void; formatCost: (usd: number) => string }) {
+function MeshNodeCard({ node, kwhRate, onRateChange, ispCost, onIspCostChange, formatCost }: { node: any; kwhRate: number; onRateChange: (hostname: string, rate: number) => void; ispCost: number; onIspCostChange: (hostname: string, cost: number) => void; formatCost: (usd: number) => string }) {
   if (!node.reachable) {
     return (
       <div className="rounded border border-[var(--color-border)] p-3 opacity-40">
@@ -889,13 +911,14 @@ function MeshNodeCard({ node, kwhRate, onRateChange, formatCost }: { node: any; 
         </div>
       )}
 
-      {/* Electricity */}
+      {/* Costs */}
       {(() => {
         const cpuWatts = node.powerWatts ?? estimateWatts(node.cpuCores, node.loadAvg[0]);
         const gpuWatts = node.gpuPowerWatts ?? 0;
         const totalWatts = cpuWatts + gpuWatts;
         const kwhPerMonth = (totalWatts * 24 * 30) / 1000;
-        const costPerMonth = kwhPerMonth * kwhRate;
+        const elecPerMonth = kwhPerMonth * kwhRate;
+        const totalPerMonth = elecPerMonth + ispCost;
         const sourceLabel = node.powerSource === 'rapl' ? 'rapl' : node.powerSource === 'nvidia' ? 'nvidia' : 'est.';
         return (
           <div className="mt-2 pt-2 border-t border-[var(--color-border)]">
@@ -908,19 +931,33 @@ function MeshNodeCard({ node, kwhRate, onRateChange, formatCost }: { node: any; 
                   [{sourceLabel}]
                 </span>
               </span>
-              <span className="text-[var(--color-accent)] font-bold">{formatCost(costPerMonth)}/mo</span>
+              <span className="text-[var(--color-accent)] font-bold">{formatCost(totalPerMonth)}/mo</span>
             </div>
-            <div className="flex items-center gap-1.5 mt-1">
-              <span className="text-[10px] text-[var(--color-muted)]">$</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={kwhRate}
-                onChange={(e) => onRateChange(node.hostname, parseFloat(e.target.value) || 0)}
-                className="w-14 text-[10px] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-1 py-0.5 font-mono"
-              />
-              <span className="text-[10px] text-[var(--color-muted)]">/kWh</span>
+            <div className="flex items-center gap-3 mt-1">
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-[var(--color-muted)]">$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={kwhRate}
+                  onChange={(e) => onRateChange(node.hostname, parseFloat(e.target.value) || 0)}
+                  className="w-14 text-[10px] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-1 py-0.5 font-mono"
+                />
+                <span className="text-[10px] text-[var(--color-muted)]">/kWh</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-[var(--color-muted)]">ISP $</span>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={ispCost}
+                  onChange={(e) => onIspCostChange(node.hostname, parseFloat(e.target.value) || 0)}
+                  className="w-14 text-[10px] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-1 py-0.5 font-mono"
+                />
+                <span className="text-[10px] text-[var(--color-muted)]">/mo</span>
+              </div>
             </div>
           </div>
         );
