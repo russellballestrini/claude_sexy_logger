@@ -75,13 +75,19 @@ export async function GET(
       cost: m.cost,
     }));
 
-    // Open todos
+    // Open todos + recently completed (so circles turn green before disappearing)
     const todos = db.prepare(`
       SELECT t.*, s.session_uuid, s.display_name as session_display
       FROM todos t
       LEFT JOIN sessions s ON t.session_id = s.id
-      WHERE t.project_id = ? AND t.status IN ('pending', 'in_progress')
-      ORDER BY t.updated_at DESC LIMIT 20
+      WHERE t.project_id = ? AND (
+        t.status IN ('pending', 'in_progress')
+        OR (t.status = 'completed' AND t.completed_at > datetime('now', '-1 hour'))
+      )
+      ORDER BY
+        CASE t.status WHEN 'in_progress' THEN 0 WHEN 'pending' THEN 1 ELSE 2 END,
+        t.updated_at DESC
+      LIMIT 30
     `).all(proj.id) as any[];
 
     // Recent prompts (last 10 user messages that aren't system/synthetic)

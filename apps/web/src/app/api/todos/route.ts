@@ -90,7 +90,7 @@ export async function PATCH(request: NextRequest) {
 
       // Auto-cull: when a todo completes, check if its deployment is finished
       if (status === 'completed') {
-        cullFinishedDeployments(db, id);
+        cullFinishedDeployments(db, id).catch(() => {});
       }
     }
 
@@ -233,8 +233,11 @@ export async function GET(request: NextRequest) {
  * When a todo is marked completed, find any running agent_deployment that
  * includes this todo. If all todos in that deployment are now done, kill
  * the tmux session and mark the deployment completed.
+ *
+ * Also checks for stale deployments where the Claude process has exited
+ * (tmux session still exists but only bash is running).
  */
-function cullFinishedDeployments(db: ReturnType<typeof getDb>, completedTodoId: number) {
+async function cullFinishedDeployments(db: ReturnType<typeof getDb>, completedTodoId: number) {
   const deployments = db.prepare(`
     SELECT id, tmux_session, todo_ids
     FROM agent_deployments
@@ -243,19 +246,39 @@ function cullFinishedDeployments(db: ReturnType<typeof getDb>, completedTodoId: 
 
   for (const d of deployments) {
     const todoIds: number[] = JSON.parse(d.todo_ids);
-    if (!todoIds.includes(completedTodoId)) continue;
+    let shouldCull = false;
 
-    // Check if all todos in this deployment are completed
-    const remaining = todoIds.length > 0
-      ? (db.prepare(`
-          SELECT COUNT(*) as c FROM todos
-          WHERE id IN (${todoIds.map(() => '?').join(',')})
-            AND status NOT IN ('completed', 'deleted')
-        `).get(...todoIds) as any).c
-      : 0;
+    if (todoIds.includes(completedTodoId)) {
+      // Check if all todos in this deployment are completed
+      const remaining = todoIds.length > 0
+        ? (db.prepare(`
+            SELECT COUNT(*) as c FROM todos
+            WHERE id IN (${todoIds.map(() => '?').join(',')})
+              AND status NOT IN ('completed', 'deleted')
+          `).get(...todoIds) as any).c
+        : 0;
 
-    if (remaining === 0) {
-      // All done — kill the tmux session and mark deployment completed
+      if (remaining === 0) shouldCull = true;
+    }
+
+    if (!shouldCull) {
+      // Also cull if the tmux session has no claude process running
+      // (agent exited but bash shell remains)
+      try {
+        const { stdout } = await execAsync(
+          'tmux', ['list-panes', '-t', d.tmux_session, '-F', '#{pane_current_command}'],
+          { timeout: 3000 }
+        );
+        const cmds = stdout.trim().split('\n').map(s => s.trim().toLowerCase());
+        const hasAgent = cmds.some(c => c.includes('claude') || c.includes('node'));
+        if (!hasAgent) shouldCull = true;
+      } catch {
+        // Session doesn't exist anymore — mark completed
+        shouldCull = true;
+      }
+    }
+
+    if (shouldCull) {
       db.prepare(
         "UPDATE agent_deployments SET status = 'completed', stopped_at = datetime('now') WHERE id = ?"
       ).run(d.id);
