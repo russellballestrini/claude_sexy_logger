@@ -242,7 +242,7 @@ function cullFinishedDeployments(db: ReturnType<typeof getDb>, completedTodoId: 
   if (!todo) return;
 
   const deployments = db.prepare(`
-    SELECT id, tmux_session, todo_ids, project_id
+    SELECT id, tmux_session, tmux_window, todo_ids, project_id
     FROM agent_deployments
     WHERE status = 'running'
   `).all() as any[];
@@ -281,9 +281,10 @@ function cullFinishedDeployments(db: ReturnType<typeof getDb>, completedTodoId: 
         "UPDATE agent_deployments SET status = 'completed', stopped_at = datetime('now') WHERE id = ?"
       ).run(d.id);
 
-      // Send /exit to Claude instead of killing tmux — leaves session inspectable
-      execAsync('tmux', ['send-keys', '-t', d.tmux_session, '/exit', 'Enter'], { timeout: 3000 })
-        .catch(() => { /* session may already be gone */ });
+      // Send /exit to Claude in the specific window — leaves tmux session for other agents
+      const target = d.tmux_window ? `${d.tmux_session}:${d.tmux_window}` : d.tmux_session;
+      execAsync('tmux', ['send-keys', '-t', target, '/exit', 'Enter'], { timeout: 3000 })
+        .catch(() => { /* window may already be gone */ });
     }
   }
 }

@@ -191,6 +191,7 @@ function migrate(db: Database.Database) {
     CREATE TABLE IF NOT EXISTS agent_deployments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       tmux_session TEXT NOT NULL,
+      tmux_window TEXT,                    -- window within the session (per-claude instance)
       project_id INTEGER NOT NULL REFERENCES projects(id),
       todo_ids TEXT NOT NULL,              -- JSON array of todo IDs assigned
       status TEXT NOT NULL DEFAULT 'running', -- running, completed, failed, culled
@@ -238,6 +239,7 @@ function migrate(db: Database.Database) {
   addColumn('sessions', 'harness', 'TEXT');          // originating harness (claude-code, fetch, uncloseai, hermes, agnt)
   addColumn('todos', 'estimated_minutes', 'INTEGER');
   addColumn('todos', 'uuid', 'TEXT');
+  addColumn('agent_deployments', 'tmux_window', 'TEXT');
 
   // UUIDv7 unique index — try/catch since it may already exist
   try { db.exec('CREATE UNIQUE INDEX idx_todos_uuid ON todos(uuid) WHERE uuid IS NOT NULL'); } catch { /* exists */ }

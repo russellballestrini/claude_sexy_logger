@@ -323,10 +323,11 @@ export async function DELETE() {
       : 0;
 
     if (completed >= todoIds.length) {
-      // Send /exit to Claude instead of killing tmux — leaves session inspectable
+      // Send /exit to Claude in the specific window — leaves tmux session for other agents
+      const target = d.tmux_window ? `${d.tmux_session}:${d.tmux_window}` : d.tmux_session;
       try {
-        await execAsync('tmux', ['send-keys', '-t', d.tmux_session, '/exit', 'Enter'], { timeout: 3000 });
-      } catch { /* session may already be gone */ }
+        await execAsync('tmux', ['send-keys', '-t', target, '/exit', 'Enter'], { timeout: 3000 });
+      } catch { /* window may already be gone */ }
       db.prepare(
         "UPDATE agent_deployments SET status = 'culled', stopped_at = datetime('now') WHERE id = ?"
       ).run(d.id);

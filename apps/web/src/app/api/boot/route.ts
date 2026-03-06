@@ -87,17 +87,20 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Build session name
+  // tmux session = one per project, windows = one per claude instance
+  const repoName = path.basename(projectPath).replace(/[^a-zA-Z0-9_-]/g, '-') || 'claude';
+  const sessionName = repoName;
   const now = new Date();
   const ts = [
     String(now.getHours()).padStart(2, '0'),
     String(now.getMinutes()).padStart(2, '0'),
     String(now.getSeconds()).padStart(2, '0'),
   ].join('');
-  const repoName = path.basename(projectPath).replace(/[^a-zA-Z0-9_-]/g, '-') || 'claude';
-  const sessionName = `${repoName}-${ts}`;
+  const windowName = prompt
+    ? prompt.slice(0, 40).replace(/[^a-zA-Z0-9 _-]/g, '').trim().replace(/\s+/g, '-') || ts
+    : ts;
 
-  const opts: BootOpts = { projectPath, sessionId, yolo, prompt, sessionName, parentSessionUuid };
+  const opts: BootOpts = { projectPath, sessionId, yolo, prompt, sessionName, windowName, parentSessionUuid };
 
   try {
     let response: NextResponse;
@@ -128,9 +131,9 @@ export async function POST(request: NextRequest) {
         const proj = db.prepare('SELECT id FROM projects WHERE name = ?').get(projectName) as { id: number } | undefined;
         if (proj) {
           db.prepare(`
-            INSERT INTO agent_deployments (tmux_session, project_id, todo_ids, status, started_at)
-            VALUES (?, ?, ?, 'running', datetime('now'))
-          `).run(sessionName, proj.id, JSON.stringify(todoIds));
+            INSERT INTO agent_deployments (tmux_session, tmux_window, project_id, todo_ids, status, started_at)
+            VALUES (?, ?, ?, ?, 'running', datetime('now'))
+          `).run(sessionName, windowName, proj.id, JSON.stringify(todoIds));
         }
       } catch { /* non-fatal */ }
     }
@@ -153,7 +156,8 @@ interface BootOpts {
   sessionId?: string;
   yolo?: boolean;
   prompt?: string;
-  sessionName: string;
+  sessionName: string;   // tmux session (per-project)
+  windowName: string;    // tmux window (per-claude instance)
   parentSessionUuid?: string;
 }
 
@@ -226,21 +230,40 @@ async function bootTmux(opts: BootOpts) {
   const { parts, cleanupFiles } = buildClaudeArgs(opts);
   await writePromptFiles(opts, cleanupFiles);
 
-  await exec('tmux', [
-    'new-session', '-d',
-    '-s', opts.sessionName,
-    '-c', opts.projectPath,
-    'bash', '-l',
-  ], { timeout: 5000 });
+  const target = `${opts.sessionName}:${opts.windowName}`;
 
-  // Wait for bash to initialize in the new tmux session
+  // Create session if it doesn't exist, otherwise add a new window
+  let sessionExists = false;
+  try {
+    await exec('tmux', ['has-session', '-t', opts.sessionName], { timeout: 3000 });
+    sessionExists = true;
+  } catch { /* session doesn't exist yet */ }
+
+  if (sessionExists) {
+    await exec('tmux', [
+      'new-window', '-t', opts.sessionName,
+      '-n', opts.windowName,
+      '-c', opts.projectPath,
+      'bash', '-l',
+    ], { timeout: 5000 });
+  } else {
+    await exec('tmux', [
+      'new-session', '-d',
+      '-s', opts.sessionName,
+      '-n', opts.windowName,
+      '-c', opts.projectPath,
+      'bash', '-l',
+    ], { timeout: 5000 });
+  }
+
+  // Wait for bash to initialize
   await new Promise(resolve => setTimeout(resolve, 1500));
 
   const envPrefix = opts.parentSessionUuid
     ? `export UNFIREHOSE_PARENT_SESSION=${opts.parentSessionUuid} && `
     : '';
   await exec('tmux', [
-    'send-keys', '-t', opts.sessionName,
+    'send-keys', '-t', target,
     `unset CLAUDECODE && ${envPrefix}${parts.join(' ')}`,
     'Enter',
   ], { timeout: 5000 });
@@ -248,6 +271,7 @@ async function bootTmux(opts: BootOpts) {
   return NextResponse.json({
     success: true,
     tmuxSession: opts.sessionName,
+    tmuxWindow: opts.windowName,
     multiplexer: 'tmux',
     host: 'localhost',
     command: `tmux attach -t ${opts.sessionName}`,
@@ -324,21 +348,26 @@ async function bootRemote(host: string, opts: BootOpts) {
   }
 
   const fullCmd = `unset CLAUDECODE && ${envPrefix}${claudeCmd}${sysPromptArg}${promptArg}`;
+  const target = `${opts.sessionName}:${opts.windowName}`;
 
-  // Create tmux session on remote
-  const tmuxCreate = `tmux new-session -d -s '${opts.sessionName}' -c '${opts.projectPath}' bash -l`;
-  await exec(sshBase[0], [...sshBase.slice(1), tmuxCreate], { timeout: 15000 });
+  // Create session if it doesn't exist, otherwise add a new window
+  const hasSession = `tmux has-session -t '${opts.sessionName}' 2>/dev/null`;
+  const newWindow = `tmux new-window -t '${opts.sessionName}' -n '${opts.windowName}' -c '${opts.projectPath}' bash -l`;
+  const newSession = `tmux new-session -d -s '${opts.sessionName}' -n '${opts.windowName}' -c '${opts.projectPath}' bash -l`;
+  const createCmd = `${hasSession} && ${newWindow} || ${newSession}`;
+  await exec(sshBase[0], [...sshBase.slice(1), createCmd], { timeout: 15000 });
 
   // Wait for bash to initialize in the remote tmux session
   await new Promise(resolve => setTimeout(resolve, 2000));
 
-  // Send the claude command
-  const tmuxSend = `tmux send-keys -t '${opts.sessionName}' '${fullCmd.replace(/'/g, "'\\''")}' Enter`;
+  // Send the claude command to the specific window
+  const tmuxSend = `tmux send-keys -t '${target.replace(/'/g, "'\\''")}' '${fullCmd.replace(/'/g, "'\\''")}' Enter`;
   await exec(sshBase[0], [...sshBase.slice(1), tmuxSend], { timeout: 15000 });
 
   return NextResponse.json({
     success: true,
     tmuxSession: opts.sessionName,
+    tmuxWindow: opts.windowName,
     multiplexer: 'tmux',
     host,
     command: `ssh ${host} tmux attach -t ${opts.sessionName}`,
