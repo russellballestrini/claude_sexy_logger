@@ -389,9 +389,13 @@ export default function UsageMonitorPage() {
                       {projectDetail.git && (projectDetail.git.isDirty || projectDetail.git.unpushedCount > 0) && (
                         <div className="flex gap-2 mb-1">
                           {projectDetail.git.isDirty && (
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-mono">
-                              uncommitted changes
-                            </span>
+                            <Link
+                              href={`/usage/review/${encodeURIComponent(p.name)}`}
+                              className="text-xs px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-400 font-mono hover:bg-yellow-500/30 transition-colors"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              uncommitted changes &rarr;
+                            </Link>
                           )}
                           {projectDetail.git.unpushedCount > 0 && (
                             <span className="text-xs px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 font-mono">

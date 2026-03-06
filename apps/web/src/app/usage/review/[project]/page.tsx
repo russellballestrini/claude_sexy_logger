@@ -1,0 +1,201 @@
+'use client';
+
+import { useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import useSWR from 'swr';
+import Link from 'next/link';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+export default function ReviewPage() {
+  const params = useParams();
+  const router = useRouter();
+  const project = params.project as string;
+  const { data, error, mutate } = useSWR(
+    `/api/projects/${encodeURIComponent(project)}/git`,
+    fetcher
+  );
+  const [commitMsg, setCommitMsg] = useState('');
+  const [addAll, setAddAll] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [commitResult, setCommitResult] = useState<any>(null);
+
+  const doCommit = async () => {
+    if (!commitMsg.trim()) return;
+    setCommitting(true);
+    setCommitResult(null);
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(project)}/git`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: commitMsg.trim(), addAll }),
+      });
+      const result = await res.json();
+      setCommitResult(result);
+      if (result.success) {
+        setCommitMsg('');
+        mutate();
+      }
+    } catch (err) {
+      setCommitResult({ error: String(err) });
+    }
+    setCommitting(false);
+  };
+
+  const displayName = project.replace(/^-home-fox-git-/, '');
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <Link
+          href="/usage"
+          className="text-[var(--color-muted)] hover:text-[var(--color-foreground)] text-sm"
+        >
+          &larr; Usage
+        </Link>
+        <h2 className="text-lg font-bold">Review: {displayName}</h2>
+      </div>
+
+      {error && (
+        <div className="text-[var(--color-error)] text-sm">
+          Failed to load git status: {error.message}
+        </div>
+      )}
+
+      {data?.error && (
+        <div className="text-[var(--color-error)] text-sm bg-red-950/30 rounded p-3">
+          {data.error}: {data.detail}
+        </div>
+      )}
+
+      {data && !data.error && (
+        <>
+          {/* Branch + status summary */}
+          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+            <div className="flex items-center gap-4 text-sm">
+              <span className="font-mono text-[var(--color-accent)]">{data.branch}</span>
+              <span className="text-[var(--color-muted)]">{data.repoPath}</span>
+              <span className={`ml-auto font-bold ${data.isDirty ? 'text-yellow-400' : 'text-[var(--color-accent)]'}`}>
+                {data.isDirty ? `${data.files.length} changed files` : 'Clean'}
+              </span>
+            </div>
+          </div>
+
+          {/* Changed files list */}
+          {data.files.length > 0 && (
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+              <h3 className="text-sm font-bold text-[var(--color-muted)] mb-2">Changed Files</h3>
+              <div className="space-y-0.5">
+                {data.files.map((f: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 text-sm font-mono">
+                    <span className={`w-5 text-center text-xs font-bold ${
+                      f.status === 'M' ? 'text-yellow-400' :
+                      f.status === 'A' || f.status === '?' ? 'text-green-400' :
+                      f.status === 'D' ? 'text-red-400' :
+                      'text-[var(--color-muted)]'
+                    }`}>
+                      {f.status === '?' ? 'U' : f.status}
+                    </span>
+                    <span className="text-[var(--color-foreground)]">{f.file}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Full diff */}
+          {data.diff && (
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+              <h3 className="text-sm font-bold text-[var(--color-muted)] mb-2">Diff</h3>
+              <pre className="text-xs font-mono overflow-x-auto max-h-[70vh] overflow-y-auto leading-relaxed">
+                {data.diff.split('\n').map((line: string, i: number) => (
+                  <div
+                    key={i}
+                    className={
+                      line.startsWith('+++') || line.startsWith('---') ? 'text-[var(--color-muted)] font-bold' :
+                      line.startsWith('+') ? 'text-green-400 bg-green-500/10' :
+                      line.startsWith('-') ? 'text-red-400 bg-red-500/10' :
+                      line.startsWith('@@') ? 'text-cyan-400 mt-2' :
+                      line.startsWith('diff ') ? 'text-[var(--color-accent)] font-bold mt-4 border-t border-[var(--color-border)] pt-2' :
+                      'text-[var(--color-muted)]'
+                    }
+                  >
+                    {line || '\u00A0'}
+                  </div>
+                ))}
+              </pre>
+            </div>
+          )}
+
+          {/* Commit form */}
+          {data.isDirty && (
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+              <h3 className="text-sm font-bold text-[var(--color-muted)] mb-3">Commit</h3>
+              <div className="space-y-3">
+                <textarea
+                  value={commitMsg}
+                  onChange={(e) => setCommitMsg(e.target.value)}
+                  placeholder="Commit message..."
+                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-sm font-mono resize-y min-h-[4rem]"
+                  rows={2}
+                />
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm text-[var(--color-muted)] cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={addAll}
+                      onChange={(e) => setAddAll(e.target.checked)}
+                      className="accent-[var(--color-accent)]"
+                    />
+                    Include untracked files (git add -A)
+                  </label>
+                  <button
+                    onClick={doCommit}
+                    disabled={committing || !commitMsg.trim()}
+                    className="ml-auto bg-[var(--color-accent)] text-black px-4 py-1.5 rounded text-sm font-bold disabled:opacity-50 cursor-pointer"
+                  >
+                    {committing ? 'Committing...' : 'Commit'}
+                  </button>
+                </div>
+              </div>
+
+              {commitResult && (
+                <div className={`mt-3 text-sm rounded p-2 ${
+                  commitResult.success
+                    ? 'bg-green-500/10 text-green-400'
+                    : 'bg-red-500/10 text-red-400'
+                }`}>
+                  {commitResult.success
+                    ? `Committed: ${commitResult.commit}`
+                    : `Error: ${commitResult.error} ${commitResult.detail ?? ''}`
+                  }
+                </div>
+              )}
+            </div>
+          )}
+
+          {!data.isDirty && (
+            <div className="text-sm text-[var(--color-muted)] text-center py-4">
+              Working tree is clean. Nothing to commit.
+            </div>
+          )}
+
+          {/* Recent commits */}
+          {data.recentCommits && (
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+              <h3 className="text-sm font-bold text-[var(--color-muted)] mb-2">Recent Commits</h3>
+              <pre className="text-xs font-mono text-[var(--color-muted)]">{data.recentCommits}</pre>
+            </div>
+          )}
+        </>
+      )}
+
+      {!data && !error && (
+        <div className="text-sm text-[var(--color-muted)] text-center py-8">Loading...</div>
+      )}
+    </div>
+  );
+}
