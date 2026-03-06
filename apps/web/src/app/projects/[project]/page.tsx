@@ -103,7 +103,7 @@ export default function ProjectPage({
     if (!newTask.trim() || taskSubmitting) return;
     setTaskSubmitting(true);
     try {
-      await fetch('/api/todos', {
+      const todoRes = await fetch('/api/todos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -113,6 +113,7 @@ export default function ProjectPage({
           status: startNow ? 'in_progress' : 'pending',
         }),
       });
+      const todoResult = await todoRes.json();
       if (startNow && data?.originalPath) {
         const res = await fetch('/api/boot', {
           method: 'POST',
@@ -122,6 +123,7 @@ export default function ProjectPage({
             projectName: decodedProject,
             yolo: true,
             prompt: newTask.trim(),
+            todoIds: todoResult.id ? [todoResult.id] : undefined,
           }),
         });
         const result = await res.json();

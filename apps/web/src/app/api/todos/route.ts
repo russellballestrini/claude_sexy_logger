@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@unfirehose/core/db/schema';
 import { uuidv7 } from '@unfirehose/core/uuidv7';
+import { execFile } from 'child_process';
+
+function execAsync(cmd: string, args: string[], opts: { timeout: number }): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, opts, (err, stdout, stderr) => {
+      if (err) reject(Object.assign(err, { stderr }));
+      else resolve({ stdout, stderr });
+    });
+  });
+}
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -77,6 +87,11 @@ export async function PATCH(request: NextRequest) {
       const completedAt = status === 'completed' ? "datetime('now')" : 'NULL';
       db.prepare(`UPDATE todos SET status = ?, updated_at = datetime('now'), completed_at = ${completedAt} WHERE id = ?`)
         .run(status, id);
+
+      // Auto-cull: when a todo completes, check if its deployment is finished
+      if (status === 'completed') {
+        cullFinishedDeployments(db, id);
+      }
     }
 
     return NextResponse.json({ ok: true });
@@ -211,5 +226,42 @@ export async function GET(request: NextRequest) {
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+/**
+ * When a todo is marked completed, find any running agent_deployment that
+ * includes this todo. If all todos in that deployment are now done, kill
+ * the tmux session and mark the deployment completed.
+ */
+function cullFinishedDeployments(db: ReturnType<typeof getDb>, completedTodoId: number) {
+  const deployments = db.prepare(`
+    SELECT id, tmux_session, todo_ids
+    FROM agent_deployments
+    WHERE status = 'running'
+  `).all() as any[];
+
+  for (const d of deployments) {
+    const todoIds: number[] = JSON.parse(d.todo_ids);
+    if (!todoIds.includes(completedTodoId)) continue;
+
+    // Check if all todos in this deployment are completed
+    const remaining = todoIds.length > 0
+      ? (db.prepare(`
+          SELECT COUNT(*) as c FROM todos
+          WHERE id IN (${todoIds.map(() => '?').join(',')})
+            AND status NOT IN ('completed', 'deleted')
+        `).get(...todoIds) as any).c
+      : 0;
+
+    if (remaining === 0) {
+      // All done — kill the tmux session and mark deployment completed
+      db.prepare(
+        "UPDATE agent_deployments SET status = 'completed', stopped_at = datetime('now') WHERE id = ?"
+      ).run(d.id);
+
+      execAsync('tmux', ['kill-session', '-t', d.tmux_session], { timeout: 3000 })
+        .catch(() => { /* session may already be gone */ });
+    }
   }
 }

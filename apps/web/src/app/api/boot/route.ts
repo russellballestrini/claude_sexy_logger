@@ -5,6 +5,7 @@ import { writeFile, unlink } from 'fs/promises';
 import path from 'path';
 import { tmpdir, platform } from 'os';
 import { getSetting } from '@unfirehose/core/db/ingest';
+import { getDb } from '@unfirehose/core/db/schema';
 import { discoverNodes } from '@unfirehose/core/mesh';
 
 const UUID_RE = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
@@ -50,7 +51,7 @@ function resolveBootHost(requestedHost?: string): string {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { projectPath, sessionId, yolo, prompt, parentSessionUuid, host: requestedHost } = body;
+  const { projectPath, sessionId, yolo, prompt, parentSessionUuid, host: requestedHost, todoIds, projectName } = body;
 
   // Validate projectPath
   if (!projectPath || typeof projectPath !== 'string') {
@@ -99,26 +100,42 @@ export async function POST(request: NextRequest) {
   const opts: BootOpts = { projectPath, sessionId, yolo, prompt, sessionName, parentSessionUuid };
 
   try {
+    let response: NextResponse;
+
     if (isRemote) {
-      return await bootRemote(host, opts);
-    }
-
-    if (IS_WINDOWS) {
-      return await bootWindows(opts);
-    }
-
-    // Try tmux first, fall back to screen
-    const mux = await detectMultiplexer();
-    if (mux === 'tmux') {
-      return await bootTmux(opts);
-    } else if (mux === 'screen') {
-      return await bootScreen(opts);
+      response = await bootRemote(host, opts);
+    } else if (IS_WINDOWS) {
+      response = await bootWindows(opts);
     } else {
-      return NextResponse.json({
-        error: 'No terminal multiplexer found',
-        detail: 'Install tmux or screen. On Windows, sessions open in a new terminal window automatically.',
-      }, { status: 500 });
+      // Try tmux first, fall back to screen
+      const mux = await detectMultiplexer();
+      if (mux === 'tmux') {
+        response = await bootTmux(opts);
+      } else if (mux === 'screen') {
+        response = await bootScreen(opts);
+      } else {
+        return NextResponse.json({
+          error: 'No terminal multiplexer found',
+          detail: 'Install tmux or screen. On Windows, sessions open in a new terminal window automatically.',
+        }, { status: 500 });
+      }
     }
+
+    // Register deployment so orchestrators auto-cull when todos complete
+    if (todoIds?.length > 0 && projectName) {
+      try {
+        const db = getDb();
+        const proj = db.prepare('SELECT id FROM projects WHERE name = ?').get(projectName) as { id: number } | undefined;
+        if (proj) {
+          db.prepare(`
+            INSERT INTO agent_deployments (tmux_session, project_id, todo_ids, status, started_at)
+            VALUES (?, ?, ?, 'running', datetime('now'))
+          `).run(sessionName, proj.id, JSON.stringify(todoIds));
+        }
+      } catch { /* non-fatal */ }
+    }
+
+    return response;
   } catch (err: unknown) {
     const detail = (err as { stderr?: string }).stderr || String(err);
     return NextResponse.json({
