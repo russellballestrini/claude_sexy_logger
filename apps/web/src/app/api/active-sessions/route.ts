@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
         s.display_name,
         s.first_prompt,
         s.git_branch,
-        s.updated_at,
+        COALESCE(s.last_message_at, s.updated_at) as updated_at,
         s.created_at,
         p.name as project_name,
         p.display_name as project_display,
@@ -25,9 +25,10 @@ export async function GET(request: NextRequest) {
         (SELECT m.model FROM messages m WHERE m.session_id = s.id AND m.model IS NOT NULL ORDER BY m.timestamp DESC LIMIT 1) as last_model
       FROM sessions s
       JOIN projects p ON s.project_id = p.id
-      WHERE s.updated_at >= datetime('now', '-' || ? || ' minutes')
+      WHERE COALESCE(s.last_message_at, s.updated_at) >= datetime('now', '-' || ? || ' minutes')
         AND (s.status IS NULL OR s.status = 'active')
-      ORDER BY s.updated_at DESC
+        AND EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.id)
+      ORDER BY COALESCE(s.last_message_at, s.updated_at) DESC
     `).all(minutes, minutes) as any[];
 
     return NextResponse.json({
