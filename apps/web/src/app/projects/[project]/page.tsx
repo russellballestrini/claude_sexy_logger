@@ -157,7 +157,7 @@ export default function ProjectPage({
   const fetchRemotes = meta?.remotes?.filter((r: any) => r.type === 'fetch') ?? [];
 
   return (
-    <div className="space-y-6 max-w-6xl">
+    <div className="space-y-6">
       <PageContext
         pageType="project-detail"
         summary={`Project: ${decodedProject}. ${data.sessions.length} sessions.`}
@@ -187,20 +187,39 @@ export default function ProjectPage({
               {full.visibility}
             </span>
           )}
-          {data.originalPath && (
-            <button
-              onClick={() => bootSession()}
-              disabled={booting}
-              className="ml-auto px-3 py-1 text-sm font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              {booting ? 'Booting...' : 'Boot Session'}
-            </button>
+          {meta && (fetchRemotes.length > 0 || meta.branch) && (
+            <>
+              {meta.branch && (
+                <span className="text-sm bg-[var(--color-surface-hover)] text-[var(--color-accent)] px-2 py-0.5 rounded font-mono">
+                  {meta.branch}
+                </span>
+              )}
+              {fetchRemotes.map((r: any) => {
+                const webUrl = gitRemoteToWebUrl(r.url);
+                return webUrl ? (
+                  <a key={`${r.name}-${r.url}`} href={webUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-[var(--color-accent)] hover:underline">
+                    {webUrl.replace(/^https?:\/\//, '')}
+                  </a>
+                ) : (
+                  <span key={`${r.name}-${r.url}`} className="text-sm font-mono text-[var(--color-muted)]">{r.url}</span>
+                );
+              })}
+            </>
           )}
           {data.originalPath && (
-            <label className="flex items-center gap-1.5 text-sm text-[var(--color-muted)] cursor-pointer">
-              <input type="checkbox" checked={yolo} onChange={(e) => setYolo(e.target.checked)} className="accent-[var(--color-error)]" />
-              Yolo
-            </label>
+            <div className="ml-auto flex items-center gap-2">
+              <label className="flex items-center gap-1.5 text-sm text-[var(--color-muted)] cursor-pointer">
+                <input type="checkbox" checked={yolo} onChange={(e) => setYolo(e.target.checked)} className="accent-[var(--color-error)]" />
+                Yolo
+              </label>
+              <button
+                onClick={() => bootSession()}
+                disabled={booting}
+                className="px-3 py-1 text-sm font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {booting ? 'Booting...' : 'Boot Session'}
+              </button>
+            </div>
           )}
         </div>
         {data.originalPath && (
@@ -213,93 +232,7 @@ export default function ProjectPage({
         )}
       </div>
 
-      {/* Task input — primary interaction point */}
-      <div className="border-2 border-[var(--color-accent)] rounded-lg p-4 bg-[var(--color-surface)]">
-        <textarea
-          value={newTask}
-          onChange={(e) => setNewTask(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addTask(true); }
-            if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); addTask(false); }
-          }}
-          placeholder="What should Claude work on? (Ctrl+Enter to start now, Shift+Enter to queue)"
-          rows={4}
-          className="w-full px-3 py-3 text-base bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg focus:border-[var(--color-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] resize-y min-h-[100px]"
-          disabled={taskSubmitting}
-        />
-        <div className="flex items-center justify-between mt-3">
-          <span className="text-xs text-[var(--color-muted)]">
-            {data?.originalPath ? 'Start Now boots a Claude agent in tmux' : 'No project path — queue only'}
-          </span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => addTask(false)}
-              disabled={!newTask.trim() || taskSubmitting}
-              className="px-4 py-2 text-sm bg-[var(--color-surface-hover)] text-[var(--color-foreground)] rounded-lg hover:bg-[var(--color-border)] transition-colors disabled:opacity-40"
-            >
-              Queue
-            </button>
-            <button
-              onClick={() => addTask(true)}
-              disabled={!newTask.trim() || taskSubmitting}
-              className="px-6 py-2 text-sm font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
-            >
-              {taskSubmitting ? 'Starting...' : 'Start Now'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Open Todos */}
-      <div className="border border-[var(--color-border)] rounded p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <h3 className="text-sm font-bold text-[var(--color-muted)]">Open Todos</h3>
-          {full?.todos?.length > 0 && <span className="text-xs text-[var(--color-muted)]">{full.todos.length}</span>}
-          <Link href={`/projects/${project}/kanban`} className="text-xs text-[var(--color-accent)] hover:underline ml-auto">Kanban</Link>
-          <Link href="/todos" className="text-xs text-[var(--color-accent)] hover:underline">All todos</Link>
-        </div>
-
-        {full?.todos?.length > 0 && (
-          <div className="space-y-1">
-            {full.todos.map((t: any) => (
-              <div key={t.id} className="flex items-center gap-2 text-sm">
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: t.status === 'in_progress' ? '#fbbf24' : 'var(--color-muted)' }}
-                />
-                <span className="flex-1 truncate">{t.content}</span>
-                <span className="text-xs text-[var(--color-muted)] shrink-0">
-                  {t.source !== 'claude' && <span className="mr-1">[{t.source}]</span>}
-                  {formatRelativeTime(t.updatedAt)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Git + Branch */}
-      {meta && (fetchRemotes.length > 0 || meta.branch) && (
-        <div className="flex items-center gap-3 flex-wrap">
-          {meta.branch && (
-            <span className="text-sm bg-[var(--color-surface-hover)] text-[var(--color-accent)] px-2 py-0.5 rounded font-mono">
-              {meta.branch}
-            </span>
-          )}
-          {fetchRemotes.map((r: any) => {
-            const webUrl = gitRemoteToWebUrl(r.url);
-            return webUrl ? (
-              <a key={`${r.name}-${r.url}`} href={webUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-[var(--color-accent)] hover:underline">
-                {r.name}: {webUrl.replace(/^https?:\/\//, '')}
-              </a>
-            ) : (
-              <span key={`${r.name}-${r.url}`} className="text-sm font-mono text-[var(--color-muted)]">{r.name}: {r.url}</span>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Stats grid */}
+      {/* Stats bar */}
       {full?.stats && (
         <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
           <StatCard label="Sessions" value={full.stats.sessionCount} />
@@ -311,35 +244,192 @@ export default function ProjectPage({
         </div>
       )}
 
-      {/* Usage share (30d progress bars) */}
-      {thisActivity && globalTotals.cost > 0 && (
-        <div className="border border-[var(--color-border)] rounded p-4 space-y-2">
-          <h3 className="text-sm font-bold text-[var(--color-muted)]">30-Day Usage Share</h3>
-          <ProgressBar
-            label="Input"
-            value={thisActivity.total_input}
-            max={globalTotals.input}
-            detail={`${formatTokens(thisActivity.total_input)} / ${formatTokens(globalTotals.input)}`}
-          />
-          <ProgressBar
-            label="Output"
-            value={thisActivity.total_output}
-            max={globalTotals.output}
-            detail={`${formatTokens(thisActivity.total_output)} / ${formatTokens(globalTotals.output)}`}
-          />
-          <ProgressBar
-            label="Cost"
-            value={thisActivity.cost_estimate}
-            max={globalTotals.cost}
-            detail={`$${thisActivity.cost_estimate.toFixed(0)} / $${globalTotals.cost.toFixed(0)}`}
-          />
-        </div>
-      )}
+      {/* Main two-column layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+        {/* Left column — actions & activity */}
+        <div className="space-y-6 min-w-0">
+          {/* Task input */}
+          <div className="border-2 border-[var(--color-accent)] rounded-lg p-4 bg-[var(--color-surface)]">
+            <textarea
+              value={newTask}
+              onChange={(e) => setNewTask(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addTask(true); }
+                if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); addTask(false); }
+              }}
+              placeholder="What should Claude work on? (Ctrl+Enter to start now, Shift+Enter to queue)"
+              rows={3}
+              className="w-full px-3 py-2 text-base bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg focus:border-[var(--color-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] resize-y"
+              disabled={taskSubmitting}
+            />
+            <div className="flex items-center justify-between mt-2">
+              <span className="text-xs text-[var(--color-muted)]">
+                {data?.originalPath ? 'Ctrl+Enter starts now, Shift+Enter queues' : 'No project path — queue only'}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => addTask(false)}
+                  disabled={!newTask.trim() || taskSubmitting}
+                  className="px-3 py-1.5 text-sm bg-[var(--color-surface-hover)] text-[var(--color-foreground)] rounded-lg hover:bg-[var(--color-border)] transition-colors disabled:opacity-40"
+                >
+                  Queue
+                </button>
+                <button
+                  onClick={() => addTask(true)}
+                  disabled={!newTask.trim() || taskSubmitting}
+                  className="px-4 py-1.5 text-sm font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
+                >
+                  {taskSubmitting ? 'Starting...' : 'Start Now'}
+                </button>
+              </div>
+            </div>
+          </div>
 
-      {/* Two-column: Models + Tools | Commits */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Models + Tools */}
+          {/* Open Todos */}
+          <div className="border border-[var(--color-border)] rounded p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="text-sm font-bold text-[var(--color-muted)]">Open Todos</h3>
+              {full?.todos?.length > 0 && <span className="text-xs text-[var(--color-muted)]">{full.todos.length}</span>}
+              <Link href={`/projects/${project}/kanban`} className="text-xs text-[var(--color-accent)] hover:underline ml-auto">Kanban</Link>
+              <Link href="/todos" className="text-xs text-[var(--color-accent)] hover:underline">All todos</Link>
+            </div>
+            {full?.todos?.length > 0 && (
+              <div className="space-y-1">
+                {full.todos.map((t: any) => (
+                  <div key={t.id} className="flex items-center gap-2 text-sm">
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: t.status === 'in_progress' ? '#fbbf24' : 'var(--color-muted)' }}
+                    />
+                    <span className="flex-1 truncate">{t.content}</span>
+                    <span className="text-xs text-[var(--color-muted)] shrink-0">
+                      {t.source !== 'claude' && <span className="mr-1">[{t.source}]</span>}
+                      {formatRelativeTime(t.updatedAt)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Recent Prompts */}
+          {full?.prompts?.length > 0 && (
+            <div className="border border-[var(--color-border)] rounded p-4">
+              <h3 className="text-sm font-bold mb-3 text-[var(--color-muted)]">Recent Prompts</h3>
+              <div className="space-y-2">
+                {full.prompts.map((p: any, i: number) => (
+                  <div key={i} className="text-sm border-l-2 border-[var(--color-border)] pl-3">
+                    <Link
+                      href={`/projects/${project}/${p.sessionUuid}`}
+                      className="text-[var(--color-foreground)] hover:text-[var(--color-accent)] transition-colors"
+                    >
+                      {p.text}
+                    </Link>
+                    <div className="flex gap-2 text-xs text-[var(--color-muted)] mt-1">
+                      <span>{formatRelativeTime(p.timestamp)}</span>
+                      {p.sessionDisplay && <span>{p.sessionDisplay}</span>}
+                      {p.model && <span className="font-mono">{p.model.replace('claude-', '')}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Sessions table */}
+          <div>
+            <h3 className="text-sm font-bold text-[var(--color-muted)] mb-3">
+              Sessions ({data.sessions.length})
+            </h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-[var(--color-muted)] border-b border-[var(--color-border)]">
+                    <th className="pb-2 pr-4">Session</th>
+                    <th className="pb-2 pr-4 w-20">Msgs</th>
+                    <th className="pb-2 pr-4 w-28">Branch</th>
+                    <th className="pb-2 pr-4 w-36">Modified</th>
+                    <th className="pb-2 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleSessions.map((session) => (
+                    <tr
+                      key={session.sessionId}
+                      className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]"
+                    >
+                      <td className="py-2 pr-4">
+                        <Link
+                          href={`/projects/${project}/${session.sessionId}`}
+                          className="hover:text-[var(--color-accent)] transition-colors"
+                        >
+                          {session.displayName ?? session.firstPrompt ?? session.sessionId.slice(0, 8)}
+                        </Link>
+                        {session.isSidechain && (
+                          <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-[var(--color-surface-hover)] text-[var(--color-muted)]">
+                            sidechain
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-4 text-[var(--color-muted)]">{session.messageCount ?? '?'}</td>
+                      <td className="py-2 pr-4 text-[var(--color-muted)] truncate max-w-28">{session.gitBranch ?? '-'}</td>
+                      <td className="py-2 pr-4 text-[var(--color-muted)]">
+                        {session.modified ? formatRelativeTime(session.modified) : '-'}
+                      </td>
+                      <td className="py-2">
+                        <SessionPopover
+                          sessionId={session.sessionId}
+                          project={project}
+                          projectPath={data.originalPath}
+                          firstPrompt={session.firstPrompt ?? undefined}
+                          messageCount={session.messageCount ?? undefined}
+                          gitBranch={session.gitBranch ?? undefined}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {data.sessions.length > 25 && !showAllSessions && (
+              <button
+                onClick={() => setShowAllSessions(true)}
+                className="mt-2 text-sm text-[var(--color-accent)] hover:underline"
+              >
+                Show all {data.sessions.length} sessions
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Right column — info sidebar */}
         <div className="space-y-4">
+          {/* Usage share (30d) */}
+          {thisActivity && globalTotals.cost > 0 && (
+            <div className="border border-[var(--color-border)] rounded p-4 space-y-2">
+              <h3 className="text-sm font-bold text-[var(--color-muted)]">30-Day Usage Share</h3>
+              <ProgressBar
+                label="Input"
+                value={thisActivity.total_input}
+                max={globalTotals.input}
+                detail={`${formatTokens(thisActivity.total_input)} / ${formatTokens(globalTotals.input)}`}
+              />
+              <ProgressBar
+                label="Output"
+                value={thisActivity.total_output}
+                max={globalTotals.output}
+                detail={`${formatTokens(thisActivity.total_output)} / ${formatTokens(globalTotals.output)}`}
+              />
+              <ProgressBar
+                label="Cost"
+                value={thisActivity.cost_estimate}
+                max={globalTotals.cost}
+                detail={`$${thisActivity.cost_estimate.toFixed(0)} / $${globalTotals.cost.toFixed(0)}`}
+              />
+            </div>
+          )}
+
+          {/* Models */}
           {full?.models?.length > 0 && (
             <div className="border border-[var(--color-border)] rounded p-4">
               <h3 className="text-sm font-bold mb-2 text-[var(--color-muted)]">Models</h3>
@@ -353,6 +443,8 @@ export default function ProjectPage({
               </div>
             </div>
           )}
+
+          {/* Top Tools */}
           {full?.toolUsage?.length > 0 && (
             <div className="border border-[var(--color-border)] rounded p-4">
               <h3 className="text-sm font-bold mb-2 text-[var(--color-muted)]">Top Tools</h3>
@@ -361,25 +453,23 @@ export default function ProjectPage({
                   const maxCount = full.toolUsage[0]?.count ?? 1;
                   return (
                     <div key={t.tool_name} className="flex items-center gap-2 text-sm">
-                      <span className="font-mono w-28 shrink-0 truncate">{t.tool_name}</span>
+                      <span className="font-mono w-24 shrink-0 truncate text-xs">{t.tool_name}</span>
                       <div className="flex-1 h-1.5 bg-[var(--color-surface-hover)] rounded overflow-hidden">
                         <div className="h-full bg-[var(--color-accent)] rounded" style={{ width: `${(t.count / maxCount) * 100}%` }} />
                       </div>
-                      <span className="text-[var(--color-muted)] w-12 text-right shrink-0">{t.count}</span>
+                      <span className="text-[var(--color-muted)] w-10 text-right shrink-0 text-xs">{t.count}</span>
                     </div>
                   );
                 })}
               </div>
             </div>
           )}
-        </div>
 
-        {/* Recent Commits + CLAUDE.md */}
-        <div className="space-y-4">
+          {/* Recent Commits */}
           {meta?.recentCommits && meta.recentCommits.length > 0 && (
             <div className="border border-[var(--color-border)] rounded p-4">
               <h3 className="text-sm font-bold mb-2 text-[var(--color-muted)]">Recent Commits</h3>
-              <div className="space-y-1.5 font-mono text-sm">
+              <div className="space-y-1.5 font-mono text-xs">
                 {meta.recentCommits.slice(0, 10).map((c) => {
                   const commitLinks = fetchRemotes
                     .map((r: any) => ({ name: r.name, url: commitUrl(r.url, c.hash) }))
@@ -394,7 +484,6 @@ export default function ProjectPage({
                         <span className="text-[var(--color-accent)] shrink-0">{c.hash}</span>
                       )}
                       <span className="truncate flex-1">{c.subject}</span>
-                      <span className="text-[var(--color-muted)] shrink-0">{formatRelativeTime(c.date)}</span>
                     </div>
                   );
                 })}
@@ -402,105 +491,17 @@ export default function ProjectPage({
             </div>
           )}
 
+          {/* CLAUDE.md */}
           {meta?.claudeMdExists && (
             <div className="border border-[var(--color-border)] rounded p-4">
               <h3 className="text-sm font-bold mb-2 text-[var(--color-muted)]">CLAUDE.md</h3>
-              <pre className="text-sm bg-[var(--color-background)] border border-[var(--color-border)] rounded p-3 whitespace-pre-wrap max-h-48 overflow-auto">
+              <pre className="text-xs bg-[var(--color-background)] border border-[var(--color-border)] rounded p-3 whitespace-pre-wrap max-h-48 overflow-auto">
                 {meta.claudeMd}
                 {meta.claudeMd && meta.claudeMd.length >= 500 && <span className="text-[var(--color-muted)]">&hellip;</span>}
               </pre>
             </div>
           )}
         </div>
-      </div>
-
-      {/* Recent Prompts */}
-      {full?.prompts?.length > 0 && (
-        <div className="border border-[var(--color-border)] rounded p-4">
-          <h3 className="text-sm font-bold mb-3 text-[var(--color-muted)]">Recent Prompts</h3>
-          <div className="space-y-2">
-            {full.prompts.map((p: any, i: number) => (
-              <div key={i} className="text-sm border-l-2 border-[var(--color-border)] pl-3">
-                <Link
-                  href={`/projects/${project}/${p.sessionUuid}`}
-                  className="text-[var(--color-foreground)] hover:text-[var(--color-accent)] transition-colors"
-                >
-                  {p.text}
-                </Link>
-                <div className="flex gap-2 text-xs text-[var(--color-muted)] mt-1">
-                  <span>{formatRelativeTime(p.timestamp)}</span>
-                  {p.sessionDisplay && <span>{p.sessionDisplay}</span>}
-                  {p.model && <span className="font-mono">{p.model.replace('claude-', '')}</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Sessions table */}
-      <div>
-        <h3 className="text-sm font-bold text-[var(--color-muted)] mb-3">
-          Sessions ({data.sessions.length})
-        </h3>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-[var(--color-muted)] border-b border-[var(--color-border)]">
-                <th className="pb-2 pr-4">Session</th>
-                <th className="pb-2 pr-4 w-20">Msgs</th>
-                <th className="pb-2 pr-4 w-28">Branch</th>
-                <th className="pb-2 pr-4 w-36">Modified</th>
-                <th className="pb-2 w-10"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleSessions.map((session) => (
-                <tr
-                  key={session.sessionId}
-                  className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]"
-                >
-                  <td className="py-2 pr-4">
-                    <Link
-                      href={`/projects/${project}/${session.sessionId}`}
-                      className="hover:text-[var(--color-accent)] transition-colors"
-                    >
-                      {session.displayName ?? session.firstPrompt ?? session.sessionId.slice(0, 8)}
-                    </Link>
-                    {session.isSidechain && (
-                      <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-[var(--color-surface-hover)] text-[var(--color-muted)]">
-                        sidechain
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-4 text-[var(--color-muted)]">{session.messageCount ?? '?'}</td>
-                  <td className="py-2 pr-4 text-[var(--color-muted)] truncate max-w-28">{session.gitBranch ?? '-'}</td>
-                  <td className="py-2 pr-4 text-[var(--color-muted)]">
-                    {session.modified ? formatRelativeTime(session.modified) : '-'}
-                  </td>
-                  <td className="py-2">
-                    <SessionPopover
-                      sessionId={session.sessionId}
-                      project={project}
-                      projectPath={data.originalPath}
-                      firstPrompt={session.firstPrompt ?? undefined}
-                      messageCount={session.messageCount ?? undefined}
-                      gitBranch={session.gitBranch ?? undefined}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {data.sessions.length > 25 && !showAllSessions && (
-          <button
-            onClick={() => setShowAllSessions(true)}
-            className="mt-2 text-sm text-[var(--color-accent)] hover:underline"
-          >
-            Show all {data.sessions.length} sessions
-          </button>
-        )}
       </div>
     </div>
   );
