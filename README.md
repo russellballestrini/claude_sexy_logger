@@ -19,7 +19,7 @@ This tool does all of that.
 
 ## Screenshots
 
-See [gallery below](#gallery) or browse [`screenshots/v1/`](screenshots/v1/).
+See [gallery below](#gallery).
 
 ## Features
 
@@ -193,23 +193,27 @@ Built in ~48 hours by humans and agents working together. 42 commits from first 
 
 ## Gallery
 
-### Dashboard
-![Dashboard — activity charts, hour distribution, day-of-week, hotspots, model usage](screenshots/v1/dashboard-activity-overview.png)
+### Project Dashboard
+Task dispatch, open todos with status indicators, recent prompts, session history, usage share, git integration.
 
-### Live Session Tailing
-![Live view — SSE real-time tailing of active sessions](screenshots/v1/live-session-tailing.png)
+![Project Dashboard](docs/screenshots/project-dashboard.png)
+
+### Kanban Board
+Cross-session todo tracking. Pending, in-progress, and completed columns across all projects with agent assignment.
+
+![Kanban Board](docs/screenshots/kanban-board.png)
+
+### Live Feed
+Real-time streaming of agent activity. Tool calls, commits, thinking blocks, errors — as they happen across all sessions.
+
+![Live Feed](docs/screenshots/live-feed.png)
+
+### Token Usage
+Per-model token breakdown with cache efficiency metrics. Cost estimation at API-equivalent rates.
+
+![Token Usage](docs/screenshots/token-usage.png)
 
 ### Usage Monitor
-![Usage Monitor — token timeline and per-project usage breakdown](screenshots/v1/usage-monitor.png)
+Permacomputer mesh overview, per-node resource tracking, token timeline, per-project activity bars, and alert thresholds.
 
-### Token Usage Breakdown
-![Token Usage — donut charts, model breakdown, tool call frequency](screenshots/v1/token-usage-breakdown.png)
-
-### Projects
-![Projects — grid view with session counts and cost per project](screenshots/v1/projects-grid.png)
-
-### Thinking Stream
-![Thinking Stream — browse extended thinking blocks with timestamps](screenshots/v1/thinking-stream.png)
-
-### Settings
-![Settings — plan tiers, scrobble toggle, alert configuration](screenshots/v1/settings-plans-scrobble.png)
+![Usage Monitor](docs/screenshots/usage-monitor.png)
