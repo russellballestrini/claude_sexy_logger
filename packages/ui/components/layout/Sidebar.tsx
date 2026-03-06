@@ -33,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/keys', label: 'Keys', icon: '⚿' },
   { href: '/scrobble', label: 'Scrobble', icon: '♪' },
   { href: '/permacomputer', label: 'Permacomputer', icon: '▣' },
+  { href: '/bootstrap', label: 'Bootstrap', icon: '⚡' },
 
   { href: '/schema', label: 'Schema', icon: '{' },
   { href: '/styleguide', label: 'Styleguide', icon: '◐' },
