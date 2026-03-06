@@ -281,7 +281,8 @@ function cullFinishedDeployments(db: ReturnType<typeof getDb>, completedTodoId: 
         "UPDATE agent_deployments SET status = 'completed', stopped_at = datetime('now') WHERE id = ?"
       ).run(d.id);
 
-      execAsync('tmux', ['kill-session', '-t', d.tmux_session], { timeout: 3000 })
+      // Send /exit to Claude instead of killing tmux — leaves session inspectable
+      execAsync('tmux', ['send-keys', '-t', d.tmux_session, '/exit', 'Enter'], { timeout: 3000 })
         .catch(() => { /* session may already be gone */ });
     }
   }

@@ -323,8 +323,9 @@ export async function DELETE() {
       : 0;
 
     if (completed >= todoIds.length) {
+      // Send /exit to Claude instead of killing tmux — leaves session inspectable
       try {
-        await execAsync('tmux', ['kill-session', '-t', d.tmux_session], { timeout: 3000 });
+        await execAsync('tmux', ['send-keys', '-t', d.tmux_session, '/exit', 'Enter'], { timeout: 3000 });
       } catch { /* session may already be gone */ }
       db.prepare(
         "UPDATE agent_deployments SET status = 'culled', stopped_at = datetime('now') WHERE id = ?"
