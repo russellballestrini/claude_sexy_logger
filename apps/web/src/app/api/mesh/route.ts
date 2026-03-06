@@ -179,15 +179,48 @@ function parseCpuModel(cpuinfoOrText: string): string | null {
 }
 
 /**
- * Calculate power draw from TDP and load. Uses a realistic power curve:
- * - Idle: ~20% of TDP (C-states, power management)
- * - Linear scale from idle to TDP based on utilization
- * - Can exceed TDP slightly under turbo (capped at 110% TDP)
+ * Count spinning disks (ROTA=1, not loop devices) from lsblk.
  */
-function wattsFromTdp(tdpWatts: number, cores: number, load1m: number): number {
-  const idleFraction = 0.2;
-  const utilization = Math.min(load1m / cores, 1.1);
-  return round(tdpWatts * (idleFraction + utilization * (1 - idleFraction)));
+function countSpinningDisks(lsblkOutput: string): number {
+  return lsblkOutput.split('\n').filter(l => {
+    const parts = l.trim().split(/\s+/);
+    return parts[1] === 'disk' && parts[parts.length - 1] === '1';
+  }).length;
+}
+
+/**
+ * Calculate total system power draw from components:
+ * - CPU: TDP scaled by load (20% idle to 100% at full load)
+ * - RAM: ~4W per DIMM (estimate 1 DIMM per 32GB for servers, per 8GB for desktops)
+ * - Spinning disks: ~8W each
+ * - SSDs/NVMe: ~3W each
+ * - Motherboard + fans: ~25W server, ~5W laptop
+ * - PSU efficiency loss: ~10% (servers/desktops only, laptops use DC adapter)
+ */
+function calcSystemWatts(opts: {
+  tdpWatts: number;
+  cores: number;
+  load1m: number;
+  memTotalGB: number;
+  spinningDisks: number;
+  ssdCount: number;
+  isServer: boolean;
+  isLaptop: boolean;
+}): number {
+  const cpuIdle = 0.2;
+  const utilization = Math.min(opts.load1m / opts.cores, 1.1);
+  const cpuWatts = opts.tdpWatts * (cpuIdle + utilization * (1 - cpuIdle));
+
+  // RAM: servers use larger DIMMs (~3W each), laptops use SODIMMs (~2W each)
+  const dimmSize = opts.isServer ? 32 : 8;
+  const wattsPerDimm = opts.isLaptop ? 2 : 3;
+  const ramWatts = Math.ceil(opts.memTotalGB / dimmSize) * wattsPerDimm;
+  const hddWatts = opts.spinningDisks * 8;
+  const ssdWatts = opts.ssdCount * 3;
+  const baselineWatts = opts.isLaptop ? 5 : (opts.isServer ? 25 : 15);
+
+  const subtotal = cpuWatts + ramWatts + hddWatts + ssdWatts + baselineWatts;
+  return round(opts.isLaptop ? subtotal : subtotal / 0.9);
 }
 
 function getLocalStats(): MeshNode {
@@ -229,7 +262,22 @@ function getLocalStats(): MeshNode {
       claudeProcesses = parseInt(ps.trim()) || 0;
     } catch { /* no claudes */ }
 
-    // Power monitoring: try RAPL first, then TDP lookup
+    // Disk inventory
+    let spinningDisks = 0;
+    let ssdCount = 0;
+    try {
+      const lsblk = execSync('lsblk -d -o NAME,TYPE,SIZE,ROTA 2>/dev/null', { encoding: 'utf-8' });
+      spinningDisks = countSpinningDisks(lsblk);
+      ssdCount = lsblk.split('\n').filter(l => {
+        const p = l.trim().split(/\s+/);
+        return p[1] === 'disk' && p[p.length - 1] === '0';
+      }).length;
+    } catch { /* no lsblk */ }
+
+    const isServer = cpuModel ? /xeon|epyc/i.test(cpuModel) : false;
+    const isLaptop = cpuModel ? /[0-9]U\b|[0-9]G[1-7]\b/i.test(cpuModel) : false;
+
+    // Power monitoring: try RAPL first, then TDP-based system calc
     const raplWatts = readRaplWatts();
     const gpuWatts = readNvidiaPowerWatts();
     const cpuTdpWatts = cpuModel ? lookupCpuTdp(cpuModel) : null;
@@ -240,7 +288,10 @@ function getLocalStats(): MeshNode {
       powerWatts = raplWatts;
       powerSource = 'rapl';
     } else if (cpuTdpWatts !== null) {
-      powerWatts = wattsFromTdp(cpuTdpWatts, cpuCores, loadAvg[0]);
+      powerWatts = calcSystemWatts({
+        tdpWatts: cpuTdpWatts, cores: cpuCores, load1m: loadAvg[0],
+        memTotalGB: memTotal, spinningDisks, ssdCount, isServer, isLaptop,
+      });
       powerSource = 'tdp';
     }
 
@@ -269,8 +320,8 @@ function getLocalStats(): MeshNode {
 
 function getRemoteStats(host: string): MeshNode {
   try {
-    // Main stats command (includes cpuinfo model name)
-    const cmd = `ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${host} 'hostname -f 2>/dev/null || hostname && nproc && grep -m1 "model name" /proc/cpuinfo && cat /proc/meminfo && cat /proc/loadavg && cat /proc/uptime && ps aux | grep -i "[c]laude" | wc -l'`;
+    // Main stats command (includes cpuinfo model name and disk inventory)
+    const cmd = `ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${host} 'hostname -f 2>/dev/null || hostname && nproc && grep -m1 "model name" /proc/cpuinfo && lsblk -d -o NAME,TYPE,SIZE,ROTA 2>/dev/null && echo "---LSBLK_END---" && cat /proc/meminfo && cat /proc/loadavg && cat /proc/uptime && ps aux | grep -i "[c]laude" | wc -l'`;
     const output = execSync(cmd, { encoding: 'utf-8', timeout: 10000 });
     const lines = output.trim().split('\n');
 
@@ -282,8 +333,21 @@ function getRemoteStats(host: string): MeshNode {
     // CPU model is on line 2 (grep output: "model name : ...")
     const cpuModel = parseCpuModel(lines[2]);
 
-    // Parse meminfo from remote (starts after cpumodel line)
-    const meminfoLines = lines.slice(3);
+    // Find the lsblk section (between line 3 and ---LSBLK_END---)
+    const lsblkEndIdx = lines.findIndex(l => l.trim() === '---LSBLK_END---');
+    let spinningDisks = 0;
+    let ssdCount = 0;
+    if (lsblkEndIdx > 3) {
+      const lsblkText = lines.slice(3, lsblkEndIdx).join('\n');
+      spinningDisks = countSpinningDisks(lsblkText);
+      ssdCount = lsblkText.split('\n').filter(l => {
+        const p = l.trim().split(/\s+/);
+        return p[1] === 'disk' && p[p.length - 1] === '0';
+      }).length;
+    }
+
+    // Parse meminfo from remote (starts after lsblk end marker)
+    const meminfoLines = lines.slice(lsblkEndIdx > 0 ? lsblkEndIdx + 1 : 3);
     const meminfoText = meminfoLines.join('\n');
     const memTotal = parseInt(meminfoText.match(/MemTotal:\s+(\d+)/)?.[1] ?? '0') / 1024 / 1024;
     const memAvailable = parseInt(meminfoText.match(/MemAvailable:\s+(\d+)/)?.[1] ?? '0') / 1024 / 1024;
@@ -307,8 +371,10 @@ function getRemoteStats(host: string): MeshNode {
     // Last line is claude count
     const claudeProcesses = parseInt(lines[lines.length - 1]) || 0;
 
-    // Power monitoring via separate SSH calls
+    // Power monitoring
     const cpuTdpWatts = cpuModel ? lookupCpuTdp(cpuModel) : null;
+    const isServer = cpuModel ? /xeon|epyc/i.test(cpuModel) : false;
+    const isLaptop = cpuModel ? /[0-9]U\b|[0-9]G[1-7]\b/i.test(cpuModel) : false;
     let powerWatts: number | undefined;
     let gpuPowerWatts: number | undefined;
     let powerSource: MeshNode['powerSource'] | undefined;
@@ -347,9 +413,12 @@ function getRemoteStats(host: string): MeshNode {
       }
     } catch { /* no nvidia-smi */ }
 
-    // Fall back to TDP lookup
+    // Fall back to TDP-based system calculation
     if (!powerWatts && cpuTdpWatts !== null) {
-      powerWatts = wattsFromTdp(cpuTdpWatts, cpuCores, loadAvg[0]);
+      powerWatts = calcSystemWatts({
+        tdpWatts: cpuTdpWatts, cores: cpuCores, load1m: loadAvg[0],
+        memTotalGB: memTotal, spinningDisks, ssdCount, isServer, isLaptop,
+      });
       powerSource = 'tdp';
     }
 
