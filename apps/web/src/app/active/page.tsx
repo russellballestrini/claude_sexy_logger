@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import useSWR from 'swr';
 import { formatRelativeTime, formatTokens } from '@unfirehose/core/format';
 import { PageContext } from '@unfirehose/ui/PageContext';
 import { TimeRangeSelect, useTimeRange, getTimeRangeMinutes } from '@unfirehose/ui/TimeRangeSelect';
@@ -29,32 +29,18 @@ const SESSION_COLORS = [
   '#e879f9', '#2dd4bf', '#f87171', '#facc15', '#4ade80',
 ];
 
-export default function ActivePage() {
-  const [sessions, setSessions] = useState<ActiveSession[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useTimeRange('active_time_range', '1h');
+const fetcher = (url: string) => fetch(url).then(r => r.json());
 
+export default function ActivePage() {
+  const [timeRange, setTimeRange] = useTimeRange('active_time_range', '1h');
   const minutes = getTimeRangeMinutes(timeRange) || 60 * 24 * 365 * 10; // 'all' = 10 years
 
-  useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
-
-    const fetchActive = async () => {
-      try {
-        const res = await fetch(`/api/active-sessions?minutes=${minutes}`);
-        const data = await res.json();
-        setSessions(data.sessions ?? []);
-      } catch {
-        // silent
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchActive();
-    interval = setInterval(fetchActive, 5000);
-    return () => clearInterval(interval);
-  }, [minutes]);
+  const { data, isLoading: loading } = useSWR<{ sessions: ActiveSession[] }>(
+    `/api/active-sessions?minutes=${minutes}`,
+    fetcher,
+    { refreshInterval: 5000 },
+  );
+  const sessions = data?.sessions ?? [];
 
   return (
     <div className="p-6 max-w-6xl">

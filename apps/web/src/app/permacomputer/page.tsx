@@ -150,10 +150,21 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
 }
 
 // Group nodes by egress IP to identify shared pipes
-function computeEgressGroups(nodes: { hostname: string }[], geoipNodes: any[]): Map<string, string[]> {
+// Matching is fuzzy: mesh hostname "cammy" matches geoip "cammy.foxhop.net",
+// and "localhost" matches the first mesh node.
+function computeEgressGroups(
+  nodes: { hostname: string; sshHostname?: string }[],
+  geoipNodes: any[],
+  firstMeshHostname?: string,
+): Map<string, string[]> {
   const groups = new Map<string, string[]>();
   for (const n of nodes) {
-    const geo = geoipNodes.find((g: any) => g.hostname === n.hostname);
+    const geo = geoipNodes.find((g: any) =>
+      g.hostname === n.hostname ||
+      g.hostname === n.sshHostname ||
+      (n.sshHostname && g.hostname?.startsWith(n.hostname + '.')) ||
+      (g.hostname === 'localhost' && n.hostname === firstMeshHostname)
+    );
     const egressIp = geo?.ip ?? n.hostname; // fallback to hostname if no geoip
     const group = groups.get(egressIp) ?? [];
     group.push(n.hostname);
@@ -173,8 +184,9 @@ function getEffectiveIspCost(hostname: string, ispCost: number, egressGroups: Ma
 }
 
 function computeMeshScore(
-  nodes: { hostname: string; econ: NodeEcon; meshNode?: any }[],
+  nodes: { hostname: string; sshHostname?: string; econ: NodeEcon; meshNode?: any }[],
   geoipNodes?: any[],
+  firstMeshHostname?: string,
 ): {
   totalScore: number;
   totalMonthlyCost: number;
@@ -187,7 +199,7 @@ function computeMeshScore(
   nodeScores: { hostname: string; score: number; distanceScore: number; efficiencyScore: number }[];
 } {
   const configured = nodes.filter(n => n.econ.lat !== 0 || n.econ.lon !== 0);
-  const egressGroups = computeEgressGroups(nodes, geoipNodes ?? []);
+  const egressGroups = computeEgressGroups(nodes, geoipNodes ?? [], firstMeshHostname);
   const emptyResult = { totalScore: 0, totalMonthlyCost: 0, avgDistance: 0, geoDiversityBonus: 0, ispDiversityBonus: 0, pipeDiversityBonus: 0, sameLocationPenalty: 0, egressGroups, nodeScores: [] };
   if (configured.length === 0) return emptyResult;
 
@@ -351,7 +363,10 @@ export default function PermacomputerPage() {
     const seen = new Set<string>();
 
     for (const mn of meshNodes) {
-      const host = hosts.find(h => h.name === mn.hostname || h.hostname === mn.hostname);
+      const host = hosts.find(h =>
+        h.name === mn.hostname || h.hostname === mn.hostname ||
+        h.name?.startsWith(mn.hostname + '.') || h.hostname?.startsWith(mn.hostname + '.')
+      );
       const key = mn.hostname;
       seen.add(key);
       if (host) { seen.add(host.name); if (host.hostname) seen.add(host.hostname); }
@@ -369,7 +384,12 @@ export default function PermacomputerPage() {
   }, [meshNodes, hosts]);
 
   const geoipNodes: any[] = geoipData?.nodes ?? [];
-  const egressGroups = useMemo(() => computeEgressGroups(allNodes.map(n => ({ hostname: n.key })), geoipNodes), [allNodes, geoipNodes]);
+  const firstMeshHostname = meshNodes[0]?.hostname;
+  const egressGroups = useMemo(() => computeEgressGroups(
+    allNodes.map(n => ({ hostname: n.key, sshHostname: n.sshHost?.hostname })),
+    geoipNodes,
+    firstMeshHostname,
+  ), [allNodes, geoipNodes, firstMeshHostname]);
 
   return (
     <div className="space-y-6">
@@ -1206,16 +1226,18 @@ function MeshEconomicsPanel({ allNodes, meshNodes, getNodeEcon, geoipNodes }: {
   getNodeEcon: (hostname: string) => NodeEcon;
   geoipNodes: any[];
 }) {
+  const firstMeshHostname = meshNodes[0]?.hostname;
   const econNodes = useMemo(() =>
     allNodes.map(n => ({
       hostname: n.key,
+      sshHostname: n.sshHost?.hostname,
       econ: getNodeEcon(n.key),
       meshNode: n.meshNode,
     })),
     [allNodes, getNodeEcon]
   );
 
-  const score = useMemo(() => computeMeshScore(econNodes, geoipNodes), [econNodes, geoipNodes]);
+  const score = useMemo(() => computeMeshScore(econNodes, geoipNodes, firstMeshHostname), [econNodes, geoipNodes, firstMeshHostname]);
   const configuredCount = econNodes.filter(n => n.econ.location).length;
 
   if (allNodes.length === 0) return null;
