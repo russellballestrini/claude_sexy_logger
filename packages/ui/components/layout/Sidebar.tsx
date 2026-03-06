@@ -48,10 +48,12 @@ export function Sidebar() {
     <aside className="w-56 shrink-0 bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col sticky top-0 h-screen overflow-y-auto">
       <div className="px-4 py-6 border-b border-[var(--color-border)]">
         <Link href="/" className="block">
-          <h1 className="text-4xl font-black tracking-tighter leading-none whitespace-nowrap">
-            <span className="text-[var(--color-foreground)]">un</span><span className="text-[var(--color-accent)]">firehose</span>
+          <h1 className="font-black tracking-tighter leading-[0.85]">
+            <span className="text-7xl text-[var(--color-foreground)]">un</span><br />
+            <span className="text-6xl text-[var(--color-accent)]">fire</span><br />
+            <span className="text-6xl text-[var(--color-accent)]">hose</span>
           </h1>
-          <p className="text-xs text-[var(--color-muted)] mt-2 tracking-wide uppercase">nextjs logger</p>
+          <p className="text-xs text-[var(--color-muted)] mt-3 tracking-wide uppercase">nextjs logger</p>
         </Link>
       </div>
       <nav className="flex-1 p-2">
