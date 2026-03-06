@@ -575,7 +575,7 @@ function NodeCard({ node, sshHost, econ, geoip, egressGroups, isSelected, onSele
           {/* Power + cost row */}
           <div className="flex items-center gap-3 text-xs text-[var(--color-muted)] mt-1.5">
             {(() => {
-              const cpuW = node.powerWatts ?? (cpuCores * (10 + (loadPct / 100) * 30));
+              const cpuW = node.powerWatts ?? 0;
               const gpuW = node.gpuPowerWatts ?? 0;
               const totalW = cpuW + gpuW;
               const kwhMonth = (totalW * 24 * 30) / 1000;
@@ -583,7 +583,7 @@ function NodeCard({ node, sshHost, econ, geoip, egressGroups, isSelected, onSele
               const effIsp = egressGroups ? getEffectiveIspCost(name, econ.ispCostMonthly, egressGroups) : econ.ispCostMonthly;
               const totalCost = elecCost + effIsp;
               const isSplit = effIsp < econ.ispCostMonthly;
-              const sourceTag = node.powerSource === 'rapl' ? 'rapl' : node.powerSource === 'nvidia' ? 'nvidia' : 'est';
+              const sourceTag = node.powerSource === 'rapl' ? 'rapl' : node.powerSource === 'tdp' ? 'tdp' : 'n/a';
               return (
                 <>
                   <span>{Math.round(totalW)}W <span className="opacity-60">[{sourceTag}]</span></span>

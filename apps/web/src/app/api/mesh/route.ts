@@ -17,9 +17,11 @@ interface MeshNode {
   claudeProcesses?: number;
   swapUsedGB?: number;
   swapTotalGB?: number;
+  cpuModel?: string;
+  cpuTdpWatts?: number;
   powerWatts?: number;
   gpuPowerWatts?: number;
-  powerSource?: 'rapl' | 'nvidia' | 'estimate';
+  powerSource?: 'rapl' | 'nvidia' | 'tdp';
   error?: string;
 }
 
@@ -101,14 +103,91 @@ function readNvidiaPowerWatts(): number | null {
 }
 
 /**
- * Estimate power from CPU cores and load average.
- * Rough model: idle ~10W/core, loaded ~40W/core, linear interpolation.
+ * TDP lookup table — maps CPU model substrings to TDP in watts.
+ * Checked against Intel ARK / AMD product specs.
  */
-function estimateWattsFromLoad(cores: number, load1m: number): number {
-  const idlePerCore = 10;
-  const loadedPerCore = 40;
-  const utilization = Math.min(load1m / cores, 1);
-  return round(cores * (idlePerCore + utilization * (loadedPerCore - idlePerCore)));
+const CPU_TDP_TABLE: [RegExp, number][] = [
+  // Intel mobile U-series (ultrabook)
+  [/i[357]-[0-9]{4}U/i, 15],
+  [/i[357]-1[0-3]\d{2}U/i, 15],   // 10th-13th gen U
+  [/i[357]-1[0-3]\d{2}G[1-7]/i, 15], // Ice Lake G-series
+  // Intel mobile P-series
+  [/i[357]-1[2-4]\d{2}P/i, 28],
+  // Intel mobile H-series
+  [/i[357]-[0-9]{4}H\b/i, 45],
+  [/i[357]-1[0-3]\d{2}H\b/i, 45],
+  [/i[79]-1[0-3]\d{2}H\b/i, 45],
+  [/i[79]-[0-9]{4}HK/i, 45],
+  [/i[79]-1[0-3]\d{2}HK/i, 45],
+  [/i[79]-1[0-3]\d{2}HX/i, 55],
+  // Intel desktop T-series (low power)
+  [/i[357]-[0-9]{4}T/i, 35],
+  // Intel desktop S-series (standard)
+  [/i[357]-[0-9]{4}\b/i, 65],
+  [/i[357]-1[0-3]\d{3}\b/i, 65],
+  [/i7-[0-9]{4}K/i, 91],
+  [/i9-[0-9]{4}K/i, 125],
+  [/i9-1[0-4]\d{3}K/i, 125],
+  // Intel Xeon E5 v1/v2/v3/v4
+  [/Xeon.*E5-26[0-9]{2}\s*$/, 95],       // E5-2600 series (no suffix)
+  [/Xeon.*E5-26[0-9]{2}\s*v2/i, 95],
+  [/Xeon.*E5-26[0-9]{2}\s*v3/i, 120],
+  [/Xeon.*E5-26[0-9]{2}\s*v4/i, 105],
+  [/Xeon.*E5-24[0-9]{2}/i, 80],
+  // Intel Xeon E3
+  [/Xeon.*E3-12[0-9]{2}/i, 80],
+  // Intel Xeon W
+  [/Xeon.*W-[0-9]{4}/i, 140],
+  // Intel Xeon Scalable (Gold/Silver/Platinum)
+  [/Xeon.*Gold/i, 150],
+  [/Xeon.*Silver/i, 85],
+  [/Xeon.*Platinum/i, 205],
+  // AMD Ryzen mobile
+  [/Ryzen [357] [0-9]{4}U/i, 15],
+  [/Ryzen [79] [0-9]{4}U/i, 15],
+  [/Ryzen [357] [0-9]{4}H/i, 35],
+  [/Ryzen [79] [0-9]{4}H/i, 45],
+  [/Ryzen [79] [0-9]{4}HX/i, 55],
+  // AMD Ryzen desktop
+  [/Ryzen [357] [0-9]{4}X?\b/i, 65],
+  [/Ryzen [79] [0-9]{4}X?\b/i, 105],
+  [/Ryzen 9 [0-9]{4}X3D/i, 120],
+  // AMD EPYC
+  [/EPYC\s+7[0-9]{3}/i, 155],
+  [/EPYC\s+9[0-9]{3}/i, 200],
+  // ARM / Apple (if ever showing up)
+  [/Cortex-A7[0-9]/i, 5],
+  [/Neoverse/i, 60],
+];
+
+/**
+ * Look up TDP for a CPU model string. Returns watts or null if unknown.
+ */
+function lookupCpuTdp(model: string): number | null {
+  for (const [pattern, tdp] of CPU_TDP_TABLE) {
+    if (pattern.test(model)) return tdp;
+  }
+  return null;
+}
+
+/**
+ * Read CPU model name from /proc/cpuinfo text.
+ */
+function parseCpuModel(cpuinfoOrText: string): string | null {
+  const match = cpuinfoOrText.match(/model name\s*:\s*(.+)/i);
+  return match ? match[1].trim() : null;
+}
+
+/**
+ * Calculate power draw from TDP and load. Uses a realistic power curve:
+ * - Idle: ~20% of TDP (C-states, power management)
+ * - Linear scale from idle to TDP based on utilization
+ * - Can exceed TDP slightly under turbo (capped at 110% TDP)
+ */
+function wattsFromTdp(tdpWatts: number, cores: number, load1m: number): number {
+  const idleFraction = 0.2;
+  const utilization = Math.min(load1m / cores, 1.1);
+  return round(tdpWatts * (idleFraction + utilization * (1 - idleFraction)));
 }
 
 function getLocalStats(): MeshNode {
@@ -119,8 +198,10 @@ function getLocalStats(): MeshNode {
       if (fqdn && fqdn.includes('.')) hostname = fqdn;
     } catch { /* no FQDN available */ }
 
-    // CPU cores
+    // CPU cores and model
     const cpuCores = parseInt(execSync('nproc', { encoding: 'utf-8' }).trim());
+    const cpuinfo = readFileSync('/proc/cpuinfo', 'utf-8');
+    const cpuModel = parseCpuModel(cpuinfo);
 
     // Memory from /proc/meminfo (more precise than free)
     const meminfo = readFileSync('/proc/meminfo', 'utf-8');
@@ -148,23 +229,26 @@ function getLocalStats(): MeshNode {
       claudeProcesses = parseInt(ps.trim()) || 0;
     } catch { /* no claudes */ }
 
-    // Power monitoring: try RAPL, then nvidia-smi, then estimate
+    // Power monitoring: try RAPL first, then TDP lookup
     const raplWatts = readRaplWatts();
     const gpuWatts = readNvidiaPowerWatts();
+    const cpuTdpWatts = cpuModel ? lookupCpuTdp(cpuModel) : null;
     let powerWatts: number | undefined;
     let powerSource: MeshNode['powerSource'];
 
     if (raplWatts !== null) {
       powerWatts = raplWatts;
       powerSource = 'rapl';
-    } else {
-      powerWatts = estimateWattsFromLoad(cpuCores, loadAvg[0]);
-      powerSource = 'estimate';
+    } else if (cpuTdpWatts !== null) {
+      powerWatts = wattsFromTdp(cpuTdpWatts, cpuCores, loadAvg[0]);
+      powerSource = 'tdp';
     }
 
     return {
       hostname,
       reachable: true,
+      cpuModel: cpuModel ?? undefined,
+      cpuTdpWatts: cpuTdpWatts ?? undefined,
       cpuCores,
       memTotalGB: round(memTotal),
       memUsedGB: round(memTotal - memAvailable),
@@ -185,8 +269,8 @@ function getLocalStats(): MeshNode {
 
 function getRemoteStats(host: string): MeshNode {
   try {
-    // Main stats command
-    const cmd = `ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${host} 'hostname -f 2>/dev/null || hostname && nproc && cat /proc/meminfo && cat /proc/loadavg && cat /proc/uptime && ps aux | grep -i "[c]laude" | wc -l'`;
+    // Main stats command (includes cpuinfo model name)
+    const cmd = `ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${host} 'hostname -f 2>/dev/null || hostname && nproc && grep -m1 "model name" /proc/cpuinfo && cat /proc/meminfo && cat /proc/loadavg && cat /proc/uptime && ps aux | grep -i "[c]laude" | wc -l'`;
     const output = execSync(cmd, { encoding: 'utf-8', timeout: 10000 });
     const lines = output.trim().split('\n');
 
@@ -195,8 +279,11 @@ function getRemoteStats(host: string): MeshNode {
     const hostname = host.includes('.') ? host : (remoteHostname.includes('.') ? remoteHostname : host);
     const cpuCores = parseInt(lines[1]);
 
-    // Parse meminfo from remote
-    const meminfoLines = lines.slice(2);
+    // CPU model is on line 2 (grep output: "model name : ...")
+    const cpuModel = parseCpuModel(lines[2]);
+
+    // Parse meminfo from remote (starts after cpumodel line)
+    const meminfoLines = lines.slice(3);
     const meminfoText = meminfoLines.join('\n');
     const memTotal = parseInt(meminfoText.match(/MemTotal:\s+(\d+)/)?.[1] ?? '0') / 1024 / 1024;
     const memAvailable = parseInt(meminfoText.match(/MemAvailable:\s+(\d+)/)?.[1] ?? '0') / 1024 / 1024;
@@ -220,10 +307,11 @@ function getRemoteStats(host: string): MeshNode {
     // Last line is claude count
     const claudeProcesses = parseInt(lines[lines.length - 1]) || 0;
 
-    // Power monitoring via separate SSH calls (non-blocking — we don't want to slow down the main stats)
+    // Power monitoring via separate SSH calls
+    const cpuTdpWatts = cpuModel ? lookupCpuTdp(cpuModel) : null;
     let powerWatts: number | undefined;
     let gpuPowerWatts: number | undefined;
-    let powerSource: MeshNode['powerSource'] = 'estimate';
+    let powerSource: MeshNode['powerSource'] | undefined;
 
     // Try RAPL on remote (two readings 100ms apart)
     try {
@@ -259,15 +347,17 @@ function getRemoteStats(host: string): MeshNode {
       }
     } catch { /* no nvidia-smi */ }
 
-    // Fall back to estimation
-    if (!powerWatts) {
-      powerWatts = estimateWattsFromLoad(cpuCores, loadAvg[0]);
-      powerSource = 'estimate';
+    // Fall back to TDP lookup
+    if (!powerWatts && cpuTdpWatts !== null) {
+      powerWatts = wattsFromTdp(cpuTdpWatts, cpuCores, loadAvg[0]);
+      powerSource = 'tdp';
     }
 
     return {
       hostname,
       reachable: true,
+      cpuModel: cpuModel ?? undefined,
+      cpuTdpWatts: cpuTdpWatts ?? undefined,
       cpuCores,
       memTotalGB: round(memTotal),
       memUsedGB: round(memTotal - memAvailable),

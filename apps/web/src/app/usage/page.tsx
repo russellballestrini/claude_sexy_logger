@@ -651,7 +651,7 @@ export default function UsageMonitorPage() {
               {(() => {
                 const reachable = (mesh.nodes ?? []).filter((n: any) => n.reachable);
                 const elecCost = reachable.reduce((sum: number, n: any) => {
-                  const watts = (n.powerWatts ?? estimateWatts(n.cpuCores, n.loadAvg[0])) + (n.gpuPowerWatts ?? 0);
+                  const watts = (n.powerWatts ?? 0) + (n.gpuPowerWatts ?? 0);
                   return sum + (watts * 24 * 30 / 1000) * getKwhRate(n.hostname);
                 }, 0);
                 const ispTotal = reachable.reduce((sum: number, n: any) => sum + getIspCost(n.hostname), 0);
@@ -927,14 +927,7 @@ function isActiveSameDay(timestamp: string | null): boolean {
 
 const DEFAULT_KWH_RATE = 0.31; // USD per kWh — unsandbox default
 
-// Estimate watts from CPU cores and load average
-// Rough model: idle core ~10W, loaded core ~40W, linear interpolation
-function estimateWatts(cores: number, loadAvg1: number): number {
-  const idleWattsPerCore = 10;
-  const loadedWattsPerCore = 40;
-  const utilization = Math.min(loadAvg1 / cores, 1);
-  return cores * (idleWattsPerCore + utilization * (loadedWattsPerCore - idleWattsPerCore));
-}
+// No longer estimating power — mesh API provides TDP-based or RAPL watts
 
 function MeshNodeCard({ node, kwhRate, onRateChange, ispCost, onIspCostChange, formatCost }: { node: any; kwhRate: number; onRateChange: (hostname: string, rate: number) => void; ispCost: number; onIspCostChange: (hostname: string, cost: number) => void; formatCost: (usd: number) => string }) {
   if (!node.reachable) {
@@ -1010,13 +1003,13 @@ function MeshNodeCard({ node, kwhRate, onRateChange, ispCost, onIspCostChange, f
 
       {/* Costs */}
       {(() => {
-        const cpuWatts = node.powerWatts ?? estimateWatts(node.cpuCores, node.loadAvg[0]);
+        const cpuWatts = node.powerWatts ?? 0;
         const gpuWatts = node.gpuPowerWatts ?? 0;
         const totalWatts = cpuWatts + gpuWatts;
         const kwhPerMonth = (totalWatts * 24 * 30) / 1000;
         const elecPerMonth = kwhPerMonth * kwhRate;
         const totalPerMonth = elecPerMonth + ispCost;
-        const sourceLabel = node.powerSource === 'rapl' ? 'rapl' : node.powerSource === 'nvidia' ? 'nvidia' : 'est.';
+        const sourceLabel = node.powerSource === 'rapl' ? 'rapl' : node.powerSource === 'tdp' ? `tdp${node.cpuTdpWatts ? ' ' + node.cpuTdpWatts + 'W' : ''}` : 'n/a';
         return (
           <div className="mt-2 pt-2 border-t border-[var(--color-border)]">
             <div className="flex justify-between text-xs text-[var(--color-muted)]">
@@ -1024,7 +1017,7 @@ function MeshNodeCard({ node, kwhRate, onRateChange, ispCost, onIspCostChange, f
                 {cpuWatts.toFixed(0)}W cpu
                 {gpuWatts > 0 && <> + {gpuWatts.toFixed(0)}W gpu</>}
                 {' '}
-                <span className={`text-[10px] ${node.powerSource === 'rapl' ? 'text-[var(--color-accent)]' : 'opacity-60'}`}>
+                <span className={`text-[10px] ${node.powerSource ? 'text-[var(--color-accent)]' : 'opacity-60'}`}>
                   [{sourceLabel}]
                 </span>
               </span>
