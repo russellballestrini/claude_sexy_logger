@@ -218,7 +218,7 @@ export default function LivePage() {
 
   const onEntryMouseLeave = useCallback(() => {
     clearTimeout(hoverTimeout.current);
-    setHoveredEntry(null);
+    hoverTimeout.current = setTimeout(() => setHoveredEntry(null), 150);
   }, []);
 
   useEffect(() => {

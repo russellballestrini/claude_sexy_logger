@@ -29,7 +29,8 @@
     "./db/api-keys": "./db/api-keys.ts",
     "./db/tenant": "./db/tenant.ts",
     "./tiers": "./tiers.ts",
-    "./auth": "./auth.ts"
+    "./auth": "./auth.ts",
+    "./rate-limit": "./rate-limit.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2"

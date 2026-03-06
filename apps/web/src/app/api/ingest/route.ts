@@ -4,6 +4,8 @@ import { isMultiTenant, authenticateRequest } from '@unfirehose/core/auth';
 import { getTenantDb } from '@unfirehose/core/db/tenant';
 import { getControlDb } from '@unfirehose/core/db/control';
 import { uuidv7 } from '@unfirehose/core/uuidv7';
+import { tierLimits } from '@unfirehose/core/tiers';
+import { checkRateLimit } from '@unfirehose/core/rate-limit';
 
 export async function POST(request: NextRequest) {
   if (isMultiTenant()) {
@@ -40,6 +42,16 @@ async function handleCloudIngest(request: NextRequest) {
   const lines = body.split('\n').filter(l => l.trim());
   if (lines.length === 0) {
     return NextResponse.json({ accepted: 0, errors: 0 });
+  }
+
+  // Rate limiting
+  const limits = tierLimits(auth.tier as 0 | 14 | 33);
+  const rateCheck = checkRateLimit(`ingest:${auth.accountId}`, lines.length, limits.ingestRatePerMin);
+  if (!rateCheck.allowed) {
+    return NextResponse.json(
+      { error: 'Rate limit exceeded', retryAfterMs: rateCheck.retryAfterMs },
+      { status: 429, headers: { 'Retry-After': String(Math.ceil(rateCheck.retryAfterMs / 1000)) } },
+    );
   }
 
   const tenantDb = getTenantDb(auth.accountId);

@@ -30,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/usage', label: 'Usage', icon: '△' },
   // Configure
   { separator: 'configure' },
+  { href: '/keys', label: 'Keys', icon: '⚿' },
   { href: '/scrobble', label: 'Scrobble', icon: '♪' },
   { href: '/schema', label: 'Schema', icon: '{' },
   { href: '/styleguide', label: 'Styleguide', icon: '◐' },
