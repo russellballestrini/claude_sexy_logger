@@ -417,10 +417,6 @@ export default function TodosPage() {
                     e.preventDefault();
                     e.dataTransfer.dropEffect = 'move';
                     setDragOverColumn(col.key);
-                    // If hovering over empty area (not on a card), place at end
-                    if (e.target === e.currentTarget || (e.target as HTMLElement).closest('[data-kanban-col]') === e.currentTarget) {
-                      setDragOverIndex(columnTodos.length);
-                    }
                   }}
                   onDragLeave={(e) => {
                     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -447,70 +443,47 @@ export default function TodosPage() {
                     <span className="text-xs text-[var(--color-muted)] ml-auto tabular-nums">{columnTodos.length}</span>
                   </div>
 
-                  {/* Cards with insertion gaps — scrollable to prevent layout shift */}
+                  {/* Drop zone at top of column */}
+                  {isOver && validDrop && (
+                    <div className="mb-2">
+                      <InsertionGap color={gapColor} label={gapLabel} />
+                    </div>
+                  )}
+
+                  {/* Cards — scrollable to prevent layout shift */}
                   <div className="space-y-2 overflow-y-auto max-h-[calc(100vh-220px)] pr-1">
                     {isCompleted ? (
                       completedDays.length === 0 ? (
                         <p className="text-sm text-[var(--color-muted)] text-center py-8 italic">No completions in last {COMPLETED_WINDOW_DAYS} days</p>
                       ) : (
-                        <>
-                          {/* Insertion gap at top of completed */}
-                          {isOver && validDrop && dragOverIndex === 0 && (
-                            <InsertionGap color={gapColor} label={gapLabel} />
-                          )}
-                          {completedDays.map(day => (
-                            <div key={day}>
-                              <div className="text-xs text-[var(--color-muted)] font-bold mb-1.5 mt-2">{day}</div>
-                              {completedByDay[day].map(todo => (
-                                <CompletedCard key={todo.id} todo={todo} landed={landedCardId === todo.id} />
-                              ))}
-                            </div>
-                          ))}
-                        </>
+                        completedDays.map(day => (
+                          <div key={day}>
+                            <div className="text-xs text-[var(--color-muted)] font-bold mb-1.5 mt-2">{day}</div>
+                            {completedByDay[day].map(todo => (
+                              <CompletedCard key={todo.id} todo={todo} landed={landedCardId === todo.id} />
+                            ))}
+                          </div>
+                        ))
                       )
                     ) : (
                       <>
-                        {columnTodos.map((todo, i) => {
+                        {columnTodos.map((todo) => {
                           const group = byProject.find(g => g.project === todo.projectName);
                           return (
-                            <Fragment key={todo.id}>
-                              {/* Insertion gap before this card */}
-                              {isOver && validDrop && dragOverIndex === i && (
-                                <InsertionGap color={gapColor} label={gapLabel} />
-                              )}
-                              <div
-                                onDragOver={(e) => {
-                                  if (!draggedTodo || !canDropOnColumn(draggedTodo.status, col.key)) return;
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  const rect = e.currentTarget.getBoundingClientRect();
-                                  const midY = rect.top + rect.height / 2;
-                                  setDragOverIndex(e.clientY < midY ? i : i + 1);
-                                  setDragOverColumn(col.key);
-                                }}
-                              >
-                                <KanbanCard
-                                  todo={todo}
-                                  onUpdate={updateTodo} onDelete={deleteTodo}
-                                  projectPath={group?.projectPath ?? null}
-                                  onBoot={bootAgent} booting={booting} bootResult={bootResult}
-                                  onDragStart={handleDragStart} onDragEnd={handleDragEnd}
-                                  isDragging={draggedTodo?.id === todo.id}
-                                  landed={landedCardId === todo.id}
-                                />
-                              </div>
-                            </Fragment>
+                            <KanbanCard
+                              key={todo.id}
+                              todo={todo}
+                              onUpdate={updateTodo} onDelete={deleteTodo}
+                              projectPath={group?.projectPath ?? null}
+                              onBoot={bootAgent} booting={booting} bootResult={bootResult}
+                              onDragStart={handleDragStart} onDragEnd={handleDragEnd}
+                              isDragging={draggedTodo?.id === todo.id}
+                              landed={landedCardId === todo.id}
+                            />
                           );
                         })}
-                        {/* Insertion gap at end */}
-                        {isOver && validDrop && dragOverIndex >= columnTodos.length && (
-                          <InsertionGap color={gapColor} label={gapLabel} />
-                        )}
                         {columnTodos.length === 0 && !validDrop && (
                           <p className="text-sm text-[var(--color-muted)] text-center py-8 italic">Empty</p>
-                        )}
-                        {columnTodos.length === 0 && isOver && validDrop && (
-                          <InsertionGap color={gapColor} label={gapLabel} />
                         )}
                       </>
                     )}
@@ -571,13 +544,15 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
 }) {
   const [showEstimate, setShowEstimate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(todo.content);
   const needsTicket = (todo.estimatedMinutes ?? 0) > TICKET_THRESHOLD;
   const bootKey = `todo-${todo.id}`;
   const isActive = todo.status === 'in_progress';
 
   return (
     <div
-      draggable
+      draggable={!editing}
       onDragStart={(e) => {
         // Custom drag image with glow
         const el = e.currentTarget;
@@ -623,7 +598,23 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
         </div>
       )}
 
-      <p className="font-medium mb-2 leading-snug">{todo.content}</p>
+      {editing ? (
+        <textarea
+          value={editText}
+          onChange={(e) => setEditText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (editText.trim() && editText !== todo.content) onUpdate(todo.id, { content: editText.trim() }); setEditing(false); }
+            if (e.key === 'Escape') { setEditText(todo.content); setEditing(false); }
+          }}
+          onBlur={() => { if (editText.trim() && editText !== todo.content) onUpdate(todo.id, { content: editText.trim() }); setEditing(false); }}
+          autoFocus
+          rows={3}
+          className="w-full font-medium mb-2 leading-snug text-sm bg-[var(--color-background)] border border-[var(--color-accent)] rounded px-2 py-1 focus:outline-none resize-y"
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <p className="font-medium mb-2 leading-snug cursor-text" onClick={(e) => { e.stopPropagation(); setEditing(true); }}>{todo.content}</p>
+      )}
 
       {/* Estimate */}
       <div className="flex items-center gap-1.5 mb-2">

@@ -117,7 +117,7 @@ export default function ProjectKanbanPage({ params }: { params: Promise<{ projec
 
   useEffect(() => { fetchTodos(); }, [fetchTodos]);
 
-  const updateTodo = useCallback(async (id: number, updates: { estimatedMinutes?: number; status?: string }) => {
+  const updateTodo = useCallback(async (id: number, updates: { estimatedMinutes?: number; status?: string; content?: string }) => {
     // Optimistic update — move the card immediately
     setTodos(prev => prev.map(t => t.id === id ? {
       ...t,
@@ -423,13 +423,15 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
 }) {
   const [showEstimate, setShowEstimate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(todo.content);
   const needsTicket = (todo.estimatedMinutes ?? 0) > TICKET_THRESHOLD;
   const bootKey = `todo-${todo.id}`;
   const isActive = todo.status === 'in_progress';
 
   return (
     <div
-      draggable
+      draggable={!editing}
       onDragStart={(e) => {
         const el = e.currentTarget;
         const clone = el.cloneNode(true) as HTMLElement;
@@ -472,7 +474,23 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
         </div>
       )}
 
-      <p className="font-medium mb-2 leading-snug">{todo.content}</p>
+      {editing ? (
+        <textarea
+          value={editText}
+          onChange={(e) => setEditText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (editText.trim() && editText !== todo.content) onUpdate(todo.id, { content: editText.trim() }); setEditing(false); }
+            if (e.key === 'Escape') { setEditText(todo.content); setEditing(false); }
+          }}
+          onBlur={() => { if (editText.trim() && editText !== todo.content) onUpdate(todo.id, { content: editText.trim() }); setEditing(false); }}
+          autoFocus
+          rows={3}
+          className="w-full font-medium mb-2 leading-snug text-sm bg-[var(--color-background)] border border-[var(--color-accent)] rounded px-2 py-1 focus:outline-none resize-y"
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <p className="font-medium mb-2 leading-snug cursor-text" onClick={(e) => { e.stopPropagation(); setEditing(true); }}>{todo.content}</p>
+      )}
 
       <div className="flex items-center gap-1.5 mb-2">
         <span

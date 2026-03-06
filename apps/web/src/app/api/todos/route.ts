@@ -62,9 +62,13 @@ export async function PATCH(request: NextRequest) {
   try {
     const db = getDb();
     const body = await request.json();
-    const { id, estimatedMinutes, status } = body;
+    const { id, estimatedMinutes, status, content } = body;
     if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
+    if (content !== undefined) {
+      db.prepare('UPDATE todos SET content = ?, updated_at = datetime(\'now\') WHERE id = ?')
+        .run(content, id);
+    }
     if (estimatedMinutes !== undefined) {
       db.prepare('UPDATE todos SET estimated_minutes = ?, updated_at = datetime(\'now\') WHERE id = ?')
         .run(estimatedMinutes, id);
