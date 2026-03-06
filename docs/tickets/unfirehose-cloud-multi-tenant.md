@@ -9,18 +9,32 @@
 
 unfirehose currently runs locally, reading Claude Code JSONL from `~/.claude/` into a local SQLite DB. We want to host a cloud version at unfirehose.com (portal via unsandbox.com) that supports multiple user seats with tiered API keys.
 
-### Business model
+## Existing work on unsandbox.com (Elixir/Phoenix)
 
-- **Tier 1 (individual):** Single user, single API key, personal dashboard
-- **Tier 33 (team):** Team account, can issue unlimited sub-keys to track LLM usage per member
-- Keys sold through unsandbox.com portal
+Already built and wired up:
 
-### Key decisions (confirmed with fox)
+- **`Unsandbox.Schemas.UnfirehoseAccount`** — Ecto schema: `account_id`, `email`, `tier` (free/pro/team), `stripe_customer_id`, `payment_id`
+- **`Unsandbox.Storage.UnfirehoseAccounts`** — Full CRUD, upsert by account_id, lapse detection for expired payments (auto-downgrade)
+- **`Unsandbox.Webhooks.UnfirehoseSync`** — POSTs tier changes to `https://api.unfirehose.org/webhooks/tier-sync` with HMAC-SHA256 signature, 3 retries with exponential backoff, audit-logged
+- **Pricing page** — 3 tiers with crypto (XMR/BTC/LTC/DOGE) + Stripe card/USDC payments:
+  - **Free** ($0) — 7-day sliding window, rate limited
+  - **Pro** ($14/mo, $97/yr) — Full access, unlimited history, priority rate limits
+  - **Trust** ($420/mo) — Everything in Pro + cloud bucket sync, dedicated endpoint, SLA, KYC
+- **Purchase flow** — Routes through `/purchase/custom?product_type=unfirehose&product_tier=pro` etc.
+- **Account flow** — User purchases on unsandbox.com, gets an `account_id`, generates their own `unfh-` prefixed keys on unfirehose.com
 
-- **Data ingest:** Dual mode — full local app can route to cloud, PLUS a lightweight local router/daemon that just forwards events with an API key (no local dashboard needed)
-- **Database:** SQLite per tenant (one `.db` per team/user)
-- **Codebase:** Same repo, dual mode via `MULTI_TENANT` env flag
-- **Local mode** continues to work exactly as today (no auth, single user, `~/.claude/unfirehose.db`)
+### What unsandbox.com handles (NOT our problem)
+- Payment processing (crypto + Stripe)
+- Account creation and tier assignment
+- Subscription lapse detection and auto-downgrade
+- Webhook delivery to unfirehose on tier changes
+
+### What unfirehose.com must handle (THIS ticket)
+- Receive webhook from unsandbox.com to sync tier status
+- API key generation (`unfh-` prefix) from account_id
+- Team sub-key issuance (team tier)
+- Data ingest, storage, and dashboard serving per tenant
+- Rate limiting based on tier
 
 ## Architecture
 
@@ -28,181 +42,206 @@ unfirehose currently runs locally, reading Claude Code JSONL from `~/.claude/` i
 
 ```
 MULTI_TENANT=false  (default, local)     MULTI_TENANT=true  (cloud)
-─────────────────────────────────────     ──────────────────────────────────
-No auth                                   API key auth on all routes
-Single SQLite at ~/.claude/unfirehose.db  SQLite per tenant: /data/{tenant_id}.db
-Reads JSONL from ~/.claude/               Receives events via POST /api/ingest
-No teams, no keys                         Teams, sub-keys, usage tracking
+-------------------------------------    ----------------------------------
+No auth                                  API key auth on all routes
+Single SQLite at ~/.claude/unfirehose.db SQLite per tenant: /data/{account_id}.db
+Reads JSONL from ~/.claude/              Receives events via POST /api/ingest
+No teams, no keys                        Teams, sub-keys, usage tracking
 ```
+
+### Key decisions (confirmed with fox)
+
+- **Data ingest:** Full local app can route to cloud, PLUS a lightweight local router/daemon that just forwards events with an API key (no local dashboard needed)
+- **Database:** SQLite per tenant (one `.db` per account)
+- **Codebase:** Same repo, dual mode via `MULTI_TENANT` env flag
+- **Local mode** continues to work exactly as today
 
 ### Data model (cloud mode)
 
 ```sql
 -- Shared control plane DB: /data/control.db
 
-CREATE TABLE teams (
-  id TEXT PRIMARY KEY,          -- uuidv7
-  name TEXT NOT NULL,
-  tier INTEGER NOT NULL DEFAULT 1,  -- 1=individual, 33=team
-  owner_email TEXT NOT NULL,
+CREATE TABLE accounts (
+  id TEXT PRIMARY KEY,            -- account_id from unsandbox.com
+  email TEXT NOT NULL,
+  tier TEXT NOT NULL DEFAULT 'free',  -- free, pro, team (matches unsandbox schema)
   created_at TEXT DEFAULT (datetime('now')),
-  stripe_customer_id TEXT,
+  updated_at TEXT DEFAULT (datetime('now')),
   active INTEGER DEFAULT 1
 );
 
 CREATE TABLE api_keys (
-  id TEXT PRIMARY KEY,          -- uuidv7
-  team_id TEXT NOT NULL REFERENCES teams(id),
-  key_hash TEXT NOT NULL,       -- sha256 of the actual key
-  key_prefix TEXT NOT NULL,     -- first 8 chars for display: "uf_abc123..."
-  label TEXT,                   -- "fox-laptop", "ci-server", etc.
-  scopes TEXT DEFAULT 'ingest', -- comma-sep: ingest, read, admin
+  id TEXT PRIMARY KEY,            -- uuidv7
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  key_hash TEXT NOT NULL,         -- sha256 of the actual key
+  key_prefix TEXT NOT NULL,       -- first 8 chars for display: "unfh_abc1..."
+  label TEXT,                     -- "fox-laptop", "ci-server", etc.
+  parent_key_id TEXT,             -- NULL for root keys, parent key id for sub-keys
+  scopes TEXT DEFAULT 'ingest',   -- comma-sep: ingest, read, admin
   created_at TEXT DEFAULT (datetime('now')),
   last_used_at TEXT,
   revoked_at TEXT
 );
 
-CREATE TABLE team_members (
-  team_id TEXT NOT NULL REFERENCES teams(id),
-  email TEXT NOT NULL,
-  role TEXT DEFAULT 'member',   -- owner, admin, member
-  api_key_id TEXT REFERENCES api_keys(id),  -- their personal sub-key
-  joined_at TEXT DEFAULT (datetime('now')),
-  PRIMARY KEY (team_id, email)
-);
-
 CREATE TABLE usage_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  team_id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
   api_key_id TEXT NOT NULL,
-  event_type TEXT NOT NULL,     -- ingest, query, boot
+  event_type TEXT NOT NULL,       -- ingest, query
   event_count INTEGER DEFAULT 1,
+  bytes INTEGER DEFAULT 0,
   recorded_at TEXT DEFAULT (datetime('now'))
 );
 ```
 
-Each team gets its own SQLite file at `/data/{team_id}.db` using the EXACT same schema as the local `unfirehose.db` — sessions, messages, projects, todos, etc. No schema changes needed for tenant data.
+Each account gets its own SQLite file at `/data/{account_id}.db` using the EXACT same schema as the local `unfirehose.db`. No schema changes needed for tenant data.
 
-### Ingest API (cloud)
+Team sub-keys: when `tier = 'team'`, the root key holder can generate child keys (`parent_key_id` set). All sub-keys write to the same tenant DB but usage is tracked per key.
+
+### API key format
+
+```
+unfh_xxxxxxxxxxxxxxxxxxxxxxxx   (matches unsandbox.com convention)
+```
+
+- `unfh_` prefix + 28-char random suffix
+- Stored as SHA-256 hash in control.db
+- First 8 chars stored as `key_prefix` for display in UI
+- Users generate keys on unfirehose.com after linking their account_id from unsandbox
+
+### Webhook receiver (from unsandbox.com)
+
+```
+POST /api/webhooks/tier-sync
+X-Webhook-Signature: hmac-sha256 hex digest
+Content-Type: application/json
+
+{ "account_id": "abc123", "tier": "pro" }
+```
+
+Must match what `Unsandbox.Webhooks.UnfirehoseSync` sends:
+- Verify HMAC-SHA256 signature using `UNFIREHOSE_WEBHOOK_SECRET`
+- Upsert account record in control.db
+- Enforce tier limits (e.g., revoke sub-keys if downgraded from team to pro)
+
+### Ingest API
 
 ```
 POST /api/ingest
-Authorization: Bearer uf_xxxxxxxxxxxxxxxx
-
-Body: JSONL lines (same format as Claude Code output)
+Authorization: Bearer unfh_xxxxxxxxxxxxxxxx
 Content-Type: application/x-ndjson
 
+Body: JSONL lines (same format as Claude Code output)
 Response: { "accepted": 47, "errors": 0 }
 ```
 
-The ingest endpoint:
-1. Validates API key against control.db
-2. Resolves team_id from key
-3. Opens/creates tenant SQLite at `/data/{team_id}.db`
-4. Runs the existing ingest pipeline (same code as local worker)
-5. Logs usage
+1. Validate API key against control.db
+2. Check tier rate limits (free: standard, pro: priority, trust: unlimited)
+3. Resolve account_id from key
+4. Open tenant SQLite at `/data/{account_id}.db`
+5. Run existing ingest pipeline (same code as local worker)
+6. Log usage per key
 
 ### Lightweight local router
 
-Minimal package (`@unfirehose/router` or standalone binary) that:
+Minimal package (`@unfirehose/router` or standalone binary):
 
 1. Watches `~/.claude/projects/` for new JSONL writes (inotify/fswatch)
-2. Batches events (every 5s or 100 events, whichever comes first)
-3. POSTs to `https://unfirehose.com/api/ingest` with API key
+2. Batches events (every 5s or 100 events, whichever first)
+3. POSTs to `https://api.unfirehose.org/api/ingest` with API key
 4. Retries with exponential backoff on failure
 5. Tracks cursor position per file to avoid re-sending
 
-```
-~/.unfirehose.json
+```json
+// ~/.unfirehose.json
 {
-  "api_key": "uf_xxxxxxxxxxxxxxxx",
-  "endpoint": "https://unfirehose.com/api/ingest",
+  "api_key": "unfh_xxxxxxxxxxxxxxxx",
+  "endpoint": "https://api.unfirehose.org/api/ingest",
   "watch_paths": ["~/.claude/"],
   "batch_size": 100,
   "flush_interval_ms": 5000
 }
 ```
 
-Should be installable via: `npx @unfirehose/router` or a single Go/Rust binary.
+Installable via: `npx @unfirehose/router` or a single compiled binary.
 
 ### Auth middleware (cloud mode)
 
 ```typescript
 // middleware.ts (Next.js)
 if (process.env.MULTI_TENANT === 'true') {
-  // Check session cookie or API key header
-  // Resolve tenant_id
-  // Inject tenant DB connection into request context
+  // API routes: validate Bearer token (unfh_ key)
+  // Web routes: validate session cookie (set after key-based login)
+  // Resolve account_id, inject tenant DB connection
 }
 ```
-
-Routes in cloud mode require auth. The existing page components stay identical — only the DB connection changes (from the single local DB to the tenant's DB).
 
 ### Tenant DB resolution
 
 ```typescript
 // packages/core/db/tenant.ts
-function getTenantDb(teamId: string): BetterSqlite3.Database {
-  // Pool of open connections, LRU eviction
-  // Opens /data/{teamId}.db, runs migrations if needed
+function getTenantDb(accountId: string): BetterSqlite3.Database {
+  // LRU pool of open connections
+  // Opens /data/{accountId}.db, runs migrations if needed
   // Same schema as local unfirehose.db
 }
 ```
 
-### API key format
+In cloud mode, `getDb()` becomes `getTenantDb(accountId)` — all existing API routes work unchanged.
 
-```
-uf_live_xxxxxxxxxxxxxxxxxxxxxxxx   (production)
-uf_test_xxxxxxxxxxxxxxxxxxxxxxxx   (test/dev)
-```
+### Tier enforcement
 
-- 32-char random suffix
-- Stored as SHA-256 hash in control.db
-- First 8 chars stored as prefix for key management UI
+| Feature | Free | Pro | Team |
+|---------|------|-----|------|
+| Data window | 7 days | Unlimited | Unlimited |
+| Ingest rate | 100 events/min | 10K events/min | Unlimited |
+| API keys | 1 | 5 | Unlimited sub-keys |
+| Dashboard | Read-only | Full | Full + team view |
+| Backfill | No | Yes | Yes |
 
 ## Milestones
 
-### M0: Foundation (this ticket)
-- [ ] `MULTI_TENANT` env flag and conditional auth middleware
-- [ ] Control plane DB schema + migrations (teams, api_keys, team_members)
-- [ ] API key generation, validation, and hashing
-- [ ] Tenant DB pool (open per-tenant SQLite, LRU cache)
-- [ ] `getDb()` becomes tenant-aware in cloud mode
+### M0: Foundation
+- [ ] `MULTI_TENANT` env flag, conditional middleware
+- [ ] Control plane DB: `control.db` with accounts, api_keys, usage_log tables
+- [ ] `unfh_` key generation, SHA-256 hashing, validation
+- [ ] Tenant DB pool (LRU cache of per-account SQLite connections)
+- [ ] `getDb()` → `getTenantDb()` in cloud mode
 
-### M1: Ingest API
-- [ ] `POST /api/ingest` — accepts JSONL, validates key, writes to tenant DB
-- [ ] Rate limiting per key
-- [ ] Usage logging
-- [ ] Lightweight router package (`@unfirehose/router`) — file watcher + batch POST
+### M1: Webhook + Ingest
+- [ ] `POST /api/webhooks/tier-sync` — receive from unsandbox.com, verify HMAC signature
+- [ ] `POST /api/ingest` — accept JSONL, validate key, write to tenant DB
+- [ ] Rate limiting per key based on tier
+- [ ] Usage logging per key
 
-### M2: Dashboard auth
-- [ ] Login/signup flow (email + magic link or OAuth)
+### M2: Lightweight router
+- [ ] `@unfirehose/router` package — file watcher + batch POST
+- [ ] `~/.unfirehose.json` config
+- [ ] Cursor tracking (resume after restart)
+- [ ] Exponential backoff retry
+
+### M3: Dashboard auth
+- [ ] Key-based login flow (paste unfh_ key to access dashboard)
 - [ ] Session cookies for web UI
-- [ ] API key management page (create, revoke, list)
-- [ ] Team management (invite members, assign sub-keys)
+- [ ] API key management page (create, revoke, label, list)
+- [ ] Team sub-key management (team tier only)
 
-### M3: Billing integration
-- [ ] Stripe integration via unsandbox.com portal
-- [ ] Tier enforcement (individual vs team)
-- [ ] Usage metering for billing
-
-### M4: Team features
-- [ ] Cross-member usage aggregation
-- [ ] Team dashboard view
-- [ ] Admin role permissions
-- [ ] Sub-key usage breakdown
+### M4: Tier features
+- [ ] 7-day sliding window enforcement for free tier
+- [ ] Team usage aggregation (per sub-key breakdown)
+- [ ] Data export/delete (GDPR)
 
 ## Open questions
 
-1. **Session management:** Cookie-based for web, API key for programmatic. Use next-auth or roll our own?
-2. **Deployment target:** Fly.io? Hetzner? Need persistent disk for SQLite files.
-3. **Backup strategy:** Litestream to S3 for tenant DBs?
-4. **Domain routing:** unfirehose.com direct or through unsandbox.com proxy?
-5. **Rate limits:** Per key? Per team? What thresholds?
+1. **Domain:** `api.unfirehose.org` (already in webhook config) vs `unfirehose.com`?
+2. **Deployment:** Fly.io? Hetzner? Need persistent disk for SQLite files + Litestream backup.
+3. **Login flow:** Key-paste only? Or also link unsandbox.com session via OAuth?
+4. **Free tier enforcement:** Delete data after 7 days or just hide it in queries?
 
 ## Notes
 
-- The local router must be extremely lightweight — no Next.js, no React, just a file watcher and HTTP client
-- SQLite per tenant keeps data isolated and makes it easy to export/delete (GDPR)
-- The existing ingest pipeline in `packages/core/db/ingest.ts` does all the heavy lifting — cloud mode just needs to route data to the right DB file
-- Tenant DBs use the same migrations as local, so any new feature works in both modes automatically
+- unsandbox.com handles ALL payment/billing — we just receive tier webhooks
+- The `unfh_` key prefix is already the convention from the unsandbox side
+- SQLite per tenant = easy isolation, export, delete, backup (Litestream to S3)
+- Existing ingest pipeline (`packages/core/db/ingest.ts`) reused as-is
+- Tenant DBs use same migrations as local — new features work in both modes
