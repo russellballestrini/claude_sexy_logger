@@ -13,6 +13,12 @@ function execAsync(cmd: string, args: string[], opts: { timeout: number }): Prom
   });
 }
 
+function killWindowAfterDelay(target: string): void {
+  setTimeout(() => {
+    execAsync('tmux', ['kill-window', '-t', target], { timeout: 3000 }).catch(() => {});
+  }, 5000);
+}
+
 /**
  * POST /api/boot/finished
  * Called by agent when it's done working. Sends /exit to its tmux window
@@ -44,6 +50,7 @@ export async function POST(request: NextRequest) {
         const target = d.tmux_window ? `${d.tmux_session}:${d.tmux_window}` : d.tmux_session;
         execAsync('tmux', ['send-keys', '-t', target, '/exit', 'Enter'], { timeout: 3000 })
           .catch(() => {});
+        killWindowAfterDelay(target);
         exited.push(target);
       }
     } else if (projectName) {
@@ -67,6 +74,7 @@ export async function POST(request: NextRequest) {
         const target = d.tmux_window ? `${d.tmux_session}:${d.tmux_window}` : d.tmux_session;
         execAsync('tmux', ['send-keys', '-t', target, '/exit', 'Enter'], { timeout: 3000 })
           .catch(() => {});
+        killWindowAfterDelay(target);
         exited.push(target);
       }
     } else {

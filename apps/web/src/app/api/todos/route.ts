@@ -281,10 +281,14 @@ function cullFinishedDeployments(db: ReturnType<typeof getDb>, completedTodoId: 
         "UPDATE agent_deployments SET status = 'completed', stopped_at = datetime('now') WHERE id = ?"
       ).run(d.id);
 
-      // Send /exit to Claude in the specific window — leaves tmux session for other agents
+      // Send /exit to Claude in the specific window, then kill the window
       const target = d.tmux_window ? `${d.tmux_session}:${d.tmux_window}` : d.tmux_session;
       execAsync('tmux', ['send-keys', '-t', target, '/exit', 'Enter'], { timeout: 3000 })
         .catch(() => { /* window may already be gone */ });
+      setTimeout(() => {
+        execAsync('tmux', ['kill-window', '-t', target], { timeout: 3000 })
+          .catch(() => {});
+      }, 5000);
     }
   }
 }

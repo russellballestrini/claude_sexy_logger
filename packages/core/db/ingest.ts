@@ -23,9 +23,16 @@ function tmuxSendKeys(target: string, keys: string): void {
   execFile('tmux', ['send-keys', '-t', target, keys, 'Enter'], { timeout: 3000 }, () => {});
 }
 
+function tmuxKillWindow(target: string): void {
+  // Delay kill to let /exit propagate, then kill the tmux window/session
+  setTimeout(() => {
+    execFile('tmux', ['kill-window', '-t', target], { timeout: 3000 }, () => {});
+  }, 5000);
+}
+
 /**
  * Cull deployments for projects where UNEOF was detected during ingestion.
- * Sends /exit to each deployment's tmux window.
+ * Sends /exit to each deployment's tmux window, then kills it.
  */
 function cullUneofDeployments(db: ReturnType<typeof getDb>, projectIds: Set<number>) {
   const deployments = db.prepare(`
@@ -38,6 +45,7 @@ function cullUneofDeployments(db: ReturnType<typeof getDb>, projectIds: Set<numb
     const target = d.tmux_window ? `${d.tmux_session}:${d.tmux_window}` : d.tmux_session;
     console.log(`[uneof] Culling deployment ${d.id} — sending /exit to ${target}`);
     tmuxSendKeys(target, '/exit');
+    tmuxKillWindow(target);
     db.prepare(
       "UPDATE agent_deployments SET status = 'completed', stopped_at = datetime('now') WHERE id = ?"
     ).run(d.id);

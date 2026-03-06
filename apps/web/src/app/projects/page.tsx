@@ -89,12 +89,13 @@ export default function ProjectsPage() {
           <TimeRangeSelect value={range} onChange={setRange} />
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
         {sortedProjects.map((project) => (
           <ProjectCard
             key={project.name}
             project={project}
             activity={activityMap.get(project.name)}
+            rangeDays={rangeDays}
           />
         ))}
       </div>
@@ -105,38 +106,67 @@ export default function ProjectsPage() {
 function ProjectCard({
   project,
   activity,
+  rangeDays,
 }: {
   project: ProjectInfo;
   activity?: ProjectActivity;
+  rangeDays: number;
 }) {
+  const isActive = project.latestActivity
+    ? Date.now() - new Date(project.latestActivity).getTime() < 1000 * 60 * 60
+    : false;
+
   return (
     <Link
       href={`/projects/${encodeURIComponent(project.name)}`}
-      className="block bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 transition-colors hover:border-[var(--color-accent)]"
+      className="block rounded border p-4 transition-colors hover:border-[var(--color-accent)]"
+      style={{
+        background: isActive
+          ? 'color-mix(in srgb, var(--color-accent) 8%, var(--color-surface))'
+          : 'var(--color-surface)',
+        borderColor: isActive ? 'var(--color-accent)' : 'var(--color-border)',
+      }}
     >
-      <div className="flex items-start justify-between">
-        <div className="font-bold text-base break-words">
+      <div className="flex items-start justify-between gap-2">
+        <div className="font-bold text-base break-words min-w-0">
           {project.displayName}
         </div>
-        {project.hasMemory && (
-          <span
-            className="w-2 h-2 rounded-full bg-[var(--color-accent)] shrink-0 mt-1"
-            title="Has MEMORY.md"
-          />
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {project.hasMemory && (
+            <span
+              className="w-2 h-2 rounded-full bg-[var(--color-accent)]"
+              title="Has MEMORY.md"
+            />
+          )}
+          {isActive && (
+            <span
+              className="w-2 h-2 rounded-full bg-green-400 animate-pulse"
+              title="Active in last hour"
+            />
+          )}
+        </div>
       </div>
-      <div className="flex gap-4 mt-3 text-base text-[var(--color-muted)]">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-base text-[var(--color-muted)]">
         <span>{project.sessionCount} sessions</span>
         <span>{formatTokens(project.totalMessages)} msgs</span>
-        {project.latestActivity && (
-          <span>{formatRelativeTime(project.latestActivity)}</span>
+        {activity && activity.active_days > 0 && (
+          <span>{activity.active_days}d active / {rangeDays}d</span>
         )}
       </div>
-      {activity && (
-        <div className="mt-2 text-base text-[var(--color-accent)]">
-          ${activity.cost_estimate.toFixed(0)}
-        </div>
-      )}
+      <div className="flex items-center justify-between mt-2">
+        {activity && activity.cost_estimate > 0 ? (
+          <span className="text-base text-[var(--color-accent)] font-bold">
+            ${activity.cost_estimate.toFixed(0)}
+          </span>
+        ) : (
+          <span />
+        )}
+        {project.latestActivity && (
+          <span className="text-base text-[var(--color-muted)]">
+            {formatRelativeTime(project.latestActivity)}
+          </span>
+        )}
+      </div>
     </Link>
   );
 }
