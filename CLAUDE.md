@@ -16,6 +16,7 @@ Full shard: `~/git/unsandbox.com/blackops/BLACKOPS.md`
 - Never say "AI" — always say "machine learning."
 - Prefer "defect" over "bug."
 - Commit and push when ready — rapid prototyping mode. No need to ask before committing.
+- Never add `Co-Authored-By` lines to commit messages.
 
 ## Orientation
 

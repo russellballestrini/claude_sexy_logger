@@ -76,7 +76,7 @@ export function Sidebar() {
               href={item.href}
               className={`flex items-center gap-3 px-3 py-1.5 rounded text-base transition-colors ${
                 isActive
-                  ? 'bg-[var(--color-surface-hover)] text-[var(--color-foreground)]'
+                  ? 'bg-[var(--color-accent)]/15 text-[var(--color-accent)]'
                   : 'text-[var(--color-muted)] hover:text-[var(--color-foreground)] hover:bg-[var(--color-surface-hover)]'
               }`}
             >
