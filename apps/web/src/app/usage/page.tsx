@@ -31,12 +31,16 @@ export default function UsageMonitorPage() {
   const { data: settings } = useSWR('/api/settings', fetcher, { revalidateOnFocus: false });
   const [kwhRates, setKwhRates] = useState<Record<string, number>>({});
   const [ispCosts, setIspCosts] = useState<Record<string, number>>({});
+  const [diskOverrides, setDiskOverrides] = useState<Record<string, number>>({});
+  const [wattsOverrides, setWattsOverrides] = useState<Record<string, number>>({});
 
   // Load per-node electricity rates and ISP costs from settings
   useEffect(() => {
     if (!settings) return;
     const rates: Record<string, number> = {};
     const isps: Record<string, number> = {};
+    const disks: Record<string, number> = {};
+    const watts: Record<string, number> = {};
     for (const [k, v] of Object.entries(settings)) {
       if (k.startsWith('electricity_rate_')) {
         rates[k.replace('electricity_rate_', '')] = parseFloat(v as string) || DEFAULT_KWH_RATE;
@@ -44,30 +48,50 @@ export default function UsageMonitorPage() {
       if (k.startsWith('isp_cost_')) {
         isps[k.replace('isp_cost_', '')] = parseFloat(v as string) || 0;
       }
+      if (k.startsWith('disk_override_')) {
+        disks[k.replace('disk_override_', '')] = parseInt(v as string) || 0;
+      }
+      if (k.startsWith('watts_override_')) {
+        watts[k.replace('watts_override_', '')] = parseFloat(v as string) || 0;
+      }
     }
     setKwhRates(rates);
     setIspCosts(isps);
+    setDiskOverrides(disks);
+    setWattsOverrides(watts);
   }, [settings]);
 
   const getKwhRate = (hostname: string) => kwhRates[hostname] ?? DEFAULT_KWH_RATE;
   const getIspCost = (hostname: string) => ispCosts[hostname] ?? (parseFloat(settings?.mesh_default_isp_cost ?? '0') || 0);
+  const getDiskOverride = (hostname: string) => diskOverrides[hostname] ?? undefined;
+  const getWattsOverride = (hostname: string) => wattsOverrides[hostname] ?? undefined;
 
-  const saveKwhRate = (hostname: string, rate: number) => {
-    setKwhRates(prev => ({ ...prev, [hostname]: rate }));
+  const saveSetting = (key: string, value: string) => {
     fetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'set', key: `electricity_rate_${hostname}`, value: String(rate) }),
+      body: JSON.stringify({ action: 'set', key, value }),
     });
+  };
+
+  const saveKwhRate = (hostname: string, rate: number) => {
+    setKwhRates(prev => ({ ...prev, [hostname]: rate }));
+    saveSetting(`electricity_rate_${hostname}`, String(rate));
   };
 
   const saveIspCost = (hostname: string, cost: number) => {
     setIspCosts(prev => ({ ...prev, [hostname]: cost }));
-    fetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'set', key: `isp_cost_${hostname}`, value: String(cost) }),
-    });
+    saveSetting(`isp_cost_${hostname}`, String(cost));
+  };
+
+  const saveDiskOverride = (hostname: string, count: number) => {
+    setDiskOverrides(prev => ({ ...prev, [hostname]: count }));
+    saveSetting(`disk_override_${hostname}`, String(count));
+  };
+
+  const saveWattsOverride = (hostname: string, watts: number) => {
+    setWattsOverrides(prev => ({ ...prev, [hostname]: watts }));
+    saveSetting(`watts_override_${hostname}`, String(watts));
   };
 
   // Auto-refresh every 10 seconds
@@ -651,7 +675,13 @@ export default function UsageMonitorPage() {
               {(() => {
                 const reachable = (mesh.nodes ?? []).filter((n: any) => n.reachable);
                 const elecCost = reachable.reduce((sum: number, n: any) => {
-                  const watts = (n.powerWatts ?? 0) + (n.gpuPowerWatts ?? 0);
+                  const wo = getWattsOverride(n.hostname);
+                  let sysW = wo || n.powerWatts || 0;
+                  const diskOv = getDiskOverride(n.hostname);
+                  if (!wo && diskOv !== undefined) {
+                    sysW += Math.max(0, diskOv - (n.spinningDisks ?? 0)) * 8;
+                  }
+                  const watts = sysW + (n.gpuPowerWatts ?? 0);
                   return sum + (watts * 24 * 30 / 1000) * getKwhRate(n.hostname);
                 }, 0);
                 const ispTotal = reachable.reduce((sum: number, n: any) => sum + getIspCost(n.hostname), 0);
@@ -663,7 +693,7 @@ export default function UsageMonitorPage() {
           </div>
           <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(mesh.nodes?.length ?? 1, 3)}, 1fr)` }}>
             {mesh.nodes?.map((node: any) => (
-              <MeshNodeCard key={node.hostname} node={node} kwhRate={getKwhRate(node.hostname)} onRateChange={saveKwhRate} ispCost={getIspCost(node.hostname)} onIspCostChange={saveIspCost} formatCost={currency.format} />
+              <MeshNodeCard key={node.hostname} node={node} kwhRate={getKwhRate(node.hostname)} onRateChange={saveKwhRate} ispCost={getIspCost(node.hostname)} onIspCostChange={saveIspCost} diskOverride={getDiskOverride(node.hostname)} onDiskOverrideChange={saveDiskOverride} wattsOverride={getWattsOverride(node.hostname)} onWattsOverrideChange={saveWattsOverride} formatCost={currency.format} />
             ))}
           </div>
         </div>
@@ -929,7 +959,7 @@ const DEFAULT_KWH_RATE = 0.31; // USD per kWh — unsandbox default
 
 // No longer estimating power — mesh API provides TDP-based or RAPL watts
 
-function MeshNodeCard({ node, kwhRate, onRateChange, ispCost, onIspCostChange, formatCost }: { node: any; kwhRate: number; onRateChange: (hostname: string, rate: number) => void; ispCost: number; onIspCostChange: (hostname: string, cost: number) => void; formatCost: (usd: number) => string }) {
+function MeshNodeCard({ node, kwhRate, onRateChange, ispCost, onIspCostChange, diskOverride, onDiskOverrideChange, wattsOverride, onWattsOverrideChange, formatCost }: { node: any; kwhRate: number; onRateChange: (hostname: string, rate: number) => void; ispCost: number; onIspCostChange: (hostname: string, cost: number) => void; diskOverride?: number; onDiskOverrideChange: (hostname: string, count: number) => void; wattsOverride?: number; onWattsOverrideChange: (hostname: string, watts: number) => void; formatCost: (usd: number) => string }) {
   if (!node.reachable) {
     return (
       <div className="rounded border border-[var(--color-border)] p-3 opacity-40">
@@ -1003,27 +1033,35 @@ function MeshNodeCard({ node, kwhRate, onRateChange, ispCost, onIspCostChange, f
 
       {/* Costs */}
       {(() => {
-        const cpuWatts = node.powerWatts ?? 0;
+        // If watts override is set, use it directly; otherwise use API value
+        // If disk override is set, add extra disk wattage on top of API value
+        let systemWatts = wattsOverride || node.powerWatts || 0;
+        if (!wattsOverride && diskOverride !== undefined) {
+          // Add extra spinning disk watts beyond what lsblk detected
+          const apiDisks = node.spinningDisks ?? 0;
+          const extraDisks = Math.max(0, diskOverride - apiDisks);
+          systemWatts += extraDisks * 8;
+        }
         const gpuWatts = node.gpuPowerWatts ?? 0;
-        const totalWatts = cpuWatts + gpuWatts;
+        const totalWatts = systemWatts + gpuWatts;
         const kwhPerMonth = (totalWatts * 24 * 30) / 1000;
         const elecPerMonth = kwhPerMonth * kwhRate;
         const totalPerMonth = elecPerMonth + ispCost;
-        const sourceLabel = node.powerSource === 'rapl' ? 'rapl' : node.powerSource === 'tdp' ? `tdp${node.cpuTdpWatts ? ' ' + node.cpuTdpWatts + 'W' : ''}` : 'n/a';
+        const sourceLabel = wattsOverride ? 'override' : node.powerSource === 'rapl' ? 'rapl' : node.powerSource === 'tdp' ? `tdp${node.cpuTdpWatts ? ' ' + node.cpuTdpWatts + 'W' : ''}` : 'n/a';
         return (
           <div className="mt-2 pt-2 border-t border-[var(--color-border)]">
             <div className="flex justify-between text-xs text-[var(--color-muted)]">
               <span>
-                {cpuWatts.toFixed(0)}W cpu
+                {systemWatts.toFixed(0)}W sys
                 {gpuWatts > 0 && <> + {gpuWatts.toFixed(0)}W gpu</>}
                 {' '}
-                <span className={`text-[10px] ${node.powerSource ? 'text-[var(--color-accent)]' : 'opacity-60'}`}>
+                <span className={`text-[10px] ${wattsOverride ? 'text-yellow-400' : node.powerSource ? 'text-[var(--color-accent)]' : 'opacity-60'}`}>
                   [{sourceLabel}]
                 </span>
               </span>
               <span className="text-[var(--color-accent)] font-bold">{formatCost(totalPerMonth)}/mo</span>
             </div>
-            <div className="flex items-center gap-3 mt-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
               <div className="flex items-center gap-1">
                 <span className="text-[10px] text-[var(--color-muted)]">$</span>
                 <input
@@ -1047,6 +1085,31 @@ function MeshNodeCard({ node, kwhRate, onRateChange, ispCost, onIspCostChange, f
                   className="w-14 text-[10px] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-1 py-0.5 font-mono"
                 />
                 <span className="text-[10px] text-[var(--color-muted)]">/mo</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-[var(--color-muted)]">HDDs</span>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={diskOverride ?? ''}
+                  placeholder={String(node.spinningDisks ?? 0)}
+                  onChange={(e) => onDiskOverrideChange(node.hostname, parseInt(e.target.value) || 0)}
+                  className="w-10 text-[10px] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-1 py-0.5 font-mono"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-[var(--color-muted)]">W</span>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  value={wattsOverride ?? ''}
+                  placeholder="auto"
+                  onChange={(e) => onWattsOverrideChange(node.hostname, parseFloat(e.target.value) || 0)}
+                  className="w-14 text-[10px] bg-[var(--color-background)] border border-[var(--color-border)] rounded px-1 py-0.5 font-mono"
+                />
+                <span className="text-[10px] text-[var(--color-muted)]">override</span>
               </div>
             </div>
           </div>

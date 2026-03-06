@@ -19,6 +19,8 @@ interface MeshNode {
   swapTotalGB?: number;
   cpuModel?: string;
   cpuTdpWatts?: number;
+  spinningDisks?: number;
+  ssdCount?: number;
   powerWatts?: number;
   gpuPowerWatts?: number;
   powerSource?: 'rapl' | 'nvidia' | 'tdp';
@@ -300,6 +302,8 @@ function getLocalStats(): MeshNode {
       reachable: true,
       cpuModel: cpuModel ?? undefined,
       cpuTdpWatts: cpuTdpWatts ?? undefined,
+      spinningDisks,
+      ssdCount,
       cpuCores,
       memTotalGB: round(memTotal),
       memUsedGB: round(memTotal - memAvailable),
@@ -427,6 +431,8 @@ function getRemoteStats(host: string): MeshNode {
       reachable: true,
       cpuModel: cpuModel ?? undefined,
       cpuTdpWatts: cpuTdpWatts ?? undefined,
+      spinningDisks,
+      ssdCount,
       cpuCores,
       memTotalGB: round(memTotal),
       memUsedGB: round(memTotal - memAvailable),
