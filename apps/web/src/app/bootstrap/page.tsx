@@ -117,8 +117,12 @@ export default function BootstrapPage() {
   const [authModes, setAuthModes] = useState<Record<string, string>>({});
 
   // Build host list: localhost + SSH config hosts + mesh nodes
+  // Detect local hostname so mesh node matching this machine maps to localhost
+  const localHostname = mesh?.nodes?.find((n: any) => n.hostname && n.isLocal)?.hostname
+    ?? mesh?.localHostname;
   const hosts: { name: string; status?: string }[] = [{ name: 'localhost', status: 'local' }];
   const seen = new Set(['localhost']);
+  if (localHostname) seen.add(localHostname);
   if (sshConfig?.hosts) {
     for (const h of sshConfig.hosts) {
       if (!seen.has(h.name)) {

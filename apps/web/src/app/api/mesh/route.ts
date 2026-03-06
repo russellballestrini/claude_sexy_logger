@@ -326,8 +326,13 @@ export async function GET() {
   const totalMemUsedGB = reachable.reduce((s, n) => s + (n.memUsedGB ?? 0), 0);
   const totalPowerWatts = reachable.reduce((s, n) => s + (n.powerWatts ?? 0) + (n.gpuPowerWatts ?? 0), 0);
 
+  // Detect local hostname for clients to map mesh node → localhost
+  let localHostname: string | undefined;
+  try { localHostname = execSync('hostname', { encoding: 'utf-8' }).trim(); } catch {}
+
   return NextResponse.json({
     nodes: results,
+    localHostname,
     summary: {
       totalNodes: nodeHosts.length,
       reachableNodes: reachable.length,
