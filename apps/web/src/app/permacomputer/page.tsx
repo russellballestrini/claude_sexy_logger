@@ -149,19 +149,52 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): nu
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function computeMeshScore(nodes: { hostname: string; econ: NodeEcon; meshNode?: any }[]): {
+// Group nodes by egress IP to identify shared pipes
+function computeEgressGroups(nodes: { hostname: string }[], geoipNodes: any[]): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const n of nodes) {
+    const geo = geoipNodes.find((g: any) => g.hostname === n.hostname);
+    const egressIp = geo?.ip ?? n.hostname; // fallback to hostname if no geoip
+    const group = groups.get(egressIp) ?? [];
+    group.push(n.hostname);
+    groups.set(egressIp, group);
+  }
+  return groups;
+}
+
+// Get the effective ISP cost for a node, splitting among nodes that share the same egress IP
+function getEffectiveIspCost(hostname: string, ispCost: number, egressGroups: Map<string, string[]>): number {
+  for (const [, group] of egressGroups) {
+    if (group.includes(hostname) && group.length > 1) {
+      return ispCost / group.length;
+    }
+  }
+  return ispCost;
+}
+
+function computeMeshScore(
+  nodes: { hostname: string; econ: NodeEcon; meshNode?: any }[],
+  geoipNodes?: any[],
+): {
   totalScore: number;
   totalMonthlyCost: number;
   avgDistance: number;
   geoDiversityBonus: number;
   ispDiversityBonus: number;
+  pipeDiversityBonus: number;
+  sameLocationPenalty: number;
+  egressGroups: Map<string, string[]>;
   nodeScores: { hostname: string; score: number; distanceScore: number; efficiencyScore: number }[];
 } {
   const configured = nodes.filter(n => n.econ.lat !== 0 || n.econ.lon !== 0);
-  if (configured.length === 0) return { totalScore: 0, totalMonthlyCost: 0, avgDistance: 0, geoDiversityBonus: 0, ispDiversityBonus: 0, nodeScores: [] };
+  const egressGroups = computeEgressGroups(nodes, geoipNodes ?? []);
+  const emptyResult = { totalScore: 0, totalMonthlyCost: 0, avgDistance: 0, geoDiversityBonus: 0, ispDiversityBonus: 0, pipeDiversityBonus: 0, sameLocationPenalty: 0, egressGroups, nodeScores: [] };
+  if (configured.length === 0) return emptyResult;
 
-  // Total monthly cost
-  const totalMonthlyCost = nodes.reduce((s, n) => s + n.econ.ispCostMonthly, 0);
+  // Total monthly cost — shared pipes split ISP cost
+  const totalMonthlyCost = nodes.reduce((s, n) => {
+    return s + getEffectiveIspCost(n.hostname, n.econ.ispCostMonthly, egressGroups);
+  }, 0);
 
   // Pairwise distances
   let totalDist = 0;
@@ -185,37 +218,58 @@ function computeMeshScore(nodes: { hostname: string; econ: NodeEcon; meshNode?: 
     if (lat < -10 && lon > 100) return 'OC';
     return 'OTHER';
   }));
-  const geoDiversityBonus = Math.max(0, (continents.size - 1) * 20); // +20% per extra continent
+  const geoDiversityBonus = Math.max(0, (continents.size - 1) * 20);
 
-  // ISP diversity
+  // ISP/provider diversity
   const providers = new Set(nodes.map(n => n.econ.provider));
   const ispDiversityBonus = Math.max(0, (providers.size - 1) * 10);
 
+  // Pipe diversity: same location but different egress IPs = different pipes = bonus
+  // Same location = within 50km of each other
+  let pipeDiversityBonus = 0;
+  let sameLocationPenalty = 0;
+  const SAME_LOCATION_KM = 50;
+  for (let i = 0; i < configured.length; i++) {
+    for (let j = i + 1; j < configured.length; j++) {
+      const dist = haversineKm(configured[i].econ.lat, configured[i].econ.lon, configured[j].econ.lat, configured[j].econ.lon);
+      if (dist < SAME_LOCATION_KM) {
+        // Same location — check if different pipes
+        const geoI = (geoipNodes ?? []).find((g: any) => g.hostname === configured[i].hostname);
+        const geoJ = (geoipNodes ?? []).find((g: any) => g.hostname === configured[j].hostname);
+        const ipI = geoI?.ip;
+        const ipJ = geoJ?.ip;
+        if (ipI && ipJ && ipI !== ipJ) {
+          pipeDiversityBonus += 15; // different pipes at same location = resilience
+        } else {
+          sameLocationPenalty += 5; // same pipe, same location = redundancy risk
+        }
+      }
+    }
+  }
+
   // Per-node scores
   const nodeScores = configured.map(n => {
-    // Distance score: average distance to all other nodes * link speed factor
     let distScore = 0;
     for (const other of configured) {
       if (other.hostname === n.hostname) continue;
       const d = haversineKm(n.econ.lat, n.econ.lon, other.econ.lat, other.econ.lon);
-      const linkFactor = Math.min(n.econ.linkMbps, other.econ.linkMbps) / 100; // normalize to 100Mbps baseline
+      const linkFactor = Math.min(n.econ.linkMbps, other.econ.linkMbps) / 100;
       distScore += d * linkFactor;
     }
     distScore = configured.length > 1 ? distScore / (configured.length - 1) : 0;
 
-    // Efficiency: lower watts per core is better (inverse)
     const watts = n.meshNode?.powerWatts ?? 0;
     const cores = n.meshNode?.cpuCores ?? 1;
-    const wattsPerCore = watts > 0 ? watts / cores : 20; // default estimate
-    const efficiencyScore = Math.round(100 / wattsPerCore); // higher is better
+    const wattsPerCore = watts > 0 ? watts / cores : 20;
+    const efficiencyScore = Math.round(100 / wattsPerCore);
 
     const score = Math.round(distScore * 0.5 + efficiencyScore * 0.3 + n.econ.linkMbps * 0.2);
     return { hostname: n.hostname, score, distanceScore: Math.round(distScore), efficiencyScore };
   });
 
-  const totalScore = nodeScores.reduce((s, n) => s + n.score, 0) + geoDiversityBonus + ispDiversityBonus;
+  const totalScore = nodeScores.reduce((s, n) => s + n.score, 0) + geoDiversityBonus + ispDiversityBonus + pipeDiversityBonus - sameLocationPenalty;
 
-  return { totalScore, totalMonthlyCost, avgDistance, geoDiversityBonus, ispDiversityBonus, nodeScores };
+  return { totalScore, totalMonthlyCost, avgDistance, geoDiversityBonus, ispDiversityBonus, pipeDiversityBonus, sameLocationPenalty, egressGroups, nodeScores };
 }
 
 // ============================================================
@@ -314,6 +368,9 @@ export default function PermacomputerPage() {
     return nodes;
   }, [meshNodes, hosts]);
 
+  const geoipNodes: any[] = geoipData?.nodes ?? [];
+  const egressGroups = useMemo(() => computeEgressGroups(allNodes.map(n => ({ hostname: n.key })), geoipNodes), [allNodes, geoipNodes]);
+
   return (
     <div className="space-y-6">
       <PageContext
@@ -333,7 +390,7 @@ export default function PermacomputerPage() {
       {mesh?.summary && <MeshSummaryBar summary={mesh.summary} geoipLoading={geoipLoading} geoipCount={geoipData?.nodes?.filter((n: any) => !n.error).length ?? 0} />}
 
       {/* Mesh Economics */}
-      <MeshEconomicsPanel allNodes={allNodes} meshNodes={meshNodes} getNodeEcon={getNodeEcon} />
+      <MeshEconomicsPanel allNodes={allNodes} meshNodes={meshNodes} getNodeEcon={getNodeEcon} geoipNodes={geoipData?.nodes ?? []} />
 
       {/* Node Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
@@ -344,6 +401,7 @@ export default function PermacomputerPage() {
             sshHost={sshHost}
             econ={getNodeEcon(key)}
             geoip={getNodeGeoIP(key)}
+            egressGroups={egressGroups}
             isSelected={selectedNode === key}
             onSelect={() => setSelectedNode(selectedNode === key ? null : key)}
           />
@@ -436,8 +494,8 @@ function MiniStat({ label, value, accent }: { label: string; value: string | num
 // Node Card (compact, clickable)
 // ============================================================
 
-function NodeCard({ node, sshHost, econ, geoip, isSelected, onSelect }: {
-  node: any; sshHost?: SshHost; econ: NodeEcon; geoip?: any; isSelected: boolean; onSelect: () => void;
+function NodeCard({ node, sshHost, econ, geoip, egressGroups, isSelected, onSelect }: {
+  node: any; sshHost?: SshHost; econ: NodeEcon; geoip?: any; egressGroups?: Map<string, string[]>; isSelected: boolean; onSelect: () => void;
 }) {
   const reachable = node?.reachable;
   const name = sshHost?.name ?? node?.hostname ?? '?';
@@ -502,12 +560,15 @@ function NodeCard({ node, sshHost, econ, geoip, isSelected, onSelect }: {
               const totalW = cpuW + gpuW;
               const kwhMonth = (totalW * 24 * 30) / 1000;
               const elecCost = kwhMonth * econ.electricityCostKwh;
-              const totalCost = elecCost + econ.ispCostMonthly;
+              const effIsp = egressGroups ? getEffectiveIspCost(name, econ.ispCostMonthly, egressGroups) : econ.ispCostMonthly;
+              const totalCost = elecCost + effIsp;
+              const isSplit = effIsp < econ.ispCostMonthly;
               const sourceTag = node.powerSource === 'rapl' ? 'rapl' : node.powerSource === 'nvidia' ? 'nvidia' : 'est';
               return (
                 <>
                   <span>{Math.round(totalW)}W <span className="opacity-60">[{sourceTag}]</span></span>
                   <span>${Math.round(elecCost)}/mo elec</span>
+                  {isSplit && <span className="text-green-400">${Math.round(effIsp)}/mo isp <span className="opacity-60">(split)</span></span>}
                   <span className="ml-auto font-bold text-[var(--color-foreground)]">${Math.round(totalCost)}/mo</span>
                 </>
               );
@@ -1139,10 +1200,11 @@ function SessionsTab({ detail }: { detail: any }) {
 // Mesh Economics Panel
 // ============================================================
 
-function MeshEconomicsPanel({ allNodes, meshNodes, getNodeEcon }: {
+function MeshEconomicsPanel({ allNodes, meshNodes, getNodeEcon, geoipNodes }: {
   allNodes: { meshNode: any; sshHost?: SshHost; key: string }[];
   meshNodes: any[];
   getNodeEcon: (hostname: string) => NodeEcon;
+  geoipNodes: any[];
 }) {
   const econNodes = useMemo(() =>
     allNodes.map(n => ({
@@ -1153,7 +1215,7 @@ function MeshEconomicsPanel({ allNodes, meshNodes, getNodeEcon }: {
     [allNodes, getNodeEcon]
   );
 
-  const score = useMemo(() => computeMeshScore(econNodes), [econNodes]);
+  const score = useMemo(() => computeMeshScore(econNodes, geoipNodes), [econNodes, geoipNodes]);
   const configuredCount = econNodes.filter(n => n.econ.location).length;
 
   if (allNodes.length === 0) return null;
@@ -1164,10 +1226,10 @@ function MeshEconomicsPanel({ allNodes, meshNodes, getNodeEcon }: {
     for (const n of econNodes) {
       const p = n.econ.provider;
       const cur = map.get(p) ?? { count: 0, cost: 0 };
-      map.set(p, { count: cur.count + 1, cost: cur.cost + n.econ.ispCostMonthly });
+      map.set(p, { count: cur.count + 1, cost: cur.cost + getEffectiveIspCost(n.hostname, n.econ.ispCostMonthly, score.egressGroups) });
     }
     return [...map.entries()].sort((a, b) => b[1].cost - a[1].cost);
-  }, [econNodes]);
+  }, [econNodes, score.egressGroups]);
 
   // Aggregate by location
   const byLocation = useMemo(() => {
@@ -1191,7 +1253,7 @@ function MeshEconomicsPanel({ allNodes, meshNodes, getNodeEcon }: {
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-4">
         <div>
           <div className="text-xs text-[var(--color-muted)]">Monthly Cost</div>
           <div className="text-base font-bold font-mono">${score.totalMonthlyCost}/mo</div>
@@ -1211,7 +1273,25 @@ function MeshEconomicsPanel({ allNodes, meshNodes, getNodeEcon }: {
         <div>
           <div className="text-xs text-[var(--color-muted)]">Geo Diversity</div>
           <div className={`text-base font-bold ${score.geoDiversityBonus > 0 ? 'text-green-400' : ''}`}>
-            +{score.geoDiversityBonus}%
+            +{score.geoDiversityBonus}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-[var(--color-muted)]">Pipe Diversity</div>
+          <div className={`text-base font-bold ${score.pipeDiversityBonus > 0 ? 'text-green-400' : score.sameLocationPenalty > 0 ? 'text-yellow-400' : ''}`}>
+            {score.pipeDiversityBonus > 0 ? `+${score.pipeDiversityBonus}` : '0'}
+            {score.sameLocationPenalty > 0 && <span className="text-red-400 text-sm ml-1">-{score.sameLocationPenalty}</span>}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs text-[var(--color-muted)]">Shared Pipes</div>
+          <div className="text-base font-bold font-mono">
+            {[...score.egressGroups.values()].filter(g => g.length > 1).length > 0
+              ? [...score.egressGroups.entries()].filter(([, g]) => g.length > 1).map(([ip, g]) => (
+                  <span key={ip} className="text-xs text-yellow-400">{g.length}x split</span>
+                ))
+              : <span className="text-[var(--color-muted)]">none</span>
+            }
           </div>
         </div>
         <div>

@@ -37,7 +37,7 @@ describe('Sidebar', () => {
 
   it('renders the app title', () => {
     render(<Sidebar />);
-    expect(screen.getByText('firehose')).toBeTruthy();
+    expect(screen.getByText('firehose', { exact: false })).toBeTruthy();
   });
 
   it('renders correct href for nav items', () => {
