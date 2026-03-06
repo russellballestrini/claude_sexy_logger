@@ -42,7 +42,7 @@ export default function ProjectPage({
 }) {
   const { project } = use(params);
   const decodedProject = decodeURIComponent(project);
-  const [yolo, setYolo] = useState(false);
+  const [yolo, setYolo] = useState(true);
   const [booting, setBooting] = useState(false);
   const [bootResult, setBootResult] = useState<string | null>(null);
   const [showAllSessions, setShowAllSessions] = useState(false);
