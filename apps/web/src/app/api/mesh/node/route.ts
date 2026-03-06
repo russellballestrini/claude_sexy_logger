@@ -407,7 +407,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid host' }, { status: 400 });
   }
 
-  const raw = host === 'localhost' ? probeLocal() : probeRemote(host);
+  // Detect if the requested host is actually localhost
+  let isLocal = host === 'localhost';
+  if (!isLocal) {
+    try {
+      const localHostname = execSync('hostname', { encoding: 'utf-8' }).trim();
+      const localFqdn = execSync('hostname -f 2>/dev/null || echo ""', { encoding: 'utf-8' }).trim();
+      isLocal = host === localHostname || host === localFqdn;
+    } catch { /* ignore */ }
+  }
+
+  const raw = isLocal ? probeLocal() : probeRemote(host);
 
   if (!raw.includes('===SECTION:HOSTNAME===')) {
     return NextResponse.json({
