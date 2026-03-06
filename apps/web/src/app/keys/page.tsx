@@ -16,13 +16,26 @@ interface ApiKey {
   revokedAt: string | null;
 }
 
+interface AccountInfo {
+  tier: number;
+}
+
 export default function KeysPage() {
   const { data, error, mutate } = useSWR<{ keys: ApiKey[] }>('/api/keys', fetcher);
+  const { data: accountData } = useSWR<AccountInfo>('/api/account', fetcher);
   const [newLabel, setNewLabel] = useState('');
   const [newScopes, setNewScopes] = useState('ingest');
   const [creating, setCreating] = useState(false);
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [showRevoked, setShowRevoked] = useState(false);
+
+  const [subLabel, setSubLabel] = useState('');
+  const [subParentId, setSubParentId] = useState('');
+  const [subScopes, setSubScopes] = useState('ingest');
+  const [creatingSubKey, setCreatingSubKey] = useState(false);
+  const [createdSubKey, setCreatedSubKey] = useState<string | null>(null);
+
+  const isTeam = (accountData?.tier ?? 0) >= 33;
 
   const createKey = useCallback(async () => {
     setCreating(true);
@@ -47,6 +60,31 @@ export default function KeysPage() {
     }
   }, [newLabel, newScopes, mutate]);
 
+  const createSubKey = useCallback(async () => {
+    if (!subParentId) return;
+    setCreatingSubKey(true);
+    setCreatedSubKey(null);
+    try {
+      const res = await fetch('/api/keys', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          label: subLabel.trim() || undefined,
+          scopes: subScopes,
+          parentKeyId: subParentId,
+        }),
+      });
+      const result = await res.json();
+      if (res.ok && result.key) {
+        setCreatedSubKey(result.key);
+        setSubLabel('');
+        mutate();
+      }
+    } finally {
+      setCreatingSubKey(false);
+    }
+  }, [subLabel, subScopes, subParentId, mutate]);
+
   const revokeKey = useCallback(async (keyId: string) => {
     const res = await fetch('/api/keys', {
       method: 'DELETE',
@@ -70,6 +108,15 @@ export default function KeysPage() {
   const keys = data?.keys ?? [];
   const activeKeys = keys.filter(k => !k.revokedAt);
   const revokedKeys = keys.filter(k => k.revokedAt);
+
+  const activeRootKeys = activeKeys.filter(k => !k.parentKeyId);
+  const activeSubKeys = activeKeys.filter(k => k.parentKeyId);
+  const subKeysByParent = new Map<string, ApiKey[]>();
+  for (const sk of activeSubKeys) {
+    const list = subKeysByParent.get(sk.parentKeyId!) ?? [];
+    list.push(sk);
+    subKeysByParent.set(sk.parentKeyId!, list);
+  }
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -137,6 +184,83 @@ export default function KeysPage() {
         )}
       </div>
 
+      {/* Team sub-key creation */}
+      {isTeam && (
+        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
+          <h2 className="text-base font-bold">Team Sub-Keys</h2>
+          <p className="text-base text-[var(--color-muted)]">
+            Create sub-keys scoped to a root key for team members.
+          </p>
+          <div className="flex gap-3 items-end flex-wrap">
+            <div className="flex-1 min-w-[160px]">
+              <label className="text-base text-[var(--color-muted)] block mb-1">Label</label>
+              <input
+                type="text"
+                value={subLabel}
+                onChange={e => setSubLabel(e.target.value)}
+                placeholder="e.g. alice-laptop"
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono"
+              />
+            </div>
+            <div className="w-48">
+              <label className="text-base text-[var(--color-muted)] block mb-1">Parent key</label>
+              <select
+                value={subParentId}
+                onChange={e => setSubParentId(e.target.value)}
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono"
+              >
+                <option value="">select root key</option>
+                {activeRootKeys.map(k => (
+                  <option key={k.id} value={k.id}>
+                    {k.keyPrefix}... {k.label ? `(${k.label})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="w-40">
+              <label className="text-base text-[var(--color-muted)] block mb-1">Scopes</label>
+              <select
+                value={subScopes}
+                onChange={e => setSubScopes(e.target.value)}
+                className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base"
+              >
+                <option value="ingest">ingest</option>
+                <option value="ingest,read">ingest, read</option>
+                <option value="ingest,read,admin">ingest, read, admin</option>
+              </select>
+            </div>
+            <button
+              onClick={createSubKey}
+              disabled={creatingSubKey || !subParentId}
+              className="px-4 py-1.5 text-base font-bold rounded border border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors disabled:opacity-50 cursor-pointer whitespace-nowrap"
+            >
+              {creatingSubKey ? 'Creating...' : 'Create Sub-Key'}
+            </button>
+          </div>
+
+          {createdSubKey && (
+            <div className="bg-[var(--color-background)] border border-green-600/40 rounded p-3 space-y-2">
+              <p className="text-base text-green-400 font-bold">
+                Sub-key created — copy it now, it won't be shown again
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-base font-mono bg-[var(--color-surface)] px-3 py-1.5 rounded select-all break-all">
+                  {createdSubKey}
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(createdSubKey);
+                  }}
+                  className="px-3 py-1.5 text-base rounded border border-[var(--color-border)] hover:bg-[var(--color-surface-hover)] transition-colors cursor-pointer shrink-0"
+                >
+                  Copy
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Active keys */}
       <div className="space-y-2">
         <h2 className="text-base font-bold text-[var(--color-muted)]">Active keys</h2>
@@ -144,8 +268,26 @@ export default function KeysPage() {
           <p className="text-base text-[var(--color-muted)]">No active keys</p>
         ) : (
           <div className="space-y-1">
-            {activeKeys.map(k => (
-              <KeyRow key={k.id} apiKey={k} onRevoke={revokeKey} />
+            {activeRootKeys.map(k => {
+              const children = subKeysByParent.get(k.id) ?? [];
+              return (
+                <div key={k.id}>
+                  <KeyRow apiKey={k} onRevoke={revokeKey} />
+                  {children.length > 0 && (
+                    <div className="ml-6 mt-1 space-y-1 border-l-2 border-[var(--color-border)] pl-3">
+                      {children.map(sk => (
+                        <KeyRow key={sk.id} apiKey={sk} onRevoke={revokeKey} isSubKey />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {/* Orphaned sub-keys whose parent was revoked or missing */}
+            {activeSubKeys.filter(sk => !activeRootKeys.some(rk => rk.id === sk.parentKeyId)).map(sk => (
+              <div key={sk.id} className="ml-6">
+                <KeyRow apiKey={sk} onRevoke={revokeKey} isSubKey />
+              </div>
             ))}
           </div>
         )}
@@ -173,7 +315,7 @@ export default function KeysPage() {
   );
 }
 
-function KeyRow({ apiKey, onRevoke }: { apiKey: ApiKey; onRevoke?: (id: string) => void }) {
+function KeyRow({ apiKey, onRevoke, isSubKey }: { apiKey: ApiKey; onRevoke?: (id: string) => void; isSubKey?: boolean }) {
   const [confirming, setConfirming] = useState(false);
 
   return (
@@ -187,7 +329,7 @@ function KeyRow({ apiKey, onRevoke }: { apiKey: ApiKey; onRevoke?: (id: string) 
       <span className="text-base text-[var(--color-muted)] shrink-0">
         {apiKey.scopes}
       </span>
-      {apiKey.parentKeyId && (
+      {isSubKey && (
         <span className="text-[10px] uppercase tracking-wider bg-[var(--color-surface-hover)] px-1.5 py-0.5 rounded text-[var(--color-muted)]">
           sub-key
         </span>
