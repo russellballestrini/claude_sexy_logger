@@ -130,18 +130,21 @@ export default function ReviewPage() {
             </div>
           )}
 
-          {/* Commit form */}
+          {/* Commit form — hero action */}
           {data.isDirty && (
-            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
-              <h3 className="text-sm font-bold text-[var(--color-muted)] mb-3">Commit</h3>
-              <div className="space-y-3">
-                <textarea
-                  value={commitMsg}
-                  onChange={(e) => setCommitMsg(e.target.value)}
-                  placeholder="Commit message..."
-                  className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-sm font-mono resize-y min-h-[4rem]"
-                  rows={2}
-                />
+            <div className="border-2 border-[var(--color-accent)] rounded-lg p-5 bg-[var(--color-surface)]">
+              <textarea
+                value={commitMsg}
+                onChange={(e) => setCommitMsg(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); doCommit(); }
+                }}
+                placeholder="Commit message... (Ctrl+Enter to commit)"
+                rows={3}
+                className="w-full px-3 py-2 text-base bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg focus:border-[var(--color-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] resize-y font-mono"
+                disabled={committing}
+              />
+              <div className="flex items-center justify-between mt-3">
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 text-sm text-[var(--color-muted)] cursor-pointer">
                     <input
@@ -152,21 +155,22 @@ export default function ReviewPage() {
                     />
                     Include untracked files (git add -A)
                   </label>
-                  <button
-                    onClick={doCommit}
-                    disabled={committing || !commitMsg.trim()}
-                    className="ml-auto bg-[var(--color-accent)] text-black px-4 py-1.5 rounded text-sm font-bold disabled:opacity-50 cursor-pointer"
-                  >
-                    {committing ? 'Committing...' : 'Commit'}
-                  </button>
+                  <span className="text-xs text-[var(--color-muted)]">Ctrl+Enter to commit</span>
                 </div>
+                <button
+                  onClick={doCommit}
+                  disabled={committing || !commitMsg.trim()}
+                  className="px-6 py-2 text-sm font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40 cursor-pointer"
+                >
+                  {committing ? 'Committing...' : 'Commit'}
+                </button>
               </div>
 
               {commitResult && (
-                <div className={`mt-3 text-sm rounded p-2 ${
+                <div className={`mt-3 text-sm rounded-lg p-3 ${
                   commitResult.success
-                    ? 'bg-green-500/10 text-green-400'
-                    : 'bg-red-500/10 text-red-400'
+                    ? 'bg-green-500/10 text-green-400 border border-green-500/30'
+                    : 'bg-red-500/10 text-red-400 border border-red-500/30'
                 }`}>
                   {commitResult.success
                     ? `Committed: ${commitResult.commit}`
@@ -178,7 +182,7 @@ export default function ReviewPage() {
           )}
 
           {!data.isDirty && (
-            <div className="text-sm text-[var(--color-muted)] text-center py-4">
+            <div className="text-sm text-[var(--color-accent)] text-center py-6 border-2 border-[var(--color-accent)]/30 rounded-lg bg-[var(--color-surface)]">
               Working tree is clean. Nothing to commit.
             </div>
           )}
