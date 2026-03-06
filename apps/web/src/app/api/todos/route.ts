@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@unfirehose/core/db/schema';
 import { uuidv7 } from '@unfirehose/core/uuidv7';
+import { recordTriage } from '@unfirehose/core/db/triage';
 import { execFile } from 'child_process';
 
 function execAsync(cmd: string, args: string[], opts: { timeout: number }): Promise<{ stdout: string; stderr: string }> {
@@ -88,6 +89,16 @@ export async function PATCH(request: NextRequest) {
       db.prepare(`UPDATE todos SET status = ?, updated_at = datetime('now'), completed_at = ${completedAt} WHERE id = ?`)
         .run(status, id);
 
+      // Record terminal statuses to triage file so they survive DB rebuilds
+      if (['completed', 'obsolete', 'deleted'].includes(status)) {
+        const row = db.prepare(
+          'SELECT t.content, p.name as project_name FROM todos t JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+        ).get(id) as any;
+        if (row?.project_name) {
+          recordTriage(row.project_name, row.content, status);
+        }
+      }
+
       // Auto-cull: when a todo completes, check if its deployment is finished
       if (status === 'completed') {
         try { cullFinishedDeployments(db, id); } catch { /* table may not exist */ }
@@ -113,9 +124,13 @@ export async function DELETE(request: NextRequest) {
     const now = new Date().toISOString();
     let deleted = 0;
 
+    const triageEntries: Array<{ project: string; content: string; status: string }> = [];
+
     const tx = db.transaction(() => {
       for (const tid of todoIds) {
-        const old = db.prepare('SELECT status FROM todos WHERE id = ?').get(tid) as any;
+        const old = db.prepare(
+          'SELECT t.status, t.content, p.name as project_name FROM todos t JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+        ).get(tid) as any;
         if (!old) continue;
 
         db.prepare('UPDATE todos SET status = ?, updated_at = ?, completed_at = COALESCE(completed_at, ?) WHERE id = ?')
@@ -124,10 +139,19 @@ export async function DELETE(request: NextRequest) {
         db.prepare('INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, ?, ?, ?)')
           .run(tid, old.status, 'deleted', now);
 
+        if (old.project_name) {
+          triageEntries.push({ project: old.project_name, content: old.content, status: 'deleted' });
+        }
         deleted++;
       }
     });
     tx();
+
+    // Write triage file outside transaction
+    if (triageEntries.length > 0) {
+      const { recordTriageBatch } = await import('@unfirehose/core/db/triage');
+      recordTriageBatch(triageEntries);
+    }
 
     return NextResponse.json({ ok: true, deleted });
   } catch (err: any) {

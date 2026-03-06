@@ -31,7 +31,8 @@
     "./tiers": "./tiers.ts",
     "./auth": "./auth.ts",
     "./rate-limit": "./rate-limit.ts",
-    "./apmonitor-adapter": "./apmonitor-adapter.ts"
+    "./apmonitor-adapter": "./apmonitor-adapter.ts",
+    "./db/triage": "./db/triage.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2"

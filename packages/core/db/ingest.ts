@@ -12,6 +12,7 @@ import { fetchPaths, decodeFetchProjectName } from '../fetch-paths';
 import { sanitizePII } from '../pii';
 import { generateSessionName } from '../session-name';
 import { uuidv7 } from '../uuidv7';
+import { isTriaged } from './triage';
 import type { SessionsIndex } from '../types';
 
 const CANONICAL_ROOT = path.join(homedir(), '.unfirehose', 'canonical');
@@ -364,6 +365,13 @@ function upsertTodo(
   // Terminal statuses are sticky — ingest can never reopen a closed todo.
   // This prevents re-ingestion from overwriting manual triage decisions.
   const TERMINAL_STATUSES = ['completed', 'obsolete', 'deleted'];
+
+  // Check triage file — if this todo was previously closed, skip re-creation
+  const projectRow = db.prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as { name: string } | undefined;
+  const projectName = projectRow?.name ?? '';
+  if (projectName && isTriaged(projectName, todo.content)) {
+    return; // Already triaged in a previous DB lifecycle — don't recreate
+  }
 
   if (todo.externalId) {
     // TaskCreate/TaskUpdate style: key on project + external_id

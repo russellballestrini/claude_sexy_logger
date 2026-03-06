@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@unfirehose/core/db/schema';
+import { recordTriageBatch } from '@unfirehose/core/db/triage';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -32,10 +33,15 @@ export async function PATCH(request: NextRequest) {
     const now = new Date().toISOString();
     let updated = 0;
 
+    const triageEntries: Array<{ project: string; content: string; status: string }> = [];
+    const TERMINAL = ['completed', 'obsolete', 'deleted'];
+
     const tx = db.transaction(() => {
       for (const id of ids) {
         if (status) {
-          const old = db.prepare('SELECT status FROM todos WHERE id = ?').get(id) as any;
+          const old = db.prepare(
+            'SELECT t.status, t.content, p.name as project_name FROM todos t JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+          ).get(id) as any;
           if (!old) continue;
 
           const completedAt = (status === 'completed' || status === 'obsolete') ? now : null;
@@ -48,6 +54,11 @@ export async function PATCH(request: NextRequest) {
               'INSERT INTO todo_events (todo_id, old_status, new_status, event_at) VALUES (?, ?, ?, ?)'
             ).run(id, old.status, status, now);
           }
+
+          // Record terminal statuses to triage file so they survive DB rebuilds
+          if (TERMINAL.includes(status) && old.project_name) {
+            triageEntries.push({ project: old.project_name, content: old.content, status });
+          }
           updated++;
         }
 
@@ -59,6 +70,11 @@ export async function PATCH(request: NextRequest) {
       }
     });
     tx();
+
+    // Write triage file outside transaction (filesystem, not DB)
+    if (triageEntries.length > 0) {
+      recordTriageBatch(triageEntries);
+    }
 
     return NextResponse.json({ ok: true, updated });
   } catch (err: any) {
