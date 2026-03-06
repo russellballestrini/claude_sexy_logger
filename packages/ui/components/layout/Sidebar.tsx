@@ -32,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { separator: 'configure' },
   { href: '/keys', label: 'Keys', icon: '⚿' },
   { href: '/scrobble', label: 'Scrobble', icon: '♪' },
+  { href: '/permacomputer', label: 'Permacomputer', icon: '▣' },
 
   { href: '/schema', label: 'Schema', icon: '{' },
   { href: '/styleguide', label: 'Styleguide', icon: '◐' },
@@ -45,12 +46,12 @@ export function Sidebar() {
 
   return (
     <aside className="w-56 shrink-0 bg-[var(--color-surface)] border-r border-[var(--color-border)] flex flex-col sticky top-0 h-screen overflow-y-auto">
-      <div className="p-4 border-b border-[var(--color-border)]">
+      <div className="px-4 py-5 border-b border-[var(--color-border)]">
         <Link href="/" className="block">
-          <h1 className="text-base font-bold">
+          <h1 className="text-4xl font-black tracking-tight leading-none">
             <span className="text-[var(--color-foreground)]">un</span><span className="text-[var(--color-accent)]">firehose</span>
           </h1>
-          <p className="text-base text-[var(--color-muted)] mt-1">nextjs logger</p>
+          <p className="text-xs text-[var(--color-muted)] mt-1.5 tracking-wide uppercase">nextjs logger</p>
         </Link>
       </div>
       <nav className="flex-1 p-2">
