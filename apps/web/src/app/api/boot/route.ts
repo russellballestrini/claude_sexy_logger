@@ -52,7 +52,7 @@ function resolveBootHost(requestedHost?: string): string {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { projectPath, sessionId, yolo, prompt, parentSessionUuid, host: requestedHost, todoIds, projectName } = body;
+  const { projectPath, sessionId, yolo, prompt, parentSessionUuid, host: requestedHost, todoIds, projectName, harness, preferMultiplexer } = body;
 
   // Validate projectPath
   if (!projectPath || typeof projectPath !== 'string') {
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
     ? prompt.slice(0, 40).replace(/[^a-zA-Z0-9 _-]/g, '').trim().replace(/\s+/g, '-') || ts
     : ts;
 
-  const opts: BootOpts = { projectPath, sessionId, yolo, prompt, sessionName, windowName, parentSessionUuid };
+  const opts: BootOpts = { projectPath, sessionId, yolo, prompt, sessionName, windowName, parentSessionUuid, harness: harness || 'claude' };
 
   try {
     let response: NextResponse;
@@ -111,8 +111,10 @@ export async function POST(request: NextRequest) {
     } else if (IS_WINDOWS) {
       response = await bootWindows(opts);
     } else {
-      // Try tmux first, fall back to screen
-      const mux = await detectMultiplexer();
+      // Use preferred multiplexer, or auto-detect
+      const mux = (preferMultiplexer === 'screen' || preferMultiplexer === 'tmux')
+        ? preferMultiplexer
+        : await detectMultiplexer();
       if (mux === 'tmux') {
         response = await bootTmux(opts);
       } else if (mux === 'screen') {
@@ -160,6 +162,7 @@ interface BootOpts {
   sessionName: string;   // tmux session (per-project)
   windowName: string;    // tmux window (per-claude instance)
   parentSessionUuid?: string;
+  harness: string;       // 'claude' or custom command string
 }
 
 async function detectMultiplexer(): Promise<'tmux' | 'screen' | null> {
@@ -177,6 +180,8 @@ async function detectMultiplexer(): Promise<'tmux' | 'screen' | null> {
 }
 
 function buildClaudeCmd(opts: BootOpts): string {
+  if (opts.harness !== 'claude') return opts.harness;
+
   const parts = ['claude'];
 
   if (opts.sessionId) {
@@ -190,8 +195,13 @@ function buildClaudeCmd(opts: BootOpts): string {
 }
 
 function buildClaudeArgs(opts: BootOpts): { parts: string[]; cleanupFiles: string[] } {
-  const parts = ['claude'];
   const cleanupFiles: string[] = [];
+
+  if (opts.harness !== 'claude') {
+    return { parts: [opts.harness], cleanupFiles };
+  }
+
+  const parts = ['claude'];
 
   if (opts.sessionId) {
     parts.push('--resume', opts.sessionId);
