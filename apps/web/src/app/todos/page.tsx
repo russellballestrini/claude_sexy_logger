@@ -104,8 +104,8 @@ export default function TodosPage() {
   const [burst, setBurst] = useState<{ x: number; y: number; color: string } | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
 
-  const fetchTodos = useCallback(() => {
-    setLoading(true);
+  const fetchTodos = useCallback((showLoading = true) => {
+    if (showLoading) setLoading(true);
     const statusParam = filter === 'active' ? '?status=pending,in_progress' : '';
     fetch(`/api/todos${statusParam}`)
       .then(r => r.json())
@@ -121,24 +121,36 @@ export default function TodosPage() {
       .finally(() => setLoading(false));
   }, [filter]);
 
-  useEffect(() => { fetchTodos(); }, [fetchTodos]);
+  useEffect(() => { fetchTodos(true); }, [fetchTodos]);
 
-  const updateTodo = useCallback(async (id: number, updates: { estimatedMinutes?: number; status?: string }) => {
+  const updateTodo = useCallback(async (id: number, updates: { estimatedMinutes?: number; status?: string; content?: string }) => {
+    // Optimistic local update
+    setByProject(prev => prev.map(group => ({
+      ...group,
+      todos: group.todos.map(t => t.id === id ? { ...t, ...updates } : t),
+    })));
+
     await fetch('/api/todos', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, ...updates }),
     });
-    fetchTodos();
+    fetchTodos(false);
   }, [fetchTodos]);
 
   const deleteTodo = useCallback(async (id: number) => {
+    // Optimistic local removal
+    setByProject(prev => prev.map(group => ({
+      ...group,
+      todos: group.todos.filter(t => t.id !== id),
+    })));
+
     await fetch('/api/todos', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
     });
-    fetchTodos();
+    fetchTodos(false);
   }, [fetchTodos]);
 
   const bootAgent = useCallback(async (projectPath: string, key: string, prompt?: string) => {
