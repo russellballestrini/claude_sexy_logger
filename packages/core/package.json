@@ -30,7 +30,8 @@
     "./db/tenant": "./db/tenant.ts",
     "./tiers": "./tiers.ts",
     "./auth": "./auth.ts",
-    "./rate-limit": "./rate-limit.ts"
+    "./rate-limit": "./rate-limit.ts",
+    "./apmonitor-adapter": "./apmonitor-adapter.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2"

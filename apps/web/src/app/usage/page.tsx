@@ -79,6 +79,9 @@ export default function UsageMonitorPage() {
   const { data: mesh } = useSWR('/api/mesh', fetcher, {
     refreshInterval: 15000,
   });
+  const { data: apmonitor } = useSWR('/api/apmonitor', fetcher, {
+    refreshInterval: 15000,
+  });
   const { data: projectActivity } = useSWR(
     '/api/projects/activity?days=30',
     fetcher,
@@ -244,6 +247,59 @@ export default function UsageMonitorPage() {
           <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(mesh.nodes?.length ?? 1, 3)}, 1fr)` }}>
             {mesh.nodes?.map((node: any) => (
               <MeshNodeCard key={node.hostname} node={node} kwhRate={getKwhRate(node.hostname)} onRateChange={saveKwhRate} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* APMonitor Network Status */}
+      {apmonitor && apmonitor.summary?.totalResources > 0 && (
+        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-base font-bold text-[var(--color-muted)]">
+              APMonitor Network Status
+            </h3>
+            <div className="flex items-center gap-4 text-sm">
+              <span className="text-[var(--color-accent)] font-bold">{apmonitor.summary.up} up</span>
+              {apmonitor.summary.down > 0 && (
+                <span className="text-[var(--color-error)] font-bold">{apmonitor.summary.down} down</span>
+              )}
+              <span className="text-[var(--color-muted)]">{apmonitor.summary.totalResources} resources</span>
+              <span className="text-[var(--color-muted)]">{apmonitor.summary.nodesWithData}/{apmonitor.summary.nodesPolled} nodes</span>
+            </div>
+          </div>
+          <div className="grid gap-2">
+            {apmonitor.nodes?.filter((n: any) => n.resources?.length > 0).map((node: any) => (
+              <div key={node.host}>
+                <div className="text-xs text-[var(--color-muted)] mb-1 font-bold uppercase tracking-wider">{node.host}</div>
+                <div className="grid gap-1">
+                  {node.resources.map((r: any) => (
+                    <div
+                      key={`${node.host}-${r.name}`}
+                      className={`flex items-center gap-3 px-3 py-1.5 rounded text-sm ${
+                        r.isUp
+                          ? 'text-[var(--color-muted)]'
+                          : 'bg-red-950/30 text-[var(--color-error)]'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${r.isUp ? 'bg-[var(--color-accent)]' : 'bg-[var(--color-error)] animate-pulse'}`} />
+                      <span className="font-bold min-w-[10rem]">{r.name}</span>
+                      {r.lastResponseTimeMs != null && (
+                        <span className="text-xs">{r.lastResponseTimeMs}ms</span>
+                      )}
+                      {!r.isUp && r.errorReason && (
+                        <span className="text-xs truncate">{r.errorReason}</span>
+                      )}
+                      {!r.isUp && r.downCount > 0 && (
+                        <span className="text-xs">({r.downCount}x)</span>
+                      )}
+                      <span className="text-xs text-[var(--color-muted)] ml-auto">
+                        {r.lastChecked ? formatRelativeTime(r.lastChecked) : 'never'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
         </div>
