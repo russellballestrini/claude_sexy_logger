@@ -1,0 +1,21 @@
+{
+  "name": "@unfirehose/router",
+  "version": "0.1.0",
+  "description": "Lightweight daemon that watches Claude Code JSONL and forwards to unfirehose.com",
+  "type": "module",
+  "bin": {
+    "unfirehose-router": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js"
+  },
+  "dependencies": {
+    "tsx": "^4.7.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0"
+  }
+}
