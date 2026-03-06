@@ -16,6 +16,15 @@ export default function SchemaPage() {
     fetcher
   );
 
+  // Navigate markdown links within the schema viewer
+  const onNavigate = (href: string) => {
+    // Resolve relative paths like ./messages.md or ./harnesses/claude-code.md
+    const clean = href.replace(/^\.\//, '');
+    if (clean.endsWith('.md')) {
+      setSelectedFile(clean);
+    }
+  };
+
   const files = index?.files ?? [];
   const schemaFiles = files.filter((f: any) => f.group === 'Schema');
   const harnessFiles = files.filter((f: any) => f.group === 'Harnesses');
@@ -67,14 +76,14 @@ export default function SchemaPage() {
       {/* Markdown content */}
       <div className="flex-1 overflow-y-auto p-6">
         {isLoading && <div className="text-[var(--color-muted)]">Loading...</div>}
-        {doc?.content && <MarkdownRenderer content={doc.content} />}
+        {doc?.content && <MarkdownRenderer content={doc.content} onNavigate={onNavigate} />}
         {doc?.error && <div className="text-[var(--color-error)]">{doc.error}</div>}
       </div>
     </div>
   );
 }
 
-function MarkdownRenderer({ content }: { content: string }) {
+function MarkdownRenderer({ content, onNavigate }: { content: string; onNavigate?: (href: string) => void }) {
   const lines = content.split('\n');
   const elements: React.ReactNode[] = [];
   let i = 0;
@@ -109,7 +118,7 @@ function MarkdownRenderer({ content }: { content: string }) {
         tableLines.push(lines[i]);
         i++;
       }
-      elements.push(<MarkdownTable key={key++} lines={tableLines} />);
+      elements.push(<MarkdownTable key={key++} lines={tableLines} onNavigate={onNavigate} />);
       continue;
     }
 
@@ -123,7 +132,7 @@ function MarkdownRenderer({ content }: { content: string }) {
                     level === 2 ? 'text-lg font-bold mt-5 mb-2' :
                     level === 3 ? 'text-base font-bold mt-4 mb-2 text-[var(--color-muted)]' :
                     'text-sm font-bold mt-3 mb-1 text-[var(--color-muted)]';
-        elements.push(<div key={key++} className={cls}>{renderInline(text)}</div>);
+        elements.push(<div key={key++} className={cls}>{renderInline(text, onNavigate)}</div>);
         i++;
         continue;
       }
@@ -144,7 +153,7 @@ function MarkdownRenderer({ content }: { content: string }) {
       }
       elements.push(
         <ul key={key++} className="list-disc list-inside my-2 space-y-1 text-sm">
-          {listItems.map((item, j) => <li key={j}>{renderInline(item)}</li>)}
+          {listItems.map((item, j) => <li key={j}>{renderInline(item, onNavigate)}</li>)}
         </ul>
       );
       continue;
@@ -159,7 +168,7 @@ function MarkdownRenderer({ content }: { content: string }) {
       }
       elements.push(
         <ol key={key++} className="list-decimal list-inside my-2 space-y-1 text-sm">
-          {listItems.map((item, j) => <li key={j}>{renderInline(item)}</li>)}
+          {listItems.map((item, j) => <li key={j}>{renderInline(item, onNavigate)}</li>)}
         </ol>
       );
       continue;
@@ -167,7 +176,7 @@ function MarkdownRenderer({ content }: { content: string }) {
 
     // Regular paragraph
     elements.push(
-      <p key={key++} className="text-sm my-1.5">{renderInline(line)}</p>
+      <p key={key++} className="text-sm my-1.5">{renderInline(line, onNavigate)}</p>
     );
     i++;
   }
@@ -175,7 +184,7 @@ function MarkdownRenderer({ content }: { content: string }) {
   return <div className="max-w-4xl">{elements}</div>;
 }
 
-function MarkdownTable({ lines }: { lines: string[] }) {
+function MarkdownTable({ lines, onNavigate }: { lines: string[]; onNavigate?: (href: string) => void }) {
   const parseRow = (line: string) =>
     line.split('|').slice(1, -1).map(cell => cell.trim());
 
@@ -192,7 +201,7 @@ function MarkdownTable({ lines }: { lines: string[] }) {
           <tr className="bg-[var(--color-surface)]">
             {headers.map((h, i) => (
               <th key={i} className="px-3 py-2 text-left border-b border-[var(--color-border)] text-[var(--color-muted)]">
-                {renderInline(h)}
+                {renderInline(h, onNavigate)}
               </th>
             ))}
           </tr>
@@ -202,7 +211,7 @@ function MarkdownTable({ lines }: { lines: string[] }) {
             <tr key={ri} className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]">
               {row.map((cell, ci) => (
                 <td key={ci} className="px-3 py-1.5">
-                  {renderInline(cell)}
+                  {renderInline(cell, onNavigate)}
                 </td>
               ))}
             </tr>
@@ -213,7 +222,7 @@ function MarkdownTable({ lines }: { lines: string[] }) {
   );
 }
 
-function renderInline(text: string): React.ReactNode {
+function renderInline(text: string, onNavigate?: (href: string) => void): React.ReactNode {
   // Simple inline formatting: **bold**, `code`, [links](url)
   const parts: React.ReactNode[] = [];
   let remaining = text;
@@ -252,11 +261,25 @@ function renderInline(text: string): React.ReactNode {
         </code>
       );
     } else if (first.type === 'link') {
-      parts.push(
-        <a key={key++} href={first.m![2]} className="text-[var(--color-accent)] hover:underline">
-          {first.m![1]}
-        </a>
-      );
+      const href = first.m![2];
+      const isMdLink = href.endsWith('.md') || href.includes('.md#');
+      if (isMdLink && onNavigate) {
+        parts.push(
+          <button
+            key={key++}
+            onClick={() => onNavigate(href.split('#')[0])}
+            className="text-[var(--color-accent)] hover:underline cursor-pointer"
+          >
+            {first.m![1]}
+          </button>
+        );
+      } else {
+        parts.push(
+          <a key={key++} href={href} className="text-[var(--color-accent)] hover:underline">
+            {first.m![1]}
+          </a>
+        );
+      }
     }
 
     remaining = remaining.slice(first.idx + first.len);
