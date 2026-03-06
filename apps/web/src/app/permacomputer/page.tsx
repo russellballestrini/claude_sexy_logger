@@ -41,7 +41,7 @@ interface NodeEcon {
 
 const HARDCODED_DEFAULTS: NodeEcon = {
   ispCostMonthly: 110,
-  electricityCostKwh: 0.12,
+  electricityCostKwh: 0.31,
   location: '',
   provider: 'home',
   linkMbps: 100,

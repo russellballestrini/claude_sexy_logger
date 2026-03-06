@@ -527,7 +527,7 @@ const MESH_PROVIDERS = [
 ];
 
 const DEFAULT_REGIONS = [
-  { key: 'us-east', label: 'US East', electricityKwh: '0.22' },
+  { key: 'us-east', label: 'US East', electricityKwh: '0.31' },
   { key: 'us-west', label: 'US West', electricityKwh: '0.18' },
   { key: 'us-midwest', label: 'US Midwest', electricityKwh: '0.14' },
   { key: 'us-south', label: 'US South', electricityKwh: '0.12' },
