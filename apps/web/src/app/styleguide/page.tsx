@@ -215,7 +215,7 @@ export default function StyleguidePage() {
   const hBarMax = Math.max(...horizontalBarData.map((d) => d.input + d.output), 1);
 
   return (
-    <div className="space-y-8 max-w-4xl">
+    <div className="space-y-8">
       <PageContext
         pageType="styleguide"
         summary="Component reference and design system for unfirehose."
