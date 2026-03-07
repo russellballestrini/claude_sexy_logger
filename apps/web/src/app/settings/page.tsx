@@ -710,7 +710,7 @@ function HexColorPicker({ value, settingKey }: { value: string; settingKey: stri
         onChange={(e) => save(hslToHex(Number(e.target.value), 0.7, 0.55))}
         className="w-full h-3 rounded-full appearance-none cursor-pointer"
         style={{
-          background: 'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
+          background: `linear-gradient(to right, ${Array.from({ length: 13 }, (_, i) => hslToHex(i * 30, 0.7, 0.55)).join(', ')})`,
         }}
       />
     </div>

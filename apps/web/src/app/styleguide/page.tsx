@@ -166,7 +166,7 @@ function ThemeChooser() {
         onChange={(e) => save(hslToHex(Number(e.target.value), 0.7, 0.55))}
         className="w-full h-3 rounded-full appearance-none cursor-pointer"
         style={{
-          background: 'linear-gradient(to right, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000)',
+          background: `linear-gradient(to right, ${Array.from({ length: 13 }, (_, i) => hslToHex(i * 30, 0.7, 0.55)).join(', ')})`,
         }}
       />
     </div>
@@ -789,6 +789,159 @@ Response:
               <span className="text-[var(--color-muted)]"> — sample message content for this role type.</span>
             </div>
           ))}
+        </div>
+      </Section>
+
+      {/* Scrobble */}
+      <Section title="Scrobble">
+        <p className="text-base text-[var(--color-muted)]">
+          Public usage metrics page. No prompts, responses, or code — only aggregate counts, streaks, badges,
+          and activity patterns. Visibility per-project (public / unlisted / private). Toggle on/off globally.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Stat cards */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-[var(--color-muted)]">StatCard — hero metrics</h4>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-3">
+                <div className="text-base text-[var(--color-muted)]">Sessions</div>
+                <div className="text-base font-bold">1,247</div>
+              </div>
+              <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-3">
+                <div className="text-base text-[var(--color-muted)]">Active Days</div>
+                <div className="text-base font-bold">89</div>
+              </div>
+              <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-3">
+                <div className="text-base text-[var(--color-muted)]">Streak</div>
+                <div className="text-base font-bold text-[var(--color-accent)]">14d</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Visibility selector */}
+          <div className="space-y-3">
+            <h4 className="text-sm font-bold text-[var(--color-muted)]">Project Visibility Selector</h4>
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] px-4 py-3 flex items-center gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-bold">unfirehose-nextjs-logger</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ color: '#10b981', backgroundColor: '#10b98122' }}>public</span>
+                </div>
+                <div className="text-base text-[var(--color-muted)] mt-0.5">24 sessions / 1.2K msgs / 4.8M tokens</div>
+              </div>
+              <div className="flex gap-1 shrink-0">
+                {['public', 'unlisted', 'private'].map(opt => (
+                  <span key={opt} className={`px-2 py-1 text-base rounded border ${opt === 'public' ? 'border-[var(--color-accent)] text-[var(--color-accent)]' : 'border-[var(--color-border)] text-[var(--color-muted)]'}`}>
+                    {opt}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Badge cards */}
+        <div className="space-y-3 mt-4">
+          <h4 className="text-sm font-bold text-[var(--color-muted)]">BadgeCard — earned vs locked, tier colors</h4>
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+            {[
+              { name: 'First Blood', desc: 'First session', earned: true, tier: 'bronze' },
+              { name: 'Centurion', desc: '100 sessions', earned: true, tier: 'silver' },
+              { name: 'Token Lord', desc: '1M tokens', earned: true, tier: 'gold' },
+              { name: 'Diamond Mind', desc: '10M tokens', earned: true, tier: 'diamond' },
+              { name: 'Night Owl', desc: 'Code at 3am', earned: false, progress: 0.7 },
+              { name: 'Marathon', desc: '30d streak', earned: false, progress: 0.4 },
+            ].map(b => {
+              const tierColors: Record<string, string> = { bronze: '#cd7f32', silver: '#c0c0c0', gold: '#ffd700', diamond: '#b9f2ff' };
+              const color = b.earned ? (tierColors[b.tier ?? ''] ?? 'var(--color-accent)') : 'var(--color-muted)';
+              return (
+                <div key={b.name} className={`rounded border p-3 text-center ${b.earned ? 'border-[var(--color-border)] bg-[var(--color-surface)]' : 'border-[var(--color-border)] bg-[var(--color-background)] opacity-50'}`}>
+                  <div className="text-lg" style={{ color }}>{b.earned ? '◆' : '◇'}</div>
+                  <div className="text-base font-bold mt-1" style={{ color: b.earned ? color : undefined }}>{b.name}</div>
+                  <div className="text-xs text-[var(--color-muted)]">{b.desc}</div>
+                  {b.progress !== undefined && b.progress < 1 && (
+                    <div className="mt-2 h-1 bg-[var(--color-border)] rounded-full overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${b.progress * 100}%`, backgroundColor: color }} />
+                    </div>
+                  )}
+                  {b.tier && b.earned && <div className="text-[10px] uppercase mt-1" style={{ color }}>{b.tier}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Heatmap */}
+        <div className="space-y-3 mt-4">
+          <h4 className="text-sm font-bold text-[var(--color-muted)]">Activity Heatmap — rows = days, cols = hours, intensity = accent color-mix</h4>
+          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+            <div className="inline-grid gap-0.5" style={{ gridTemplateColumns: 'auto repeat(24, 1fr)' }}>
+              <div />
+              {Array.from({ length: 24 }, (_, h) => (
+                <div key={h} className="text-[10px] text-[var(--color-muted)] text-center w-5">{h % 3 === 0 ? h : ''}</div>
+              ))}
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, dow) => (
+                <Fragment key={dow}>
+                  <div className="text-[10px] text-[var(--color-muted)] pr-1 leading-5">{day}</div>
+                  {Array.from({ length: 24 }, (_, h) => {
+                    const intensity = Math.random() * (h >= 9 && h <= 22 && dow >= 1 && dow <= 5 ? 1 : 0.2);
+                    return (
+                      <div
+                        key={h}
+                        className="w-5 h-5 rounded-sm"
+                        style={{
+                          backgroundColor: intensity > 0.05
+                            ? `color-mix(in srgb, var(--color-accent) ${Math.round(intensity * 100)}%, var(--color-surface))`
+                            : 'var(--color-surface)',
+                        }}
+                      />
+                    );
+                  })}
+                </Fragment>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Bar chart */}
+        <div className="space-y-3 mt-4">
+          <h4 className="text-sm font-bold text-[var(--color-muted)]">CSS BarChart — hour of day, daily cost (no recharts)</h4>
+          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+            <div className="flex items-end gap-px h-24">
+              {Array.from({ length: 24 }, (_, h) => {
+                const value = Math.sin((h - 14) * 0.3) * 0.5 + 0.5 + Math.random() * 0.2;
+                return (
+                  <div key={h} className="flex-1 flex flex-col items-center justify-end h-full">
+                    <div
+                      className="w-full rounded-t-sm min-h-px"
+                      style={{
+                        height: `${value * 100}%`,
+                        backgroundColor: 'var(--color-accent)',
+                        opacity: 0.6 + value * 0.4,
+                      }}
+                    />
+                    <div className="text-[8px] text-[var(--color-muted)] mt-0.5">{h % 3 === 0 ? h : ''}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Shared / Not shared */}
+        <div className="grid grid-cols-2 gap-4 mt-4">
+          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-1">
+            <h4 className="text-base font-bold text-green-400">Scrobbled</h4>
+            {['Session counts', 'Model/harness names', 'Activity heatmap', 'Streaks + badges'].map((item, i) => (
+              <div key={i} className="text-base text-[var(--color-muted)]"><span className="text-green-400 mr-2">+</span>{item}</div>
+            ))}
+          </div>
+          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-1">
+            <h4 className="text-base font-bold text-red-400">Never Shared</h4>
+            {['Prompts & responses', 'File contents & diffs', 'Thinking traces', 'PII (sanitized)'].map((item, i) => (
+              <div key={i} className="text-base text-[var(--color-muted)]"><span className="text-red-400 mr-2">-</span>{item}</div>
+            ))}
+          </div>
         </div>
       </Section>
 
