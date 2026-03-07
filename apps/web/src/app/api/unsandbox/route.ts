@@ -84,9 +84,9 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Default: key status
+  // Default: key status — use POST /keys/validate for full response
   try {
-    const data = await apiGet(publicKey, secretKey, '/keys/self');
+    const data = await apiPost(publicKey, secretKey, '/keys/validate', '{}');
     return NextResponse.json({
       connected: true,
       tier: data.tier,
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
     const payload = JSON.stringify({
       language: language || 'bash',
       code,
-      network: network || 'semitrusted',
+      network_mode: network || 'semitrusted',
     });
     const headers = authHeaders(publicKey, secretKey, 'POST', path, payload);
     try {
@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
     const path = '/sessions';
     const payload = JSON.stringify({
       image: image || 'ubuntu:24.04',
-      network: network || 'semitrusted',
+      network_mode: network || 'semitrusted',
     });
     const headers = authHeaders(publicKey, secretKey, 'POST', path, payload);
     try {
@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
     const sessionPath = '/sessions';
     const sessionPayload = JSON.stringify({
       image: 'ubuntu:24.04',
-      network: network || 'semitrusted',
+      network_mode: network || 'semitrusted',
     });
     const sessionHeaders = authHeaders(publicKey, secretKey, 'POST', sessionPath, sessionPayload);
     let session: any;
@@ -269,7 +269,7 @@ export async function POST(request: NextRequest) {
         name,
         ports: ports || '80',
         bootstrap: bootstrap || undefined,
-        network: network || 'semitrusted',
+        network_mode: network || 'semitrusted',
       });
       const data = await apiPost(publicKey, secretKey, '/services', payload);
       return NextResponse.json(data);
