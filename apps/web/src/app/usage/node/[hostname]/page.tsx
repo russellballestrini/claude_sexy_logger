@@ -193,10 +193,11 @@ export default function NodeDetailPage() {
   const [previewContent, setPreviewContent] = useState('');
   const previewRef = useRef<HTMLPreElement>(null);
 
-  // SSE connection for inline tmux preview
+  // SSE connection for inline tmux preview (local or remote via SSH)
   useEffect(() => {
-    if (!previewSession || !isLocal) return;
-    const es = new EventSource(`/api/tmux/stream?session=${encodeURIComponent(previewSession)}`);
+    if (!previewSession) return;
+    const hostParam = !isLocal ? `&host=${encodeURIComponent(host)}` : '';
+    const es = new EventSource(`/api/tmux/stream?session=${encodeURIComponent(previewSession)}${hostParam}`);
     es.onmessage = (e) => {
       try {
         setPreviewContent(JSON.parse(e.data));
@@ -207,7 +208,7 @@ export default function NodeDetailPage() {
     };
     es.onerror = () => es.close();
     return () => es.close();
-  }, [previewSession, isLocal]);
+  }, [previewSession, isLocal, host]);
 
   const [sshEditing, setSshEditing] = useState(false);
   const [sshForm, setSshForm] = useState<{ name: string; hostname?: string; port?: string; user?: string; identityFile?: string; forwardAgent?: string }>({ name: host });
@@ -545,7 +546,7 @@ export default function NodeDetailPage() {
               {allEntries.map(s => {
                 const isBooting = s.booting;
                 const isActive = previewSession === s.name;
-                const canPreview = isLocal && !isBooting;
+                const canPreview = !isBooting;
 
                 return (
                   <div
@@ -582,15 +583,23 @@ export default function NodeDetailPage() {
                           </Link>
                         )}
                         {!isLocal && !isBooting && (
-                          <span className="text-xs text-[var(--color-muted)] font-mono">
-                            ssh {host} -t tmux attach -t {s.name}
-                          </span>
+                          <>
+                            <Link
+                              href={`/tmux/${encodeURIComponent(s.name)}?host=${encodeURIComponent(host)}`}
+                              className="text-xs px-2 py-1 rounded bg-[var(--color-accent)] text-[var(--color-background)] font-bold hover:opacity-90 transition-opacity"
+                            >
+                              Watch
+                            </Link>
+                            <span className="text-xs text-[var(--color-muted)] font-mono">
+                              ssh {host} -t tmux attach -t {s.name}
+                            </span>
+                          </>
                         )}
                       </div>
                     </div>
 
                     {/* Inline preview — shown when card is clicked */}
-                    {isActive && isLocal && (
+                    {isActive && (
                       <pre
                         ref={previewRef}
                         onClick={(e) => e.stopPropagation()}
@@ -605,7 +614,7 @@ export default function NodeDetailPage() {
 
             {allEntries.length > 0 && !allEntries.some(s => s.booting) && (
               <p className="text-xs text-[var(--color-muted)]">
-                {isLocal ? 'Click a session to preview live output. Full View opens the terminal viewer.' : `Remote sessions on ${host} — attach via SSH.`}
+                Click a session to preview live output. {isLocal ? 'Full View' : 'Watch'} opens the terminal viewer.
               </p>
             )}
           </div>

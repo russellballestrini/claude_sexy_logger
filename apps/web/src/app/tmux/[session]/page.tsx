@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import useSWR from 'swr';
 
@@ -65,7 +65,10 @@ function ansiToHtml(text: string): string {
 
 export default function TmuxViewerPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const session = params.session as string;
+  const host = searchParams.get('host') ?? undefined;
+  const hostParam = host ? `&host=${encodeURIComponent(host)}` : '';
   const [content, setContent] = useState('Connecting...');
   const [connected, setConnected] = useState(false);
   const [activeWindow, setActiveWindow] = useState<string | undefined>(undefined);
@@ -73,14 +76,14 @@ export default function TmuxViewerPage() {
   const autoScrollRef = useRef(true);
 
   const { data: windowsData } = useSWR(
-    `/api/tmux/stream?session=${encodeURIComponent(session)}&windows=1`,
+    `/api/tmux/stream?session=${encodeURIComponent(session)}&windows=1${hostParam}`,
     fetcher,
     { refreshInterval: 5000 }
   );
   const windows: { index: string; name: string; active: boolean }[] = windowsData?.windows ?? [];
 
   const connectSSE = useCallback(() => {
-    const url = `/api/tmux/stream?session=${encodeURIComponent(session)}${activeWindow ? `&window=${activeWindow}` : ''}`;
+    const url = `/api/tmux/stream?session=${encodeURIComponent(session)}${activeWindow ? `&window=${activeWindow}` : ''}${hostParam}`;
     const es = new EventSource(url);
 
     es.onmessage = (e) => {
@@ -102,7 +105,7 @@ export default function TmuxViewerPage() {
     };
 
     return es;
-  }, [session, activeWindow]);
+  }, [session, activeWindow, hostParam]);
 
   useEffect(() => {
     const es = connectSSE();
@@ -124,6 +127,7 @@ export default function TmuxViewerPage() {
           &larr; Back
         </Link>
         <h2 className="text-lg font-bold font-mono">{decodeURIComponent(session)}</h2>
+        {host && <span className="text-xs text-[var(--color-muted)] font-mono">@{host}</span>}
         <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
         <span className="text-xs text-[var(--color-muted)]">{connected ? 'live' : 'reconnecting...'}</span>
       </div>

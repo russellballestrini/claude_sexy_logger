@@ -1,28 +1,38 @@
 import { NextRequest } from 'next/server';
 import { execFile } from 'child_process';
 
-function capturePane(session: string, window?: string): Promise<string> {
+function sshPrefix(host?: string): { cmd: string; args: string[] } {
+  if (!host || host === 'localhost') return { cmd: 'tmux', args: [] };
+  // Validate hostname to prevent command injection
+  if (!/^[a-zA-Z0-9._-]+$/.test(host)) throw new Error('Invalid hostname');
+  return { cmd: 'ssh', args: ['-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=no', host, 'tmux'] };
+}
+
+function capturePane(session: string, window?: string, host?: string): Promise<string> {
   const target = window ? `${session}:${window}` : session;
+  const { cmd, args } = sshPrefix(host);
   return new Promise((resolve, reject) => {
-    execFile('tmux', ['capture-pane', '-p', '-t', target, '-e'], { timeout: 3000, maxBuffer: 1024 * 256 }, (err, stdout) => {
+    execFile(cmd, [...args, 'capture-pane', '-p', '-t', target, '-e'], { timeout: host ? 10000 : 3000, maxBuffer: 1024 * 256 }, (err, stdout) => {
       if (err) reject(err);
       else resolve(stdout);
     });
   });
 }
 
-function listSessions(): Promise<string[]> {
+function listSessions(host?: string): Promise<string[]> {
+  const { cmd, args } = sshPrefix(host);
   return new Promise((resolve, reject) => {
-    execFile('tmux', ['list-sessions', '-F', '#{session_name}'], { timeout: 3000 }, (err, stdout) => {
+    execFile(cmd, [...args, 'list-sessions', '-F', '#{session_name}'], { timeout: host ? 10000 : 3000 }, (err, stdout) => {
       if (err) reject(err);
       else resolve(stdout.trim().split('\n').filter(Boolean));
     });
   });
 }
 
-function listWindows(session: string): Promise<{ index: string; name: string; active: boolean }[]> {
+function listWindows(session: string, host?: string): Promise<{ index: string; name: string; active: boolean }[]> {
+  const { cmd, args } = sshPrefix(host);
   return new Promise((resolve, reject) => {
-    execFile('tmux', ['list-windows', '-t', session, '-F', '#{window_index}:#{window_name}:#{window_active}'], { timeout: 3000 }, (err, stdout) => {
+    execFile(cmd, [...args, 'list-windows', '-t', session, '-F', '#{window_index}:#{window_name}:#{window_active}'], { timeout: host ? 10000 : 3000 }, (err, stdout) => {
       if (err) reject(err);
       else resolve(stdout.trim().split('\n').filter(Boolean).map(line => {
         const [index, name, active] = line.split(':');
@@ -39,11 +49,12 @@ export async function GET(request: NextRequest) {
   const session = request.nextUrl.searchParams.get('session');
   const window = request.nextUrl.searchParams.get('window') ?? undefined;
   const wantWindows = request.nextUrl.searchParams.get('windows');
+  const host = request.nextUrl.searchParams.get('host') ?? undefined;
 
   // List sessions
   if (!session) {
     try {
-      const sessions = await listSessions();
+      const sessions = await listSessions(host);
       return Response.json({ sessions });
     } catch {
       return Response.json({ sessions: [], error: 'tmux not running' });
@@ -53,7 +64,7 @@ export async function GET(request: NextRequest) {
   // List windows
   if (wantWindows) {
     try {
-      const windows = await listWindows(session);
+      const windows = await listWindows(session, host);
       return Response.json({ windows });
     } catch {
       return Response.json({ windows: [], error: 'session not found' });
@@ -75,7 +86,7 @@ export async function GET(request: NextRequest) {
 
       // Initial capture
       try {
-        const content = await capturePane(session, window);
+        const content = await capturePane(session, window, host);
         lastContent = content;
         send(content);
       } catch (err) {
@@ -84,11 +95,12 @@ export async function GET(request: NextRequest) {
         return;
       }
 
-      // Poll every 500ms
+      // Poll — remote is slower so use 1s interval
+      const pollMs = host && host !== 'localhost' ? 1000 : 500;
       const interval = setInterval(async () => {
         if (!alive) { clearInterval(interval); controller.close(); return; }
         try {
-          const content = await capturePane(session, window);
+          const content = await capturePane(session, window, host);
           if (content !== lastContent) {
             lastContent = content;
             send(content);
