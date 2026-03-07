@@ -37,19 +37,19 @@ async function apiGet(publicKey: string, secretKey: string, apiPath: string, tim
 async function apiDelete(publicKey: string, secretKey: string, apiPath: string, timeout = 10000) {
   const headers = authHeaders(publicKey, secretKey, 'DELETE', apiPath);
   const res = await fetch(`${API_BASE}${apiPath}`, { method: 'DELETE', headers, signal: AbortSignal.timeout(timeout) });
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`API error: ${res.status} ${text}`);
-  }
-  return res.json();
+  const text = await res.text();
+  if (!res.ok) throw new Error(`API error: ${res.status} ${text}`);
+  try { return JSON.parse(text); } catch { return { ok: true }; }
 }
 
 // Helper: authenticated POST to unsandbox API
 async function apiPost(publicKey: string, secretKey: string, apiPath: string, payload: string, timeout = 30000) {
   const headers = authHeaders(publicKey, secretKey, 'POST', apiPath, payload);
   const res = await fetch(`${API_BASE}${apiPath}`, { method: 'POST', headers, body: payload, signal: AbortSignal.timeout(timeout) });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  const text = await res.text();
+  let data: any;
+  try { data = JSON.parse(text); } catch { data = { raw: text }; }
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}: ${text}`);
   return data;
 }
 
@@ -265,12 +265,12 @@ export async function POST(request: NextRequest) {
     const { name, ports, bootstrap, network } = body;
     if (!name) return NextResponse.json({ error: 'Missing service name' }, { status: 400 });
     try {
-      const payload = JSON.stringify({
-        name,
-        ports: ports || '80',
-        bootstrap: bootstrap || undefined,
-        network_mode: network || 'semitrusted',
-      });
+      // Ports must be an array of integers (matching SDK format)
+      const portsArray = (ports || '80').toString().split(',').map((p: string) => parseInt(p.trim())).filter((p: number) => !isNaN(p));
+      const svcPayload: any = { name, ports: portsArray };
+      if (bootstrap) svcPayload.bootstrap = bootstrap;
+      if (network) svcPayload.network = network;
+      const payload = JSON.stringify(svcPayload);
       const data = await apiPost(publicKey, secretKey, '/services', payload);
       return NextResponse.json(data);
     } catch (err) {
