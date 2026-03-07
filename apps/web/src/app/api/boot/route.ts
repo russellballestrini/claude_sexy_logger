@@ -451,6 +451,11 @@ async function ensureRemoteTools(sshBase: string[], host: string): Promise<{ boo
     throw new Error(`Failed to bootstrap claude on ${host}. Check that npm install succeeded and claude is in PATH.`);
   }
 
+  // Make RAPL energy counters readable for power monitoring (non-fatal)
+  try {
+    await exec(sshCmd, [...sshArgs, 'sudo chmod +r /sys/class/powercap/intel-rapl/intel-rapl:*/energy_uj 2>/dev/null; true'], { timeout: 10000 });
+  } catch { /* no sudo or no RAPL — fine */ }
+
   return { bootstrapped };
 }
 
