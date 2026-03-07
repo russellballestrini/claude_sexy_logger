@@ -1869,6 +1869,7 @@ function BootstrapPanel() {
   const [multiplexer, setMultiplexer] = useState<'tmux' | 'screen'>('tmux');
   const [yolo, setYolo] = useState(true);
   const [prompt, setPrompt] = useState('');
+  const [sudoPassword, setSudoPassword] = useState('');
   const [booting, setBooting] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1896,14 +1897,14 @@ function BootstrapPanel() {
       } else {
         const res = await fetch('/api/boot', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectPath, projectName, host: host === 'localhost' ? undefined : host, yolo: harness === 'claude' ? yolo : false, prompt: prompt.trim() || undefined, harness: harness === 'custom' ? customCmd : 'claude', preferMultiplexer: multiplexer }),
+          body: JSON.stringify({ projectPath, projectName, host: host === 'localhost' ? undefined : host, yolo: harness === 'claude' ? yolo : false, prompt: prompt.trim() || undefined, harness: harness === 'custom' ? customCmd : 'claude', preferMultiplexer: multiplexer, sudoPassword: sudoPassword || undefined }),
         });
         const data = await res.json();
         if (res.ok) setResult(data); else setError(data.error || 'Boot failed');
       }
     } catch (err) { setError(String(err)); }
     finally { setBooting(false); }
-  }, [projectPath, projectName, host, harness, yolo, prompt, customCmd, multiplexer]);
+  }, [projectPath, projectName, host, harness, yolo, prompt, customCmd, multiplexer, sudoPassword]);
 
   return (
     <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-4">
@@ -1971,11 +1972,22 @@ function BootstrapPanel() {
         </div>
       </div>
 
-      <div>
-        <label className="text-base text-[var(--color-muted)] block mb-1">Initial Prompt (optional)</label>
-        <input type="text" value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="e.g. fix the failing tests"
-          className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base"
-          onKeyDown={e => { if (e.key === 'Enter' && (projectPath || host === 'unsandbox')) handleBoot(); }} />
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <label className="text-base text-[var(--color-muted)] block mb-1">Initial Prompt (optional)</label>
+          <input type="text" value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="e.g. fix the failing tests"
+            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base"
+            onKeyDown={e => { if (e.key === 'Enter' && (projectPath || host === 'unsandbox')) handleBoot(); }} />
+        </div>
+        {host !== 'localhost' && host !== 'unsandbox' && (
+          <div className="w-48">
+            <label className="text-base text-[var(--color-muted)] block mb-1">sudo password</label>
+            <input type="password" value={sudoPassword} onChange={e => setSudoPassword(e.target.value)}
+              placeholder="optional"
+              className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base"
+              autoComplete="off" />
+          </div>
+        )}
       </div>
 
       {harness === 'custom' && (

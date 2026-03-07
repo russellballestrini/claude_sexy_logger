@@ -52,7 +52,7 @@ function resolveBootHost(requestedHost?: string): string {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { projectPath: rawProjectPath, sessionId, yolo, prompt, parentSessionUuid, host: requestedHost, todoIds, projectName, harness, preferMultiplexer, bootstrap } = body;
+  const { projectPath: rawProjectPath, sessionId, yolo, prompt, parentSessionUuid, host: requestedHost, todoIds, projectName, harness, preferMultiplexer, bootstrap, sudoPassword } = body;
 
   // Resolve projectPath — support ~ expansion and bootstrap mode
   const homePath = homedir();
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
     let response: NextResponse;
 
     if (isRemote) {
-      response = await bootRemote(host, opts);
+      response = await bootRemote(host, opts, sudoPassword);
     } else if (IS_WINDOWS) {
       response = await bootWindows(opts);
     } else {
@@ -395,11 +395,34 @@ async function ensureRemoteRepo(sshBase: string[], projectPath: string) {
   await exec(sshCmd, [...sshArgs, cloneCmd], { timeout: 120000 });
 }
 
+// Run a command on remote with optional sudo password piped via stdin
+function execRemoteSudo(sshBase: string[], cmd: string, sudoPassword: string, timeout = 120000): Promise<{ stdout: string; stderr: string }> {
+  const sshCmd = sshBase[0];
+  const sshArgs = sshBase.slice(1);
+  // Replace bare "sudo " with "sudo -S " so it reads password from stdin
+  const sudoCmd = cmd.replace(/\bsudo\b/g, 'sudo -S');
+  return new Promise((resolve, reject) => {
+    const child = execFile(sshCmd, [...sshArgs, sudoCmd], { timeout }, (err, stdout, stderr) => {
+      if (err) reject(Object.assign(err, { stderr }));
+      else resolve({ stdout, stderr });
+    });
+    // Pipe password to stdin for sudo -S
+    child.stdin?.write(sudoPassword + '\n');
+    child.stdin?.end();
+  });
+}
+
 // Bootstrap missing tools on remote host via SSH
-async function ensureRemoteTools(sshBase: string[], host: string): Promise<{ bootstrapped: string[] }> {
+async function ensureRemoteTools(sshBase: string[], host: string, sudoPassword?: string): Promise<{ bootstrapped: string[] }> {
   const sshCmd = sshBase[0];
   const sshArgs = sshBase.slice(1);
   const bootstrapped: string[] = [];
+
+  // Helper: run with sudo password if provided, otherwise plain exec
+  const sudoExec = (cmd: string, timeout = 120000) =>
+    sudoPassword
+      ? execRemoteSudo(sshBase, cmd, sudoPassword, timeout)
+      : exec(sshCmd, [...sshArgs, cmd], { timeout });
 
   // Check and install tmux
   try {
@@ -411,7 +434,7 @@ async function ensureRemoteTools(sshBase: string[], host: string): Promise<{ boo
       '|| sudo yum install -y tmux 2>/dev/null',
       '|| sudo dnf install -y tmux 2>/dev/null',
     ].join(' ');
-    await exec(sshCmd, [...sshArgs, installCmd], { timeout: 120000 });
+    await sudoExec(installCmd);
     bootstrapped.push('tmux');
   }
 
@@ -449,6 +472,14 @@ async function ensureRemoteTools(sshBase: string[], host: string): Promise<{ boo
     await exec(sshCmd, [...sshArgs, `${nvmPrefix}which claude`], { timeout: 15000 });
   } catch {
     throw new Error(`Failed to bootstrap claude on ${host}. Check that npm install succeeded and claude is in PATH.`);
+  }
+
+  // Make RAPL energy counters readable for power monitoring (needs sudo)
+  if (sudoPassword) {
+    try {
+      await sudoExec('sudo chmod +r /sys/class/powercap/intel-rapl/intel-rapl:*/energy_uj 2>/dev/null; true', 10000);
+      bootstrapped.push('rapl');
+    } catch { /* non-fatal */ }
   }
 
   return { bootstrapped };
@@ -492,12 +523,12 @@ async function syncClaudeCredentials(host: string): Promise<boolean> {
   return true;
 }
 
-async function bootRemote(host: string, opts: BootOpts) {
+async function bootRemote(host: string, opts: BootOpts, sudoPassword?: string) {
   // -A enables agent forwarding so git on remote can use local SSH keys
   const sshBase = ['ssh', '-A', '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=no', host];
 
   // Bootstrap: install tmux, node, and claude if missing
-  const { bootstrapped } = await ensureRemoteTools(sshBase, host);
+  const { bootstrapped } = await ensureRemoteTools(sshBase, host, sudoPassword);
 
   // Sync Claude credentials to remote
   await syncClaudeCredentials(host);
