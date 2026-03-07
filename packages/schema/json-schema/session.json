@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unfirehose.org/schema/1.0/session.json",
+  "title": "unfirehose/1.0 Session",
+  "description": "Session lifecycle envelope wrapping a sequence of messages.",
+  "type": "object",
+  "properties": {
+    "$schema": { "const": "unfirehose/1.0" },
+    "type": { "const": "session" },
+    "id": { "type": "string", "description": "Session UUID" },
+    "projectId": { "type": "string", "description": "Slug-encoded project path" },
+    "status": { "type": "string", "enum": ["active", "closed"] },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "closedAt": { "type": ["string", "null"], "format": "date-time" },
+    "firstPrompt": { "type": "string" },
+    "summary": { "type": "string" },
+    "gitBranch": { "type": "string" },
+    "cwd": { "type": "string" },
+    "sidechain": { "type": "boolean", "default": false },
+    "harness": { "type": "string" },
+    "harnessVersion": { "type": "string" },
+    "messageCount": { "type": "integer", "minimum": 0 },
+    "totalUsage": { "$ref": "usage.json" }
+  },
+  "required": ["type", "id"],
+  "additionalProperties": true
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unfirehose.org/schema/1.0/message.json",
+  "title": "unfirehose/1.0 Message",
+  "description": "The atomic unit of agent session logging. One JSONL line per message.",
+  "type": "object",
+  "properties": {
+    "$schema": { "const": "unfirehose/1.0" },
+    "type": { "const": "message" },
+    "id": { "type": "string", "description": "Unique message ID (UUID or provider ID)" },
+    "sessionId": { "type": "string", "description": "Parent session UUID" },
+    "parentId": { "type": ["string", "null"], "description": "Conversation tree parent" },
+    "role": { "type": "string", "enum": ["user", "assistant", "system", "tool"] },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "content": {
+      "type": "array",
+      "items": { "$ref": "content-block.json" }
+    },
+    "model": { "type": "string", "description": "Model identifier (assistant messages only)" },
+    "stopReason": { "type": "string", "enum": ["end_turn", "tool_calls", "length", "content_filter", "error"] },
+    "provider": { "type": "string", "enum": ["anthropic", "google", "openai", "local"] },
+    "usage": { "$ref": "usage.json" },
+    "subtype": { "type": "string", "description": "System message subtype" },
+    "durationMs": { "type": "integer", "minimum": 0 },
+    "sidechain": { "type": "boolean", "default": false },
+    "cwd": { "type": "string" },
+    "gitBranch": { "type": "string" },
+    "harness": { "type": "string" },
+    "harnessVersion": { "type": "string" }
+  },
+  "required": ["type", "role", "content"],
+  "additionalProperties": true
+}

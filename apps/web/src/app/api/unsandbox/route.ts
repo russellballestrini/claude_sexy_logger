@@ -22,8 +22,39 @@ function authHeaders(publicKey: string, secretKey: string, method: string, path:
   };
 }
 
-// GET — check key status
-export async function GET() {
+// Helper: authenticated GET to unsandbox API
+async function apiGet(publicKey: string, secretKey: string, apiPath: string, timeout = 10000) {
+  const headers = authHeaders(publicKey, secretKey, 'GET', apiPath);
+  const res = await fetch(`${API_BASE}${apiPath}`, { headers, signal: AbortSignal.timeout(timeout) });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+// Helper: authenticated DELETE to unsandbox API
+async function apiDelete(publicKey: string, secretKey: string, apiPath: string, timeout = 10000) {
+  const headers = authHeaders(publicKey, secretKey, 'DELETE', apiPath);
+  const res = await fetch(`${API_BASE}${apiPath}`, { method: 'DELETE', headers, signal: AbortSignal.timeout(timeout) });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API error: ${res.status} ${text}`);
+  }
+  return res.json();
+}
+
+// Helper: authenticated POST to unsandbox API
+async function apiPost(publicKey: string, secretKey: string, apiPath: string, payload: string, timeout = 30000) {
+  const headers = authHeaders(publicKey, secretKey, 'POST', apiPath, payload);
+  const res = await fetch(`${API_BASE}${apiPath}`, { method: 'POST', headers, body: payload, signal: AbortSignal.timeout(timeout) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// GET — check key status, list sessions, list services
+export async function GET(request: NextRequest) {
   const publicKey = getSetting('unsandbox_public_key');
   const secretKey = getSetting('unsandbox_secret_key');
 
@@ -31,17 +62,31 @@ export async function GET() {
     return NextResponse.json({ connected: false, error: 'No unsandbox keys configured' });
   }
 
-  try {
-    const path = '/keys/self';
-    const headers = authHeaders(publicKey, secretKey, 'GET', path);
-    const res = await fetch(`${API_BASE}${path}`, { headers, signal: AbortSignal.timeout(10000) });
+  const action = request.nextUrl.searchParams.get('action');
 
-    if (!res.ok) {
-      const text = await res.text();
-      return NextResponse.json({ connected: false, error: `API error: ${res.status} ${text}` });
+  // List active sessions
+  if (action === 'sessions') {
+    try {
+      const data = await apiGet(publicKey, secretKey, '/sessions');
+      return NextResponse.json({ sessions: data.sessions ?? data });
+    } catch (err) {
+      return NextResponse.json({ sessions: [], error: String(err) });
     }
+  }
 
-    const data = await res.json();
+  // List services
+  if (action === 'services') {
+    try {
+      const data = await apiGet(publicKey, secretKey, '/services');
+      return NextResponse.json({ services: data.services ?? data });
+    } catch (err) {
+      return NextResponse.json({ services: [], error: String(err) });
+    }
+  }
+
+  // Default: key status
+  try {
+    const data = await apiGet(publicKey, secretKey, '/keys/self');
     return NextResponse.json({
       connected: true,
       tier: data.tier,
@@ -201,6 +246,56 @@ export async function POST(request: NextRequest) {
         sessionId: session.session_id,
         error: `Harness bootstrap failed: ${err}`,
       }, { status: 500 });
+    }
+  }
+
+  if (action === 'kill-session') {
+    const { sessionId } = body;
+    if (!sessionId) return NextResponse.json({ error: 'Missing sessionId' }, { status: 400 });
+    try {
+      await apiDelete(publicKey, secretKey, `/sessions/${sessionId}`);
+      return NextResponse.json({ ok: true });
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
+    }
+  }
+
+  if (action === 'create-service') {
+    const { name, ports, bootstrap, network } = body;
+    if (!name) return NextResponse.json({ error: 'Missing service name' }, { status: 400 });
+    try {
+      const payload = JSON.stringify({
+        name,
+        ports: ports || '80',
+        bootstrap: bootstrap || undefined,
+        network: network || 'semitrusted',
+      });
+      const data = await apiPost(publicKey, secretKey, '/services', payload);
+      return NextResponse.json(data);
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
+    }
+  }
+
+  if (action === 'destroy-service') {
+    const { serviceId } = body;
+    if (!serviceId) return NextResponse.json({ error: 'Missing serviceId' }, { status: 400 });
+    try {
+      await apiDelete(publicKey, secretKey, `/services/${serviceId}`);
+      return NextResponse.json({ ok: true });
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
+    }
+  }
+
+  if (action === 'service-logs') {
+    const { serviceId } = body;
+    if (!serviceId) return NextResponse.json({ error: 'Missing serviceId' }, { status: 400 });
+    try {
+      const data = await apiGet(publicKey, secretKey, `/services/${serviceId}/logs`, 30000);
+      return NextResponse.json(data);
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
     }
   }
 

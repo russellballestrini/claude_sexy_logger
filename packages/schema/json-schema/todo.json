@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unfirehose.org/schema/1.0/todo.json",
+  "title": "unfirehose/1.0 Todo",
+  "description": "Cross-session work item with UUIDv7 identity.",
+  "type": "object",
+  "properties": {
+    "$schema": { "const": "unfirehose/1.0" },
+    "type": { "const": "todo" },
+    "uuid": { "type": "string", "description": "UUIDv7 (time-ordered)" },
+    "projectId": { "type": "string" },
+    "sessionId": { "type": "string" },
+    "status": { "type": "string", "enum": ["pending", "in_progress", "completed", "obsolete"] },
+    "content": { "type": "string" },
+    "activeForm": { "type": ["string", "null"] },
+    "source": { "type": "string", "enum": ["claude-code", "gemini", "uncloseai", "hermes", "fetch", "manual"] },
+    "sourceSessionId": { "type": "string" },
+    "blockedBy": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^todo:" }
+    },
+    "estimatedMinutes": { "type": "integer", "minimum": 0 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "required": ["type", "content", "status"],
+  "additionalProperties": true
+}

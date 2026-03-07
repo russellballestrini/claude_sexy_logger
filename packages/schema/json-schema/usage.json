@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unfirehose.org/schema/1.0/usage.json",
+  "title": "unfirehose/1.0 Token Usage",
+  "description": "Token usage for a message or metric window. Aligned with Vercel AI SDK LanguageModelUsage.",
+  "type": "object",
+  "properties": {
+    "inputTokens": { "type": "integer", "minimum": 0 },
+    "outputTokens": { "type": "integer", "minimum": 0 },
+    "totalTokens": { "type": "integer", "minimum": 0 },
+    "inputTokenDetails": {
+      "type": "object",
+      "properties": {
+        "noCacheTokens": { "type": "integer", "minimum": 0 },
+        "cacheReadTokens": { "type": "integer", "minimum": 0 },
+        "cacheWriteTokens": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "outputTokenDetails": {
+      "type": "object",
+      "properties": {
+        "textTokens": { "type": "integer", "minimum": 0 },
+        "reasoningTokens": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

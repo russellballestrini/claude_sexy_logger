@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unfirehose.org/schema/1.0/metric.json",
+  "title": "unfirehose/1.0 Metric",
+  "description": "Pre-computed per-minute token usage rollup for dashboards and spike detection.",
+  "type": "object",
+  "properties": {
+    "$schema": { "const": "unfirehose/1.0" },
+    "type": { "const": "metric" },
+    "window": { "type": "string", "description": "Minute-level granularity timestamp (YYYY-MM-DDTHH:MM)" },
+    "projectId": { "type": "string" },
+    "usage": { "$ref": "usage.json" },
+    "messageCount": { "type": "integer", "minimum": 0 },
+    "costUsd": { "type": "number", "minimum": 0 }
+  },
+  "required": ["type", "window", "usage"],
+  "additionalProperties": true
+}

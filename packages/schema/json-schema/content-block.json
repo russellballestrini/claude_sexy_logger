@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unfirehose.org/schema/1.0/content-block.json",
+  "title": "unfirehose/1.0 Content Block",
+  "description": "A typed content block within a message. Aligned with Vercel AI SDK part types.",
+  "oneOf": [
+    {
+      "type": "object",
+      "title": "TextBlock",
+      "properties": {
+        "type": { "const": "text" },
+        "text": { "type": "string" }
+      },
+      "required": ["type", "text"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "title": "ReasoningBlock",
+      "properties": {
+        "type": { "const": "reasoning" },
+        "text": { "type": "string" }
+      },
+      "required": ["type", "text"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "title": "ToolCallBlock",
+      "properties": {
+        "type": { "const": "tool-call" },
+        "toolCallId": { "type": "string" },
+        "toolName": { "type": "string" },
+        "input": { "type": "object" }
+      },
+      "required": ["type", "toolCallId", "toolName", "input"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "title": "ToolResultBlock",
+      "properties": {
+        "type": { "const": "tool-result" },
+        "toolCallId": { "type": "string" },
+        "toolName": { "type": "string" },
+        "output": {},
+        "isError": { "type": "boolean", "default": false }
+      },
+      "required": ["type", "toolCallId", "toolName", "output"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "title": "ImageBlock",
+      "properties": {
+        "type": { "const": "image" },
+        "mediaType": { "type": "string" },
+        "data": { "type": "string", "contentEncoding": "base64" }
+      },
+      "required": ["type", "mediaType", "data"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "title": "FileBlock",
+      "properties": {
+        "type": { "const": "file" },
+        "mediaType": { "type": "string" },
+        "data": { "type": "string", "contentEncoding": "base64" }
+      },
+      "required": ["type", "mediaType", "data"],
+      "additionalProperties": false
+    }
+  ]
+}

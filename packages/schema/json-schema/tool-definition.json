@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unfirehose.org/schema/1.0/tool-definition.json",
+  "title": "unfirehose/1.0 Tool Definition",
+  "description": "Tool schema compatible with Vercel AI SDK tool() shape.",
+  "type": "object",
+  "properties": {
+    "$schema": { "const": "unfirehose/1.0" },
+    "type": { "const": "tool_definition" },
+    "name": { "type": "string", "description": "Canonical tool name" },
+    "description": { "type": "string" },
+    "inputSchema": {
+      "type": "object",
+      "description": "JSON Schema for tool input (maps to Vercel AI SDK parameters)"
+    },
+    "outputSchema": {
+      "type": "object",
+      "description": "JSON Schema for tool output"
+    }
+  },
+  "required": ["type", "name", "inputSchema"],
+  "additionalProperties": true
+}

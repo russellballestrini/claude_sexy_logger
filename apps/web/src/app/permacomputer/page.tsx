@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { PageContext } from '@unturf/unfirehose-ui/PageContext';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -1705,6 +1706,7 @@ function formatDuration(seconds: number): string {
 // ============================================================
 
 function UnsandboxPanel() {
+  const router = useRouter();
   const { data: settings, mutate: mutateSettings } = useSWR('/api/settings', fetcher);
   const { data: status, mutate: mutateStatus } = useSWR('/api/unsandbox', fetcher, { refreshInterval: 60000 });
   const [showSecret, setShowSecret] = useState(false);
@@ -1729,7 +1731,12 @@ function UnsandboxPanel() {
     setTesting(true); setTestResult(null);
     try {
       const res = await fetch('/api/unsandbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'test' }) });
-      setTestResult(await res.json());
+      const result = await res.json();
+      setTestResult(result);
+      if (result.ok) {
+        // Success — redirect to unsandbox node page
+        setTimeout(() => router.push('/permacomputer/unsandbox'), 400);
+      }
     } catch (err) { setTestResult({ ok: false, error: String(err) }); }
     finally { setTesting(false); }
   };
@@ -1790,13 +1797,14 @@ function UnsandboxPanel() {
 
       <div className="flex items-center gap-3 flex-wrap">
         {status?.connected && (
-          <div className="flex items-center gap-3 text-base">
+          <Link href="/permacomputer/unsandbox" className="flex items-center gap-3 text-base hover:opacity-80 transition-opacity">
             <span className="text-green-400">● connected</span>
             <span className="text-[var(--color-muted)]">tier {status.tier}</span>
             <span className="text-[var(--color-muted)]">{status.rateLimit} rpm</span>
             <span className="text-[var(--color-muted)]">{status.maxSessions} session{status.maxSessions !== 1 ? 's' : ''}</span>
             {status.network && <span className="text-[var(--color-muted)]">{status.network}</span>}
-          </div>
+            <span className="text-[var(--color-accent)] text-xs font-bold">open &rarr;</span>
+          </Link>
         )}
         {status && !status.connected && publicKey && (
           <span className="text-base text-red-400">○ {status.error || 'disconnected'}</span>

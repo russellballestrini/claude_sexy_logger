@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://unfirehose.org/schema/1.0/project.json",
+  "title": "unfirehose/1.0 Project",
+  "description": "Repository or workspace identity.",
+  "type": "object",
+  "properties": {
+    "$schema": { "const": "unfirehose/1.0" },
+    "type": { "const": "project" },
+    "id": { "type": "string", "description": "Slug-encoded path" },
+    "displayName": { "type": "string" },
+    "path": { "type": "string", "description": "Original filesystem path" },
+    "visibility": { "type": "string", "enum": ["public", "private"] },
+    "firstSeen": { "type": "string", "format": "date-time" },
+    "git": {
+      "type": "object",
+      "properties": {
+        "branch": { "type": ["string", "null"] },
+        "remotes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "url": { "type": "string" },
+              "type": { "type": "string", "enum": ["fetch", "push"] }
+            },
+            "required": ["name", "url"]
+          }
+        },
+        "recentCommits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "hash": { "type": "string" },
+              "subject": { "type": "string" },
+              "author": { "type": "string" },
+              "date": { "type": "string" }
+            },
+            "required": ["hash", "subject"]
+          }
+        }
+      }
+    }
+  },
+  "required": ["type", "id"],
+  "additionalProperties": true
+}
