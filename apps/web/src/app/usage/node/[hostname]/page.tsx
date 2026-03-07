@@ -196,18 +196,26 @@ export default function NodeDetailPage() {
   // SSE connection for inline tmux preview (local or remote via SSH)
   useEffect(() => {
     if (!previewSession) return;
+    let alive = true;
+    let es: EventSource;
     const hostParam = !isLocal ? `&host=${encodeURIComponent(host)}` : '';
-    const es = new EventSource(`/api/tmux/stream?session=${encodeURIComponent(previewSession)}${hostParam}`);
-    es.onmessage = (e) => {
-      try {
-        setPreviewContent(JSON.parse(e.data));
-        if (previewRef.current) {
-          previewRef.current.scrollTop = previewRef.current.scrollHeight;
-        }
-      } catch { /* skip */ }
+    const connect = () => {
+      es = new EventSource(`/api/tmux/stream?session=${encodeURIComponent(previewSession)}${hostParam}`);
+      es.onmessage = (e) => {
+        try {
+          setPreviewContent(JSON.parse(e.data));
+          if (previewRef.current) {
+            previewRef.current.scrollTop = previewRef.current.scrollHeight;
+          }
+        } catch { /* skip */ }
+      };
+      es.onerror = () => {
+        es.close();
+        if (alive) setTimeout(connect, 2000);
+      };
     };
-    es.onerror = () => es.close();
-    return () => es.close();
+    connect();
+    return () => { alive = false; es?.close(); };
   }, [previewSession, isLocal, host]);
 
   const [sshEditing, setSshEditing] = useState(false);
