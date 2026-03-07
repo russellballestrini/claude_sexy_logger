@@ -53,7 +53,7 @@ function resolveBootHost(requestedHost?: string): string {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { projectPath: rawProjectPath, sessionId, yolo, prompt, parentSessionUuid, host: requestedHost, todoIds, projectName, harness, preferMultiplexer, bootstrap, sudoPassword } = body;
+  const { projectPath: rawProjectPath, sessionId, yolo, prompt, parentSessionUuid, host: requestedHost, todoIds, projectName, harness, preferMultiplexer, bootstrap, sudoPassword, repoUrl } = body;
 
   // Resolve projectPath — support ~ expansion and bootstrap mode
   const homePath = homedir();
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
 
   // Unsandbox boot — route through unsandbox API
   if (isUnsandbox) {
-    return bootUnsandbox(body, projectPath);
+    return bootUnsandbox(body, projectPath, repoUrl);
   }
 
   // Validate path exists (local only — remote paths are trusted)
@@ -666,7 +666,7 @@ function unsandboxHeaders(publicKey: string, secretKey: string, method: string, 
   };
 }
 
-async function bootUnsandbox(body: any, projectPath: string) {
+async function bootUnsandbox(body: any, projectPath: string, passedRepoUrl?: string) {
   const publicKey = getSetting('unsandbox_public_key');
   const secretKey = getSetting('unsandbox_secret_key');
   if (!publicKey || !secretKey) {
@@ -675,11 +675,13 @@ async function bootUnsandbox(body: any, projectPath: string) {
 
   const { prompt, yolo, harness: harnessName, projectName } = body;
 
-  // Get the git remote URL from the local project so we can clone it on unsandbox
-  let repoUrl: string | null = null;
-  try {
-    repoUrl = await getLocalGitRemote(projectPath);
-  } catch { /* no git remote */ }
+  // Get the git remote URL — prefer passed URL, fall back to local project
+  let repoUrl: string | null = passedRepoUrl || null;
+  if (!repoUrl) {
+    try {
+      repoUrl = await getLocalGitRemote(projectPath);
+    } catch { /* no git remote */ }
+  }
 
   // 1. Create a session on unsandbox
   const sessionPath = '/sessions';
