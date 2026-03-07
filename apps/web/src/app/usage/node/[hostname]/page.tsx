@@ -101,6 +101,7 @@ export default function NodeDetailPage() {
     { refreshInterval: 30000 },
   );
   const { data: settings } = useSWR('/api/settings', fetcher, { revalidateOnFocus: false });
+  const { data: sshConfig, mutate: mutateSsh } = useSWR('/api/ssh-config', fetcher, { revalidateOnFocus: false });
 
   // Per-node tunables
   const [kwhRate, setKwhRate] = useState(DEFAULT_KWH_RATE);
@@ -124,6 +125,30 @@ export default function NodeDetailPage() {
   const [bootStatuses, setBootStatuses] = useState<Record<string, BootStatus>>({});
   const [authModes, setAuthModes] = useState<Record<string, string>>({});
   const [bootFilter, setBootFilter] = useState('');
+  const [sshEditing, setSshEditing] = useState(false);
+  const [sshForm, setSshForm] = useState<{ name: string; hostname?: string; port?: string; user?: string; identityFile?: string; forwardAgent?: string }>({ name: host });
+  const [sshSaving, setSshSaving] = useState(false);
+
+  // Hydrate SSH form from config
+  useEffect(() => {
+    if (!sshConfig?.hosts) return;
+    const found = sshConfig.hosts.find((h: any) => h.name === host || h.hostname === host);
+    if (found) setSshForm(found);
+  }, [sshConfig, host]);
+
+  const saveSshHost = async () => {
+    setSshSaving(true);
+    try {
+      await fetch('/api/ssh-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(sshForm),
+      });
+      await mutateSsh();
+      setSshEditing(false);
+    } catch { /* ignore */ }
+    setSshSaving(false);
+  };
 
   // Determine the SSH host to use for booting (localhost if this is the local machine)
   const isLocal = mesh?.localHostname === host || host === 'localhost';
@@ -578,6 +603,67 @@ export default function NodeDetailPage() {
               </div>
             </div>
           </Section>
+
+          <Section title="SSH Configuration">
+            {!sshEditing ? (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm">
+                  <KV label="Host" value={sshForm.name} />
+                  <KV label="Hostname" value={sshForm.hostname || host} />
+                  <KV label="Port" value={sshForm.port || '22'} />
+                  <KV label="User" value={sshForm.user || '(default)'} />
+                  <KV label="Identity File" value={sshForm.identityFile || '(default)'} />
+                  <KV label="Forward Agent" value={sshForm.forwardAgent || 'no'} />
+                </div>
+                <button
+                  onClick={() => setSshEditing(true)}
+                  className="text-xs text-[var(--color-accent)] hover:underline cursor-pointer mt-2"
+                >
+                  Edit SSH Config
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <SshField label="Host (alias)" value={sshForm.name}
+                  onChange={(v) => setSshForm(f => ({ ...f, name: v }))} />
+                <SshField label="Hostname" value={sshForm.hostname ?? ''} placeholder={host}
+                  onChange={(v) => setSshForm(f => ({ ...f, hostname: v || undefined }))} />
+                <SshField label="Port" value={sshForm.port ?? ''} placeholder="22"
+                  onChange={(v) => setSshForm(f => ({ ...f, port: v || undefined }))} />
+                <SshField label="User" value={sshForm.user ?? ''} placeholder="(default)"
+                  onChange={(v) => setSshForm(f => ({ ...f, user: v || undefined }))} />
+                <SshField label="Identity File" value={sshForm.identityFile ?? ''} placeholder="~/.ssh/id_rsa"
+                  onChange={(v) => setSshForm(f => ({ ...f, identityFile: v || undefined }))} />
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-[var(--color-muted)] w-32">Forward Agent</span>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sshForm.forwardAgent === 'yes'}
+                      onChange={(e) => setSshForm(f => ({ ...f, forwardAgent: e.target.checked ? 'yes' : undefined }))}
+                      className="accent-[var(--color-accent)]"
+                    />
+                    <span className="text-[var(--color-muted)]">yes</span>
+                  </label>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={saveSshHost}
+                    disabled={sshSaving || !sshForm.name.trim()}
+                    className="px-4 py-1.5 text-sm font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded hover:opacity-90 disabled:opacity-40 cursor-pointer"
+                  >
+                    {sshSaving ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => setSshEditing(false)}
+                    className="px-4 py-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-foreground)] cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </Section>
         </div>
       )}
     </div>
@@ -606,6 +692,26 @@ function KV({ label, value }: { label: string; value?: string | number | null })
     <div>
       <span className="text-[var(--color-muted)]">{label}: </span>
       <span>{value ?? 'n/a'}</span>
+    </div>
+  );
+}
+
+function SshField({ label, value, placeholder, onChange }: {
+  label: string;
+  value: string;
+  placeholder?: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-sm text-[var(--color-muted)] w-32 shrink-0">{label}</span>
+      <input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="flex-1 text-sm bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-1 font-mono"
+      />
     </div>
   );
 }
