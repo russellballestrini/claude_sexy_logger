@@ -418,12 +418,15 @@ async function ensureRemoteTools(sshBase: string[], host: string): Promise<{ boo
   }
 
   // Check and install node/npm if missing (needed for claude)
+  // Use bash -lc to pick up nvm paths if nvm is installed
   try {
-    await exec(sshCmd, [...sshArgs, 'which node'], { timeout: 10000 });
+    await exec(sshCmd, [...sshArgs, 'bash -lc "which node"'], { timeout: 10000 });
   } catch {
     // Install node via nvm
     const installCmd = [
-      'curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash',
+      'export NVM_DIR="$HOME/.nvm"',
+      '&& ([ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || true)',
+      '&& (command -v nvm >/dev/null || curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash)',
       '&& export NVM_DIR="$HOME/.nvm"',
       '&& . "$NVM_DIR/nvm.sh"',
       '&& nvm install --lts',
