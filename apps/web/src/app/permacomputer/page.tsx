@@ -301,12 +301,17 @@ export default function PermacomputerPage() {
   );
   const hosts = sshData?.hosts ?? [];
   const meshNodes: any[] = mesh?.nodes ?? [];
+  const localHostname: string | undefined = mesh?.localHostname;
   const reachable = meshNodes.filter((n: any) => n.reachable);
 
   // Load per-node economics: settings defaults → geo-region override → per-node override
   const getNodeEcon = useCallback((hostname: string): NodeEcon => {
     const defaults = getDefaultEcon(settings);
-    const raw = settings?.[nodeEconKey(hostname)];
+    // Local mesh node (e.g. "neoblanka") has econ saved under "localhost"
+    let raw = settings?.[nodeEconKey(hostname)];
+    if (!raw && localHostname && hostname === localHostname) {
+      raw = settings?.[nodeEconKey('localhost')];
+    }
     if (!raw) return { ...defaults };
     try {
       const perNode = { ...defaults, ...JSON.parse(raw) };
@@ -317,13 +322,13 @@ export default function PermacomputerPage() {
       }
       return perNode;
     } catch { return { ...defaults }; }
-  }, [settings]);
+  }, [settings, localHostname]);
 
   // GeoIP lookup by hostname
   const getNodeGeoIP = useCallback((hostname: string) => {
     const nodes: any[] = geoipData?.nodes ?? [];
-    return nodes.find((n: any) => n.hostname === hostname || n.hostname === 'localhost' && hostname === (mesh?.nodes?.[0]?.hostname ?? 'localhost'));
-  }, [geoipData, mesh]);
+    return nodes.find((n: any) => n.hostname === hostname || (n.hostname === 'localhost' && localHostname && hostname === localHostname));
+  }, [geoipData, localHostname]);
 
   const saveNodeEcon = useCallback(async (hostname: string, econ: NodeEcon) => {
     const key = nodeEconKey(hostname);
