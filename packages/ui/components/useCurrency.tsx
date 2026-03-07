@@ -19,11 +19,11 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
   NZD: 'NZ$', FJD: 'FJ$',
   BTC: '\u20bf', ETH: '\u039e', SOL: 'SOL ', XMR: 'XMR ', LTC: '\u0141',
   DOGE: '\u00d0', XRP: 'XRP ', ADA: 'ADA ', DOT: 'DOT ', AVAX: 'AVAX ',
-  MATIC: 'MATIC ', LINK: 'LINK ', UNI: 'UNI ',
+  MATIC: 'MATIC ', LINK: 'LINK ', UNI: 'UNI ', ZEC: 'ZEC ',
 };
 
 // Crypto needs more decimal places
-const CRYPTO_CODES = new Set(['BTC', 'ETH', 'SOL', 'XMR', 'LTC', 'DOGE', 'XRP', 'ADA', 'DOT', 'AVAX', 'MATIC', 'LINK', 'UNI']);
+const CRYPTO_CODES = new Set(['BTC', 'ETH', 'SOL', 'XMR', 'LTC', 'DOGE', 'XRP', 'ADA', 'DOT', 'AVAX', 'MATIC', 'LINK', 'UNI', 'ZEC']);
 
 export interface CurrencyFormatter {
   /** Format a USD amount in the user's primary currency */
@@ -158,4 +158,5 @@ export const AVAILABLE_CURRENCIES = [
   { code: 'MATIC', label: 'Polygon', group: 'Crypto' },
   { code: 'LINK', label: 'Chainlink', group: 'Crypto' },
   { code: 'UNI', label: 'Uniswap', group: 'Crypto' },
+  { code: 'ZEC', label: 'Zcash', group: 'Crypto' },
 ];
