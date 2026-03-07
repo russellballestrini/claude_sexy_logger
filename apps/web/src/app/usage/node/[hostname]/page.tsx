@@ -249,6 +249,11 @@ export default function NodeDetailPage() {
       const data = await res.json();
       if (data.success) {
         setBootStatuses(prev => ({ ...prev, [harness.id]: { state: 'success', detail: data } }));
+        // Switch to Harnesses tab and start previewing the tmux session
+        if (data.tmuxSession) {
+          setActiveTab('Harnesses');
+          setPreviewSession(data.tmuxSession);
+        }
       } else {
         setBootStatuses(prev => ({ ...prev, [harness.id]: { state: 'error', detail: data.error || 'Unknown error' } }));
       }
