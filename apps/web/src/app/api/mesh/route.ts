@@ -23,6 +23,11 @@ interface MeshNode {
   ssdCount?: number;
   powerWatts?: number;
   gpuPowerWatts?: number;
+  gpuModel?: string;
+  gpuMemTotalMB?: number;
+  gpuMemUsedMB?: number;
+  gpuUtil?: number;
+  arch?: string;
   powerSource?: 'rapl' | 'nvidia' | 'tdp';
   error?: string;
 }
@@ -461,10 +466,32 @@ function getLocalStats(): MeshNode {
     const isServer = cpuModel ? /xeon|epyc/i.test(cpuModel) : false;
     const isLaptop = cpuModel ? /[0-9]U\b|[0-9]G[1-7]\b/i.test(cpuModel) : false;
 
+    // Architecture
+    let arch: string | undefined;
+    try { arch = execSync('uname -m', { encoding: 'utf-8' }).trim(); } catch { /* ignore */ }
+
     // Power monitoring: try RAPL first, then TDP-based system calc
     const raplWatts = readRaplWatts();
     const gpuWatts = readNvidiaPowerWatts();
     const cpuTdpWatts = cpuModel ? lookupCpuTdp(cpuModel) : null;
+
+    // GPU details from nvidia-smi
+    let gpuModel: string | undefined;
+    let gpuMemTotalMB: number | undefined;
+    let gpuMemUsedMB: number | undefined;
+    let gpuUtil: number | undefined;
+    try {
+      const nvOut = execSync('nvidia-smi --query-gpu=name,memory.total,memory.used,utilization.gpu --format=csv,noheader,nounits 2>/dev/null', { encoding: 'utf-8', timeout: 5000 }).trim();
+      if (nvOut) {
+        for (const line of nvOut.split('\n')) {
+          const parts = line.split(',').map(s => s.trim());
+          if (!gpuModel && parts[0]) gpuModel = parts[0];
+          if (parts[1]) gpuMemTotalMB = (gpuMemTotalMB ?? 0) + (parseFloat(parts[1]) || 0);
+          if (parts[2]) gpuMemUsedMB = (gpuMemUsedMB ?? 0) + (parseFloat(parts[2]) || 0);
+          if (parts[3]) gpuUtil = Math.max(gpuUtil ?? 0, parseFloat(parts[3]) || 0);
+        }
+      }
+    } catch { /* no nvidia-smi */ }
     let powerWatts: number | undefined;
     let powerSource: MeshNode['powerSource'];
 
@@ -498,6 +525,11 @@ function getLocalStats(): MeshNode {
       swapUsedGB: round(swapTotal - swapFree),
       powerWatts,
       gpuPowerWatts: gpuWatts ?? undefined,
+      gpuModel,
+      gpuMemTotalMB: gpuMemTotalMB ? Math.round(gpuMemTotalMB) : undefined,
+      gpuMemUsedMB: gpuMemUsedMB ? Math.round(gpuMemUsedMB) : undefined,
+      gpuUtil,
+      arch,
       powerSource,
     };
   } catch (e: any) {
@@ -508,7 +540,7 @@ function getLocalStats(): MeshNode {
 function getRemoteStats(host: string): MeshNode {
   try {
     // Main stats command (includes cpuinfo model name and disk inventory)
-    const cmd = `ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${host} 'hostname -f 2>/dev/null || hostname && nproc && grep -m1 "model name" /proc/cpuinfo && lsblk -d -o NAME,TYPE,SIZE,ROTA 2>/dev/null && echo "---LSBLK_END---" && cat /proc/meminfo && cat /proc/loadavg && cat /proc/uptime && ps aux | grep -i "[c]laude" | wc -l'`;
+    const cmd = `ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${host} 'hostname -f 2>/dev/null || hostname && nproc && grep -m1 "model name" /proc/cpuinfo && uname -m && lsblk -d -o NAME,TYPE,SIZE,ROTA 2>/dev/null && echo "---LSBLK_END---" && cat /proc/meminfo && cat /proc/loadavg && cat /proc/uptime && ps aux | grep -i "[c]laude" | wc -l'`;
     const output = execSync(cmd, { encoding: 'utf-8', timeout: 10000 });
     const lines = output.trim().split('\n');
 
@@ -519,13 +551,15 @@ function getRemoteStats(host: string): MeshNode {
 
     // CPU model is on line 2 (grep output: "model name : ...")
     const cpuModel = parseCpuModel(lines[2]);
+    // Architecture from uname -m (line 3)
+    const arch = lines[3]?.trim() || undefined;
 
-    // Find the lsblk section (between line 3 and ---LSBLK_END---)
+    // Find the lsblk section (between line 4 and ---LSBLK_END---)
     const lsblkEndIdx = lines.findIndex(l => l.trim() === '---LSBLK_END---');
     let spinningDisks = 0;
     let ssdCount = 0;
-    if (lsblkEndIdx > 3) {
-      const lsblkText = lines.slice(3, lsblkEndIdx).join('\n');
+    if (lsblkEndIdx > 4) {
+      const lsblkText = lines.slice(4, lsblkEndIdx).join('\n');
       spinningDisks = countSpinningDisks(lsblkText);
       ssdCount = lsblkText.split('\n').filter(l => {
         const p = l.trim().split(/\s+/);
@@ -588,16 +622,26 @@ function getRemoteStats(host: string): MeshNode {
       }
     } catch { /* RAPL not available */ }
 
-    // Try nvidia-smi on remote
+    // Try nvidia-smi on remote — get power, name, memory, utilization
+    let gpuModel: string | undefined;
+    let gpuMemTotalMB: number | undefined;
+    let gpuMemUsedMB: number | undefined;
+    let gpuUtil: number | undefined;
     try {
-      const nvCmd = `ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ${host} 'nvidia-smi --query-gpu=power.draw --format=csv,noheader,nounits 2>/dev/null'`;
+      const nvCmd = `ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ${host} 'nvidia-smi --query-gpu=power.draw,name,memory.total,memory.used,utilization.gpu --format=csv,noheader,nounits 2>/dev/null'`;
       const nvOut = execSync(nvCmd, { encoding: 'utf-8', timeout: 8000 }).trim();
       if (nvOut) {
-        const total = nvOut.split('\n').reduce((sum, line) => {
-          const w = parseFloat(line.trim());
-          return sum + (isNaN(w) ? 0 : w);
-        }, 0);
-        if (total > 0) gpuPowerWatts = round(total);
+        let totalPower = 0;
+        for (const line of nvOut.split('\n')) {
+          const parts = line.split(',').map(s => s.trim());
+          const w = parseFloat(parts[0]);
+          if (!isNaN(w)) totalPower += w;
+          if (!gpuModel && parts[1]) gpuModel = parts[1];
+          if (parts[2]) gpuMemTotalMB = (gpuMemTotalMB ?? 0) + (parseFloat(parts[2]) || 0);
+          if (parts[3]) gpuMemUsedMB = (gpuMemUsedMB ?? 0) + (parseFloat(parts[3]) || 0);
+          if (parts[4]) gpuUtil = Math.max(gpuUtil ?? 0, parseFloat(parts[4]) || 0);
+        }
+        if (totalPower > 0) gpuPowerWatts = round(totalPower);
       }
     } catch { /* no nvidia-smi */ }
 
@@ -628,6 +672,11 @@ function getRemoteStats(host: string): MeshNode {
       swapUsedGB: round(swapTotal - swapFree),
       powerWatts,
       gpuPowerWatts: gpuPowerWatts ?? undefined,
+      gpuModel,
+      gpuMemTotalMB: gpuMemTotalMB ? Math.round(gpuMemTotalMB) : undefined,
+      gpuMemUsedMB: gpuMemUsedMB ? Math.round(gpuMemUsedMB) : undefined,
+      gpuUtil,
+      arch,
       powerSource,
     };
   } catch (e: any) {

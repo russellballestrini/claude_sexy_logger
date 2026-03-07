@@ -996,6 +996,34 @@ function MeshNodeCard({ node, kwhRate, onRateChange, ispCost, onIspCostChange, d
         <span className="text-sm text-[var(--color-muted)]">claudes</span>
       </div>
 
+      {/* Processor info */}
+      <div className="mb-2 text-xs text-[var(--color-muted)] space-y-0.5">
+        {node.cpuModel && (
+          <div className="truncate" title={node.cpuModel}>
+            {node.cpuModel.replace(/\(R\)|\(TM\)/g, '').replace(/CPU\s+/i, '').trim()}
+          </div>
+        )}
+        <div className="flex gap-2 flex-wrap">
+          {node.arch && <span className="text-[10px] px-1 py-0.5 rounded bg-[var(--color-surface-hover)]">{node.arch}</span>}
+          {node.cpuModel && /intel/i.test(node.cpuModel) && <span className="text-[10px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-400">Intel</span>}
+          {node.cpuModel && /amd|epyc|ryzen/i.test(node.cpuModel) && <span className="text-[10px] px-1 py-0.5 rounded bg-red-500/20 text-red-400">AMD</span>}
+          {node.cpuModel && /arm|aarch/i.test(node.arch ?? '') && <span className="text-[10px] px-1 py-0.5 rounded bg-green-500/20 text-green-400">ARM</span>}
+          {node.cpuModel && /risc/i.test(node.arch ?? '') && <span className="text-[10px] px-1 py-0.5 rounded bg-purple-500/20 text-purple-400">RISC-V</span>}
+        </div>
+        {node.gpuModel && (
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-[10px] px-1 py-0.5 rounded bg-green-500/20 text-green-400">GPU</span>
+            <span className="truncate" title={node.gpuModel}>{node.gpuModel}</span>
+            {node.gpuMemTotalMB && (
+              <span className="shrink-0">{node.gpuMemUsedMB ? `${(node.gpuMemUsedMB / 1024).toFixed(1)}/${(node.gpuMemTotalMB / 1024).toFixed(0)}GB` : `${(node.gpuMemTotalMB / 1024).toFixed(0)}GB`}</span>
+            )}
+            {node.gpuUtil !== undefined && (
+              <span className={node.gpuUtil > 80 ? 'text-[var(--color-error)]' : ''}>{node.gpuUtil}%</span>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* CPU */}
       <div className="mb-2">
         <div className="flex justify-between text-xs text-[var(--color-muted)] mb-1">
