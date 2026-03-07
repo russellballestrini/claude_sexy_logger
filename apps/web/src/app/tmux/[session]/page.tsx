@@ -114,20 +114,59 @@ export default function TmuxViewerPage() {
 
   // Interactive mode
   const [interactive, setInteractive] = useState(true);
-  const sendingRef = useRef(false);
+  const queueRef = useRef<Array<{ keys?: string; special?: string }>>([]);
+  const flushingRef = useRef(false);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const sendKeys = useCallback(async (payload: { keys?: string; special?: string }) => {
-    if (sendingRef.current) return;
-    sendingRef.current = true;
-    try {
-      await fetch('/api/tmux/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session: decodeURIComponent(session), host, ...payload }),
-      });
-    } catch { /* best effort */ }
-    sendingRef.current = false;
+  // Flush the keystroke queue — batches consecutive literal chars into one request
+  const flushQueue = useCallback(async () => {
+    if (flushingRef.current || queueRef.current.length === 0) return;
+    flushingRef.current = true;
+
+    while (queueRef.current.length > 0) {
+      // Batch consecutive literal keys into one string
+      let batch = '';
+      const pending: typeof queueRef.current = [];
+      for (const item of queueRef.current) {
+        if (item.keys) {
+          batch += item.keys;
+        } else {
+          if (batch) break;
+          pending.push(item);
+          break;
+        }
+        pending.push(item);
+      }
+      queueRef.current.splice(0, pending.length);
+
+      const payload = batch ? { keys: batch } : pending[0];
+      try {
+        await fetch('/api/tmux/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session: decodeURIComponent(session), host, ...payload }),
+        });
+      } catch { /* best effort */ }
+    }
+
+    flushingRef.current = false;
   }, [session, host]);
+
+  const enqueueKeys = useCallback((payload: { keys?: string; special?: string }) => {
+    queueRef.current.push(payload);
+    // For special keys, flush immediately; for literals, debounce 16ms to batch typing
+    if (payload.special) {
+      if (flushTimerRef.current) { clearTimeout(flushTimerRef.current); flushTimerRef.current = null; }
+      flushQueue();
+    } else {
+      if (!flushTimerRef.current) {
+        flushTimerRef.current = setTimeout(() => {
+          flushTimerRef.current = null;
+          flushQueue();
+        }, 16);
+      }
+    }
+  }, [flushQueue]);
 
   // Keyboard handler for interactive mode
   useEffect(() => {
@@ -148,18 +187,18 @@ export default function TmuxViewerPage() {
 
       if (e.ctrlKey && CTRL_MAP[e.key]) {
         e.preventDefault();
-        sendKeys({ special: CTRL_MAP[e.key] });
+        enqueueKeys({ special: CTRL_MAP[e.key] });
       } else if (SPECIAL_MAP[e.key]) {
         e.preventDefault();
-        sendKeys({ special: SPECIAL_MAP[e.key] });
+        enqueueKeys({ special: SPECIAL_MAP[e.key] });
       } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
-        sendKeys({ keys: e.key });
+        enqueueKeys({ keys: e.key });
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [interactive, sendKeys]);
+  }, [interactive, enqueueKeys]);
 
   // Handle scroll — disable auto-scroll when user scrolls up
   const handleScroll = () => {

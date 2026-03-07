@@ -129,9 +129,17 @@ export default function ProjectPage({
     return HARNESSES.find(h => h.value === harness)?.cmd ?? 'claude';
   }
 
+  // Get git remote URL from metadata for unsandbox (no local path needed)
+  const gitRemoteUrl = meta?.remotes?.find((r: any) => r.type === 'fetch' && r.name === 'origin')?.url
+    ?? meta?.remotes?.find((r: any) => r.type === 'fetch')?.url;
+
   async function bootSession(sessionId?: string) {
-    if (!data?.originalPath) {
+    if (!data?.originalPath && target !== 'unsandbox') {
       setBootResult('Error: No project path — cannot boot session.');
+      return;
+    }
+    if (target === 'unsandbox' && !data?.originalPath && !gitRemoteUrl) {
+      setBootResult('Error: No project path or git remote — cannot boot on unsandbox.');
       return;
     }
     setBooting(true);
@@ -142,12 +150,13 @@ export default function ProjectPage({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          projectPath: data.originalPath,
+          projectPath: data?.originalPath || decodedProject.replace(/-/g, '/'),
           projectName: decodedProject,
           sessionId,
           yolo,
           harness: resolveHarness(),
           host: target !== 'localhost' ? target : undefined,
+          repoUrl: target === 'unsandbox' ? gitRemoteUrl : undefined,
         }),
       });
       const result = await res.json();
@@ -179,20 +188,22 @@ export default function ProjectPage({
         }),
       });
       const todoResult = await todoRes.json();
-      if (startNow && !data?.originalPath) {
+      const canBoot = data?.originalPath || (target === 'unsandbox' && gitRemoteUrl);
+      if (startNow && !canBoot) {
         setBootResult('Error: No project path — cannot spawn agent.');
-      } else if (startNow && data?.originalPath) {
+      } else if (startNow && canBoot) {
         const res = await fetch('/api/boot', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            projectPath: data.originalPath,
+            projectPath: data?.originalPath || decodedProject.replace(/-/g, '/'),
             projectName: decodedProject,
             yolo: true,
             prompt: newTask.trim(),
             todoIds: todoResult.id ? [todoResult.id] : undefined,
             harness: resolveHarness(),
             host: target !== 'localhost' ? target : undefined,
+            repoUrl: target === 'unsandbox' ? gitRemoteUrl : undefined,
           }),
         });
         const result = await res.json();
@@ -387,6 +398,8 @@ export default function ProjectPage({
 
 /* ─── OVERVIEW TAB ─── */
 function OverviewTab({ full, data, meta, project, decodedProject, thisActivity, globalTotals, fetchRemotes, newTask, setNewTask, addTask, taskSubmitting, harness, setHarness, customCmd, setCustomCmd, target, setTarget, targets }: any) {
+  const gitRemoteUrl = meta?.remotes?.find((r: any) => r.type === 'fetch' && r.name === 'origin')?.url
+    ?? meta?.remotes?.find((r: any) => r.type === 'fetch')?.url;
   return (
     <div className="space-y-6">
       {/* Stats bar */}
@@ -454,7 +467,7 @@ function OverviewTab({ full, data, meta, project, decodedProject, thisActivity, 
                 </select>
               </div>
               <span className="text-xs text-[var(--color-muted)] ml-auto">
-                {data?.originalPath ? 'Ctrl+Enter starts now, Shift+Enter queues' : 'No project path — queue only'}
+                {data?.originalPath ? 'Ctrl+Enter starts now, Shift+Enter queues' : (target === 'unsandbox' && gitRemoteUrl) ? `Will clone from git remote` : 'No project path — queue only'}
               </span>
             </div>
             <div className="flex items-center justify-end mt-2 gap-2">
