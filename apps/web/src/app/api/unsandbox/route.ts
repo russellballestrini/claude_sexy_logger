@@ -367,5 +367,19 @@ ENDJSON`;
     }
   }
 
+  if (action === 'session-exec') {
+    // Execute a command inside an existing session
+    const { sessionId, command } = body;
+    if (!sessionId || !command) return NextResponse.json({ error: 'Missing sessionId or command' }, { status: 400 });
+    try {
+      const execPath = `/sessions/${sessionId}/execute`;
+      const execPayload = JSON.stringify({ command });
+      const data = await apiPost(publicKey, secretKey, execPath, execPayload, 30000);
+      return NextResponse.json(data);
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
+    }
+  }
+
   return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
 }

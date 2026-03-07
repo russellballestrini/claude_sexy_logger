@@ -8,7 +8,7 @@ import Link from 'next/link';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
-const TABS = ['Overview', 'Bootstrap', 'Services', 'Sessions', 'Terminal'] as const;
+const TABS = ['Overview', 'Harnesses', 'Bootstrap', 'Services', 'Sessions', 'Terminal'] as const;
 type Tab = (typeof TABS)[number];
 
 const UNFIREHOSE_BOOTSTRAP = `#!/bin/bash
@@ -94,6 +94,8 @@ export default function UnsandboxNodePage() {
   const [killingSession, setKillingSession] = useState<string | null>(null);
   const [bootStatuses, setBootStatuses] = useState<Record<string, BootStatus>>({});
   const [bootFilter, setBootFilter] = useState('');
+  const [sessionProcs, setSessionProcs] = useState<Record<string, any[]>>({});
+  const [probingSessions, setProbingSessions] = useState(false);
 
   const serviceList: any[] = services?.services ?? [];
   const sessionList: any[] = sessions?.sessions ?? [];
@@ -189,6 +191,56 @@ export default function UnsandboxNodePage() {
       mutateServices();
     } catch { /* ignore */ }
   }, [mutateServices]);
+
+  // Probe all sessions/services for running processes (claude, node, python, etc.)
+  const probeSessionProcesses = useCallback(async () => {
+    const allIds = [
+      ...sessionList.map((s: any) => s.session_id || s.id),
+      ...serviceList.map((s: any) => s.id).filter((id: string) => !sessionList.some((s: any) => (s.session_id || s.id) === id)),
+    ];
+    if (allIds.length === 0) return;
+    setProbingSessions(true);
+    const results: Record<string, any[]> = {};
+    await Promise.all(allIds.map(async (id) => {
+      try {
+        const res = await fetch('/api/unsandbox', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'session-exec',
+            sessionId: id,
+            command: 'ps aux --sort=-%cpu 2>/dev/null | head -30 || echo "no ps"',
+          }),
+        });
+        const data = await res.json();
+        const stdout = data.stdout || data.output || '';
+        const lines = stdout.trim().split('\n').filter((l: string) => l.trim());
+        // Parse ps aux output
+        const procs: any[] = [];
+        for (let i = 1; i < lines.length; i++) {
+          const parts = lines[i].trim().split(/\s+/);
+          if (parts.length < 11) continue;
+          const cmd = parts.slice(10).join(' ');
+          procs.push({
+            user: parts[0], pid: parts[1], cpu: parts[2], mem: parts[3],
+            command: cmd.slice(0, 200),
+          });
+        }
+        results[id] = procs;
+      } catch {
+        results[id] = [];
+      }
+    }));
+    setSessionProcs(results);
+    setProbingSessions(false);
+  }, [sessionList, serviceList]);
+
+  // Auto-probe when Harnesses tab is active
+  useEffect(() => {
+    if (activeTab === 'Harnesses' && (sessionList.length > 0 || serviceList.length > 0)) {
+      probeSessionProcesses();
+    }
+  }, [activeTab, sessionList.length, serviceList.length, probeSessionProcesses]);
 
   const bootHarness = useCallback(async (harness: typeof HARNESSES[0]) => {
     setBootStatuses(prev => ({ ...prev, [harness.id]: { state: 'verifying' } }));
@@ -444,6 +496,133 @@ ${harness.verify} 2>&1 || echo "VERIFY_FAILED"`;
           </div>
         </div>
       )}
+
+      {/* ===== HARNESSES TAB ===== */}
+      {activeTab === 'Harnesses' && (() => {
+        // Combine sessions + services, find claude/harness processes in each
+        const entries: { id: string; name: string; type: string; state: string; procs: any[] }[] = [];
+
+        for (const svc of serviceList) {
+          const id = svc.id;
+          const procs = sessionProcs[id] ?? [];
+          const claudeProcs = procs.filter(p => /claude|anthropic|node.*claude/i.test(p.command));
+          entries.push({
+            id, name: svc.name || id, type: 'service',
+            state: svc.state || 'unknown', procs,
+          });
+          // Count claudes for this service
+          if (claudeProcs.length > 0) {
+            // Tag them
+          }
+        }
+
+        for (const sess of sessionList) {
+          const id = sess.session_id || sess.id;
+          // Skip if already covered by a service
+          if (entries.some(e => e.id === id)) continue;
+          const procs = sessionProcs[id] ?? [];
+          entries.push({
+            id, name: id, type: 'session',
+            state: sess.status || 'active', procs,
+          });
+        }
+
+        const totalClaudes = Object.values(sessionProcs).flat().filter(p => /claude|anthropic/i.test(p.command)).length;
+
+        return (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold text-[var(--color-muted)]">
+                Running Harnesses
+                {totalClaudes > 0 && <span className="ml-2 text-[var(--color-accent)]">({totalClaudes} claude{totalClaudes !== 1 ? 's' : ''})</span>}
+              </h2>
+              <button onClick={probeSessionProcesses} disabled={probingSessions}
+                className="text-xs text-[var(--color-accent)] hover:underline cursor-pointer disabled:opacity-50">
+                {probingSessions ? 'Probing...' : 'Refresh'}
+              </button>
+            </div>
+
+            {entries.length === 0 && !probingSessions && (
+              <div className="text-sm text-[var(--color-muted)] text-center py-8 bg-[var(--color-surface)] rounded border border-[var(--color-border)]">
+                No active sessions or services on unsandbox.
+              </div>
+            )}
+
+            {probingSessions && Object.keys(sessionProcs).length === 0 && (
+              <div className="text-sm text-[var(--color-muted)] text-center py-8 bg-[var(--color-surface)] rounded border border-[var(--color-border)] animate-pulse">
+                Probing sessions for running processes...
+              </div>
+            )}
+
+            {entries.map(entry => {
+              const claudeProcs = entry.procs.filter(p => /claude|anthropic/i.test(p.command));
+              const nodeProcs = entry.procs.filter(p => /\bnode\b/i.test(p.command) && !/claude/i.test(p.command));
+              const pythonProcs = entry.procs.filter(p => /\bpython/i.test(p.command));
+              const interesting = [...claudeProcs, ...nodeProcs, ...pythonProcs];
+              const isService = entry.type === 'service';
+
+              return (
+                <div key={entry.id} className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2.5 h-2.5 rounded-full ${entry.state === 'running' || entry.state === 'active' ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
+                      <span className="font-bold font-mono text-sm">{entry.name}</span>
+                      <span className="text-xs text-[var(--color-muted)]">{entry.type}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {claudeProcs.length > 0 && (
+                        <span className="text-xs font-bold text-[var(--color-accent)] bg-[var(--color-accent)]/10 px-1.5 py-0.5 rounded">
+                          {claudeProcs.length} claude{claudeProcs.length !== 1 ? 's' : ''}
+                        </span>
+                      )}
+                      {nodeProcs.length > 0 && (
+                        <span className="text-xs text-green-400">{nodeProcs.length} node</span>
+                      )}
+                      {pythonProcs.length > 0 && (
+                        <span className="text-xs text-blue-400">{pythonProcs.length} python</span>
+                      )}
+                      {isService && (
+                        <span className="text-xs text-[var(--color-muted)]">{entry.state}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {interesting.length > 0 ? (
+                    <div className="space-y-1">
+                      {interesting.slice(0, 15).map((p, i) => {
+                        const isClaude = /claude|anthropic/i.test(p.command);
+                        return (
+                          <div key={i} className="flex items-center gap-3 text-xs">
+                            <span className={`w-1.5 h-1.5 rounded-full ${isClaude ? 'bg-[var(--color-accent)]' : 'bg-green-400'}`} />
+                            <span className="text-[var(--color-muted)] w-8 text-right">PID {p.pid}</span>
+                            <span className="text-[var(--color-muted)]">CPU {p.cpu}%</span>
+                            <span className="text-[var(--color-muted)]">MEM {p.mem}%</span>
+                            <span className="font-mono truncate max-w-[500px]">{p.command}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : entry.procs.length > 0 ? (
+                    <div className="text-xs text-[var(--color-muted)]">
+                      {entry.procs.length} processes running (no ML harnesses detected)
+                    </div>
+                  ) : (
+                    <div className="text-xs text-[var(--color-muted)]">
+                      {probingSessions ? 'Probing...' : 'No process data — probe may have failed'}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {entries.length > 0 && (
+              <p className="text-xs text-[var(--color-muted)]">
+                Shows processes running inside unsandbox sessions and services. Claude, Node.js, and Python processes are highlighted.
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ===== BOOTSTRAP TAB ===== */}
       {activeTab === 'Bootstrap' && (
