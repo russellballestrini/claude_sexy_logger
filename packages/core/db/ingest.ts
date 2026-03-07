@@ -1084,15 +1084,22 @@ export async function ingestAll(): Promise<IngestResult> {
         isSidechain: e.isSidechain,
       }));
     } catch {
-      // Scan for JSONL files directly
-      try {
-        const files = await readdir(projDir);
-        sessionMeta = files
-          .filter((f) => f.endsWith('.jsonl'))
-          .map((f) => ({ sessionId: f.replace('.jsonl', '') }));
-      } catch {
-        continue;
+      // No index — will scan below
+    }
+
+    // Also scan for JSONL files not in the sessions index
+    try {
+      const indexedIds = new Set(sessionMeta.map((m) => m.sessionId));
+      const files = await readdir(projDir);
+      for (const f of files) {
+        if (!f.endsWith('.jsonl')) continue;
+        const sid = f.replace('.jsonl', '');
+        if (!indexedIds.has(sid)) {
+          sessionMeta.push({ sessionId: sid });
+        }
       }
+    } catch {
+      if (sessionMeta.length === 0) continue;
     }
 
     if (sessionMeta.length === 0) continue;
