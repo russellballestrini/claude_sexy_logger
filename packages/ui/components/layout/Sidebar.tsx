@@ -16,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { separator: 'monitor' },
   { href: '/live', label: 'Live', icon: '●' },
   { href: '/active', label: 'Active', icon: '▸' },
+  { href: '/tmux', label: 'Terminals', icon: '▹' },
   // Navigate — browse your data
   { separator: 'navigate' },
   { href: '/', label: 'Dashboard', icon: '◇' },

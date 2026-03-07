@@ -1,0 +1,159 @@
+'use client';
+
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
+import useSWR from 'swr';
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
+const fetcher = (url: string) => fetch(url).then(r => r.json());
+
+// Convert basic ANSI escape codes to styled spans
+function ansiToHtml(text: string): string {
+  const colorMap: Record<string, string> = {
+    '30': '#1e1e1e', '31': '#ef4444', '32': '#22c55e', '33': '#eab308',
+    '34': '#60a5fa', '35': '#c084fc', '36': '#22d3ee', '37': '#d4d4d4',
+    '90': '#737373', '91': '#f87171', '92': '#4ade80', '93': '#facc15',
+    '94': '#93c5fd', '95': '#d8b4fe', '96': '#67e8f9', '97': '#ffffff',
+  };
+  const bgMap: Record<string, string> = {
+    '40': '#1e1e1e', '41': '#991b1b', '42': '#166534', '43': '#854d0e',
+    '44': '#1e3a5f', '45': '#581c87', '46': '#164e63', '47': '#404040',
+  };
+
+  let result = '';
+  let fg = '';
+  let bg = '';
+  let bold = false;
+  let dim = false;
+
+  // eslint-disable-next-line no-control-regex
+  const parts = text.split(/(\x1b\[[0-9;]*m)/);
+
+  for (const part of parts) {
+    // eslint-disable-next-line no-control-regex
+    const match = part.match(/^\x1b\[([0-9;]*)m$/);
+    if (match) {
+      const codes = match[1].split(';').filter(Boolean);
+      for (const code of codes) {
+        if (code === '0') { fg = ''; bg = ''; bold = false; dim = false; }
+        else if (code === '1') bold = true;
+        else if (code === '2') dim = true;
+        else if (code === '22') { bold = false; dim = false; }
+        else if (colorMap[code]) fg = colorMap[code];
+        else if (bgMap[code]) bg = bgMap[code];
+        else if (code === '39') fg = '';
+        else if (code === '49') bg = '';
+      }
+    } else if (part) {
+      const escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const styles: string[] = [];
+      if (fg) styles.push(`color:${fg}`);
+      if (bg) styles.push(`background:${bg}`);
+      if (bold) styles.push('font-weight:bold');
+      if (dim) styles.push('opacity:0.6');
+      if (styles.length > 0) {
+        result += `<span style="${styles.join(';')}">${escaped}</span>`;
+      } else {
+        result += escaped;
+      }
+    }
+  }
+  return result;
+}
+
+export default function TmuxViewerPage() {
+  const params = useParams();
+  const session = params.session as string;
+  const [content, setContent] = useState('Connecting...');
+  const [connected, setConnected] = useState(false);
+  const [activeWindow, setActiveWindow] = useState<string | undefined>(undefined);
+  const termRef = useRef<HTMLPreElement>(null);
+  const autoScrollRef = useRef(true);
+
+  const { data: windowsData } = useSWR(
+    `/api/tmux/stream?session=${encodeURIComponent(session)}&windows=1`,
+    fetcher,
+    { refreshInterval: 5000 }
+  );
+  const windows: { index: string; name: string; active: boolean }[] = windowsData?.windows ?? [];
+
+  const connectSSE = useCallback(() => {
+    const url = `/api/tmux/stream?session=${encodeURIComponent(session)}${activeWindow ? `&window=${activeWindow}` : ''}`;
+    const es = new EventSource(url);
+
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        setContent(data);
+        setConnected(true);
+        if (autoScrollRef.current && termRef.current) {
+          termRef.current.scrollTop = termRef.current.scrollHeight;
+        }
+      } catch { /* skip */ }
+    };
+
+    es.onerror = () => {
+      setConnected(false);
+      es.close();
+      // Reconnect after 2s
+      setTimeout(connectSSE, 2000);
+    };
+
+    return es;
+  }, [session, activeWindow]);
+
+  useEffect(() => {
+    const es = connectSSE();
+    return () => es.close();
+  }, [connectSSE]);
+
+  // Handle scroll — disable auto-scroll when user scrolls up
+  const handleScroll = () => {
+    if (!termRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = termRef.current;
+    autoScrollRef.current = scrollHeight - scrollTop - clientHeight < 50;
+  };
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-2rem)]">
+      {/* Header */}
+      <div className="flex items-center gap-3 mb-3">
+        <Link href="/permacomputer" className="text-[var(--color-muted)] hover:text-[var(--color-foreground)] text-sm">
+          &larr; Back
+        </Link>
+        <h2 className="text-lg font-bold font-mono">{decodeURIComponent(session)}</h2>
+        <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
+        <span className="text-xs text-[var(--color-muted)]">{connected ? 'live' : 'reconnecting...'}</span>
+      </div>
+
+      {/* Window tabs */}
+      {windows.length > 1 && (
+        <div className="flex items-center gap-1 mb-2">
+          {windows.map(w => (
+            <button
+              key={w.index}
+              onClick={() => setActiveWindow(w.index)}
+              className={`px-3 py-1 text-xs rounded font-mono cursor-pointer transition-colors ${
+                (activeWindow ?? (windows.find(x => x.active)?.index)) === w.index
+                  ? 'bg-[var(--color-accent)] text-[var(--color-background)] font-bold'
+                  : 'bg-[var(--color-surface)] text-[var(--color-muted)] hover:text-[var(--color-foreground)]'
+              }`}
+            >
+              {w.index}:{w.name} {w.active ? '●' : ''}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Terminal */}
+      <pre
+        ref={termRef}
+        onScroll={handleScroll}
+        className="flex-1 bg-[#0d0d0d] rounded-lg border border-[var(--color-border)] p-4 overflow-auto font-mono text-sm leading-relaxed text-[#d4d4d4] whitespace-pre"
+        dangerouslySetInnerHTML={{ __html: ansiToHtml(content) }}
+      />
+    </div>
+  );
+}
