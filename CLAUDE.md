@@ -31,9 +31,82 @@ Then ask fox what the mission is.
 
 ## Architecture
 
-Turborepo monorepo: `apps/web` (Next.js 15 App Router), `packages/core` (DB, ingestion, adapters), `packages/ui`, `packages/config`. TypeScript + Tailwind v4 + better-sqlite3. Reads JSONL from `~/.claude/`, `~/.fetch/`, `~/.uncloseai/`, ingests into SQLite at `~/.claude/unfirehose.db`. Dashboard at `localhost:3000`.
+Turborepo monorepo. TypeScript + Tailwind v4 + better-sqlite3. Reads JSONL from `~/.claude/`, `~/.fetch/`, `~/.uncloseai/`, ingests into SQLite at `~/.claude/unfirehose.db`. Dashboard at `localhost:3000`.
 
-Key pages: Live, Active, Dashboard, Projects, Todos/Kanban, Thinking, All Logs, Tokens, Usage Monitor, Scrobble, Graph Explorer, Schema, Settings, Blog.
+### npm Packages (published under `@unturf` org on npmjs.com, account `fxhp`)
+
+| Package | Dir | npm | Purpose |
+|---------|-----|-----|---------|
+| `@unturf/unfirehose` | `packages/core` | [npm](https://www.npmjs.com/package/@unturf/unfirehose) | Core data layer — ingestion, SQLite schema, types, PII, formatters |
+| `@unturf/unfirehose-schema` | `packages/schema` | [npm](https://www.npmjs.com/package/@unturf/unfirehose-schema) | unfirehose/1.0 spec — JSON Schema files, TypeScript types, 16 harness adapter docs |
+| `@unturf/unfirehose-router` | `packages/router` | [npm](https://www.npmjs.com/package/@unturf/unfirehose-router) | CLI daemon — watches JSONL, forwards to cloud |
+| `@unturf/unfirehose-ui` | `packages/ui` | [npm](https://www.npmjs.com/package/@unturf/unfirehose-ui) | Shared React components |
+
+Private workspaces: `apps/web` (Next.js 15 App Router), `apps/worker` (background ingestion), `packages/config` (shared tsconfig).
+
+### Publishing
+
+npm token stored at `~/.npmrc` (600 perms, outside repo). Publish from each package dir:
+```bash
+cd packages/core && npm publish --access public
+cd packages/schema && npm publish --access public
+cd packages/router && npm publish --access public   # has prepublishOnly: tsc
+cd packages/ui && npm publish --access public
+```
+
+Key pages: Live, Active, Terminals, Dashboard, Projects, Todos/Kanban, Thinking, All Logs, Tokens, Usage Monitor, Scrobble, Graph Explorer, Schema, Settings, Permacomputer.
+
+### Permacomputer / Mesh
+
+The Permacomputer page (`/permacomputer`) manages a mesh of compute nodes. Nodes are discovered from `~/.ssh/config` and probed via SSH. Each node reports CPU, memory, disk, GPU, power consumption, running processes, and tmux sessions.
+
+Key files:
+- `apps/web/src/app/permacomputer/page.tsx` — main mesh overview with node cards, economics, bootstrap panel
+- `apps/web/src/app/permacomputer/unsandbox/page.tsx` — unsandbox.com cloud node page
+- `apps/web/src/app/usage/node/[hostname]/page.tsx` — per-node detail (System/Harnesses/Processes tabs)
+- `apps/web/src/app/api/mesh/route.ts` — mesh summary (local + SSH probes, RAPL power, GPU via nvidia-smi)
+- `apps/web/src/app/api/mesh/node/route.ts` — detailed single-node probe via SSH
+- `apps/web/src/app/api/mesh/history/route.ts` — time-series from `mesh_snapshots` table
+- `apps/web/src/app/api/unsandbox/route.ts` — unsandbox.com API proxy (HMAC-signed)
+- `apps/web/src/app/api/boot/route.ts` — bootstrap harnesses on nodes (tmux, SCP credentials, sudo)
+- `apps/web/src/app/api/tmux/stream/route.ts` — SSE tmux capture + interactive keystroke POST
+- `apps/web/src/app/tmux/[session]/page.tsx` — full-screen tmux viewer (local + remote via `?host=`)
+- `packages/core/mesh.ts` — `discoverNodes()` from SSH config
+
+### Unsandbox Integration
+
+API at `api.unsandbox.com`. Auth: HMAC-SHA256 signing with `${timestamp}:${method}:${path}:${body}`.
+
+Key endpoints used:
+- `GET /keys/self` — key status (returns `tier`, `rate_per_minute`/`rate_limit`, `concurrency`, `burst`)
+- `POST /execute` — one-shot code execution (`{ language, code, network }`)
+- `GET /sessions` — list active sessions
+- `DELETE /sessions/:id` — kill session
+- `POST /services` — create persistent service (`{ name, ports, bootstrap, network }`)
+- `GET /services` — list services
+- `DELETE /services/:id` — destroy service
+
+Network modes: `zerotrust` (no network) or `semitrusted` (egress proxy). The TypeScript SDK lives at `~/git/unsandbox.com/cli/un-inception/clients/typescript/sync/src/un.ts`.
+
+### Node Harnesses
+
+The Harnesses tab on node detail pages shows:
+- **Tmux sessions** — with live SSE preview and interactive Watch mode (send keystrokes via `tmux send-keys`)
+- **Bare claude processes** — parsed from `ps aux | grep claude` in probe data (PID, CPU%, MEM%, command)
+
+### Power Estimation
+
+- **RAPL** (`/sys/class/powercap/intel-rapl`) measures CPU package only
+- `calcNonCpuWatts()` adds RAM DIMMs, spinning disks, SSDs, baseline, PSU inefficiency
+- **nvidia-smi** `--query-gpu=power.draw` for real-time GPU wattage
+- **TDP** fallback from CPU model name lookup
+
+### Bootstrap
+
+The bootstrap panel (`/permacomputer`) deploys harnesses on SSH nodes:
+- SCP syncs `~/.claude/.credentials.json` and `~/.claude.json` (OAuth + onboarding state)
+- Optional sudo password for privileged setup (piped via `sudo -S` stdin)
+- Creates tmux session with harness command
 
 ## Todo System
 
