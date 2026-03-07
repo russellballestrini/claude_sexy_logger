@@ -593,66 +593,100 @@ export default function NodeDetailPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 gap-3">
-              {allEntries.map(s => {
-                const isActive = previewSession === s.name;
+            {tmuxEntries.length > 0 && (
+              <div className="grid grid-cols-1 gap-3">
+                <h3 className="text-xs font-bold text-[var(--color-muted)] uppercase tracking-wide">Tmux Sessions ({tmuxEntries.length})</h3>
+                {tmuxEntries.map(s => {
+                  const isActive = previewSession === s.name;
 
-                return (
-                  <div
-                    key={s.name}
-                    onClick={() => setPreviewSession(isActive ? null : s.name)}
-                    className={`bg-[var(--color-surface)] rounded border p-4 transition-colors cursor-pointer ${
-                      isActive ? 'border-[var(--color-accent)]' :
-                      'border-[var(--color-border)] hover:border-[var(--color-accent)]/50'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                        <span className="font-bold font-mono text-sm">{s.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                        {isLocal && (
-                          <Link
-                            href={`/tmux/${encodeURIComponent(s.name)}`}
-                            className="text-xs px-2 py-1 rounded bg-[var(--color-accent)] text-[var(--color-background)] font-bold hover:opacity-90 transition-opacity"
-                          >
-                            Full View
-                          </Link>
-                        )}
-                        {!isLocal && (
-                          <>
+                  return (
+                    <div
+                      key={s.name}
+                      onClick={() => setPreviewSession(isActive ? null : s.name)}
+                      className={`bg-[var(--color-surface)] rounded border p-4 transition-colors cursor-pointer ${
+                        isActive ? 'border-[var(--color-accent)]' :
+                        'border-[var(--color-border)] hover:border-[var(--color-accent)]/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                          <span className="font-bold font-mono text-sm">{s.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          {isLocal && (
                             <Link
-                              href={`/tmux/${encodeURIComponent(s.name)}?host=${encodeURIComponent(host)}`}
+                              href={`/tmux/${encodeURIComponent(s.name)}`}
                               className="text-xs px-2 py-1 rounded bg-[var(--color-accent)] text-[var(--color-background)] font-bold hover:opacity-90 transition-opacity"
                             >
-                              Watch
+                              Full View
                             </Link>
-                            <span className="text-xs text-[var(--color-muted)] font-mono">
-                              ssh {host} -t tmux attach -t {s.name}
-                            </span>
-                          </>
-                        )}
+                          )}
+                          {!isLocal && (
+                            <>
+                              <Link
+                                href={`/tmux/${encodeURIComponent(s.name)}?host=${encodeURIComponent(host)}`}
+                                className="text-xs px-2 py-1 rounded bg-[var(--color-accent)] text-[var(--color-background)] font-bold hover:opacity-90 transition-opacity"
+                              >
+                                Watch
+                              </Link>
+                              <span className="text-xs text-[var(--color-muted)] font-mono">
+                                ssh {host} -t tmux attach -t {s.name}
+                              </span>
+                            </>
+                          )}
+                        </div>
                       </div>
-                    </div>
 
-                    {/* Inline preview — shown when card is clicked */}
-                    {isActive && (
-                      <pre
-                        ref={previewRef}
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-3 bg-[#0d0d0d] rounded border border-[var(--color-border)] p-3 overflow-auto max-h-[60vh] font-mono text-xs leading-relaxed text-[#d4d4d4] whitespace-pre"
-                        dangerouslySetInnerHTML={{ __html: previewContent ? ansiToHtml(previewContent) : 'Connecting...' }}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                      {/* Inline preview — shown when card is clicked */}
+                      {isActive && (
+                        <pre
+                          ref={previewRef}
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-3 bg-[#0d0d0d] rounded border border-[var(--color-border)] p-3 overflow-auto max-h-[60vh] font-mono text-xs leading-relaxed text-[#d4d4d4] whitespace-pre"
+                          dangerouslySetInnerHTML={{ __html: previewContent ? ansiToHtml(previewContent) : 'Connecting...' }}
+                        />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {bareEntries.length > 0 && (
+              <div className="space-y-3">
+                <h3 className="text-xs font-bold text-[var(--color-muted)] uppercase tracking-wide">Bare Processes ({bareEntries.length})</h3>
+                <div className="grid grid-cols-1 gap-2">
+                  {bareEntries.map(p => (
+                    <div
+                      key={p.pid}
+                      className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                          <span className="font-bold font-mono text-sm">{p.name}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-[var(--color-muted)]">
+                          {p.tty && <span>TTY {p.tty}</span>}
+                          <span>CPU {p.cpu}%</span>
+                          <span>MEM {p.mem}%</span>
+                          {p.start && <span>started {p.start}</span>}
+                        </div>
+                      </div>
+                      {p.command && (
+                        <div className="mt-1 text-xs font-mono text-[var(--color-muted)] truncate">{p.command}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {allEntries.length > 0 && (
               <p className="text-xs text-[var(--color-muted)]">
-                Click a session to preview live output. {isLocal ? 'Full View' : 'Watch'} opens the interactive terminal viewer.
+                {tmuxEntries.length > 0 && <>Click a tmux session to preview live output. {isLocal ? 'Full View' : 'Watch'} opens the interactive terminal viewer. </>}
+                {bareEntries.length > 0 && <>Yellow dots indicate claude processes running outside tmux.</>}
               </p>
             )}
           </div>
@@ -679,7 +713,7 @@ export default function NodeDetailPage() {
           )}
 
           {probe?.processes?.length > 0 ? (
-            <Section title={`Top Processes (${probe.claudeProcesses ?? 0} claudes)`}>
+            <Section title={`Top Processes (${Array.isArray(probe.claudeProcesses) ? probe.claudeProcesses.length : probe.claudeProcesses ?? 0} claudes)`}>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
