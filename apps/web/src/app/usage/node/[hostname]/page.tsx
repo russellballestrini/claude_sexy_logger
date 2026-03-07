@@ -137,7 +137,17 @@ type Tab = (typeof TABS)[number];
 export default function NodeDetailPage() {
   const { hostname } = useParams<{ hostname: string }>();
   const host = decodeURIComponent(hostname);
-  const [activeTab, setActiveTab] = useState<Tab>('Overview');
+  const [activeTab, setActiveTabRaw] = useState<Tab>(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.slice(1);
+      if (TABS.includes(hash as Tab)) return hash as Tab;
+    }
+    return 'Overview';
+  });
+  const setActiveTab = (tab: Tab) => {
+    setActiveTabRaw(tab);
+    window.location.hash = tab;
+  };
 
   const { data: mesh } = useSWR('/api/mesh', fetcher, { refreshInterval: 10000 });
   const { data: probe, isLoading: probeLoading } = useSWR(
