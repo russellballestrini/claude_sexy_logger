@@ -86,9 +86,13 @@ const HARNESSES = [
 
 type BootStatus = { state: 'idle' } | { state: 'booting' } | { state: 'success'; detail: any } | { state: 'error'; detail: string };
 
+const TABS = ['Overview', 'Processes', 'Bootstrap', 'Settings'] as const;
+type Tab = (typeof TABS)[number];
+
 export default function NodeDetailPage() {
   const { hostname } = useParams<{ hostname: string }>();
   const host = decodeURIComponent(hostname);
+  const [activeTab, setActiveTab] = useState<Tab>('Overview');
 
   const { data: mesh } = useSWR('/api/mesh', fetcher, { refreshInterval: 10000 });
   const { data: probe, isLoading: probeLoading } = useSWR(
@@ -103,6 +107,18 @@ export default function NodeDetailPage() {
   const [ispCost, setIspCost] = useState(0);
   const [diskOverride, setDiskOverride] = useState<number | undefined>();
   const [wattsOverride, setWattsOverride] = useState<number | undefined>();
+
+  useEffect(() => {
+    if (!settings) return;
+    const r = settings[`electricity_rate_${host}`];
+    const i = settings[`isp_cost_${host}`];
+    const d = settings[`disk_override_${host}`];
+    const w = settings[`watts_override_${host}`];
+    if (r) setKwhRate(parseFloat(r) || DEFAULT_KWH_RATE);
+    if (i) setIspCost(parseFloat(i) || 0);
+    if (d) setDiskOverride(parseInt(d) || undefined);
+    if (w) setWattsOverride(parseFloat(w) || undefined);
+  }, [settings, host]);
 
   // Bootstrap harness state
   const [bootStatuses, setBootStatuses] = useState<Record<string, BootStatus>>({});
@@ -225,190 +241,174 @@ export default function NodeDetailPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* ===== LEFT COLUMN ===== */}
-        <div className="space-y-6">
+      {/* Tabs */}
+      <div className="flex gap-1 mb-6 border-b border-[var(--color-border)]">
+        {TABS.map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm font-medium transition-colors cursor-pointer -mb-px ${
+              activeTab === tab
+                ? 'border-b-2 border-[var(--color-accent)] text-[var(--color-accent)]'
+                : 'text-[var(--color-muted)] hover:text-[var(--color-foreground)]'
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
 
-          {/* System Info */}
-          <Section title="System">
-            {sys ? (
-              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
-                <KV label="CPU" value={sys.cpuModel?.replace(/\(R\)|\(TM\)/g, '').replace(/CPU\s+/i, '').trim()} />
-                <KV label="Cores" value={`${sys.cpuCores}${sys.cpuMhz ? ` @ ${Math.round(sys.cpuMhz)}MHz` : ''}`} />
-                <KV label="Architecture" value={sys.arch} />
-                <KV label="Kernel" value={sys.kernel} />
-                <KV label="OS" value={sys.os} />
-                <KV label="Cache" value={sys.cpuCache} />
-                {node?.cpuModel && <KV label="TDP" value={node.cpuTdpWatts ? `${node.cpuTdpWatts}W` : 'unknown'} />}
-              </div>
-            ) : probeLoading ? (
-              <div className="text-sm text-[var(--color-muted)] animate-pulse">Probing...</div>
-            ) : (
-              <div className="text-sm text-[var(--color-error)]">{probe?.error ?? 'Probe failed'}</div>
-            )}
-          </Section>
-
-          {/* CPU Load */}
-          {probe?.loadAvg && (
-            <Section title="CPU Load">
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm text-[var(--color-muted)]">
-                  <span>Load: {probe.loadAvg[0].toFixed(2)} / {probe.loadAvg[1].toFixed(2)} / {probe.loadAvg[2].toFixed(2)}</span>
-                  <span>{probe.runnable}</span>
+      {/* ===== OVERVIEW TAB ===== */}
+      {activeTab === 'Overview' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-6">
+            <Section title="System">
+              {sys ? (
+                <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                  <KV label="CPU" value={sys.cpuModel?.replace(/\(R\)|\(TM\)/g, '').replace(/CPU\s+/i, '').trim()} />
+                  <KV label="Cores" value={`${sys.cpuCores}${sys.cpuMhz ? ` @ ${Math.round(sys.cpuMhz)}MHz` : ''}`} />
+                  <KV label="Architecture" value={sys.arch} />
+                  <KV label="Kernel" value={sys.kernel} />
+                  <KV label="OS" value={sys.os} />
+                  <KV label="Cache" value={sys.cpuCache} />
+                  {node?.cpuModel && <KV label="TDP" value={node.cpuTdpWatts ? `${node.cpuTdpWatts}W` : 'unknown'} />}
                 </div>
-                <Bar pct={Math.min(loadPerCore * 100, 100)} color={loadPerCore > 2 ? 'var(--color-error)' : '#f97316'} />
-                <div className="text-xs text-[var(--color-muted)]">
-                  {(loadPerCore * 100).toFixed(0)}% per-core utilization
-                </div>
-              </div>
+              ) : probeLoading ? (
+                <div className="text-sm text-[var(--color-muted)] animate-pulse">Probing...</div>
+              ) : (
+                <div className="text-sm text-[var(--color-error)]">{probe?.error ?? 'Probe failed'}</div>
+              )}
             </Section>
-          )}
 
-          {/* Memory */}
-          {mem && (
-            <Section title="Memory">
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm text-[var(--color-muted)]">
-                  <span>{mem.usedGB.toFixed(1)}GB / {mem.totalGB.toFixed(1)}GB ({memPct.toFixed(0)}%)</span>
-                  <span>{mem.availableGB.toFixed(1)}G available</span>
-                </div>
-                <Bar pct={memPct} color={memPct > 85 ? 'var(--color-error)' : '#60a5fa'} />
-                <div className="flex gap-4 text-xs text-[var(--color-muted)] flex-wrap">
-                  <span>buffers: {mem.buffersGB}G</span>
-                  <span>cached: {mem.cachedGB}G</span>
-                  <span>shmem: {mem.shmemGB}G</span>
-                  {mem.dirtyMB > 0 && <span className="text-[var(--color-error)]">dirty: {mem.dirtyMB}MB</span>}
-                </div>
-                {mem.swapTotalGB > 0 && (
+            {probe?.loadAvg && (
+              <Section title="CPU Load">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm text-[var(--color-muted)]">
+                    <span>Load: {probe.loadAvg[0].toFixed(2)} / {probe.loadAvg[1].toFixed(2)} / {probe.loadAvg[2].toFixed(2)}</span>
+                    <span>{probe.runnable}</span>
+                  </div>
+                  <Bar pct={Math.min(loadPerCore * 100, 100)} color={loadPerCore > 2 ? 'var(--color-error)' : '#f97316'} />
                   <div className="text-xs text-[var(--color-muted)]">
-                    Swap: {mem.swapUsedGB}GB / {mem.swapTotalGB}GB
-                    {mem.swapUsedGB > 0.1 && (
-                      <span className="text-[var(--color-error)]"> ({((mem.swapUsedGB / mem.swapTotalGB) * 100).toFixed(0)}%)</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </Section>
-          )}
-
-          {/* Temperatures */}
-          {probe?.temperatures?.length > 0 && (
-            <Section title="Thermal Zones">
-              <div className="flex flex-wrap gap-3">
-                {probe.temperatures.map((t: any) => (
-                  <div key={t.zone} className="text-sm">
-                    <span className="text-[var(--color-muted)]">{t.zone}</span>{' '}
-                    <span className={t.tempC > 80 ? 'text-[var(--color-error)] font-bold' : t.tempC > 60 ? 'text-[#f97316]' : 'text-[var(--color-foreground)]'}>
-                      {t.tempC}°C
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </Section>
-          )}
-
-          {/* Disks */}
-          {probe?.disk?.length > 0 && (
-            <Section title="Disk">
-              <div className="space-y-2">
-                {probe.disk.filter((d: any) => !d.device.startsWith('tmpfs')).map((d: any) => (
-                  <div key={d.mount} className="space-y-1">
-                    <div className="flex justify-between text-xs text-[var(--color-muted)]">
-                      <span className="font-mono">{d.device}</span>
-                      <span>{d.mount} &middot; {d.used}/{d.size} ({d.usePct}%)</span>
-                    </div>
-                    <Bar pct={d.usePct} color={d.usePct > 90 ? 'var(--color-error)' : d.usePct > 75 ? '#f97316' : '#22c55e'} />
-                  </div>
-                ))}
-              </div>
-            </Section>
-          )}
-        </div>
-
-        {/* ===== RIGHT COLUMN ===== */}
-        <div className="space-y-6">
-
-          {/* Cost Tunables */}
-          <Section title="Cost Tunables">
-            <div className="space-y-3">
-              <TunableRow label="Electricity rate" unit="$/kWh" step={0.01}
-                value={kwhRate}
-                onChange={(v) => { setKwhRate(v); saveSetting(`electricity_rate_${host}`, String(v)); }}
-              />
-              <TunableRow label="ISP cost" unit="$/mo" step={1}
-                value={ispCost}
-                onChange={(v) => { setIspCost(v); saveSetting(`isp_cost_${host}`, String(v)); }}
-              />
-              <TunableRow label="Spinning disks" unit="HDDs" step={1}
-                value={diskOverride ?? ''}
-                placeholder={String(node?.spinningDisks ?? 0)}
-                onChange={(v) => { setDiskOverride(v || undefined); saveSetting(`disk_override_${host}`, String(v)); }}
-              />
-              <TunableRow label="Watts override" unit="W" step={1}
-                value={wattsOverride ?? ''}
-                placeholder="auto"
-                onChange={(v) => { setWattsOverride(v || undefined); saveSetting(`watts_override_${host}`, String(v)); }}
-              />
-              <div className="text-xs text-[var(--color-muted)] pt-1">
-                Auto-detected: {node?.spinningDisks ?? '?'} HDDs, {node?.ssdCount ?? '?'} SSDs via lsblk
-                {node?.cpuTdpWatts && <> &middot; {node.cpuTdpWatts}W CPU TDP</>}
-              </div>
-            </div>
-          </Section>
-
-          {/* GPU */}
-          {probe?.gpu?.hasGpu && (
-            <Section title="GPU">
-              {probe.gpu.nvidia?.map((g: any, i: number) => (
-                <div key={i} className="text-sm space-y-1 mb-2">
-                  <div className="font-bold">{g.name}</div>
-                  <div className="flex gap-4 text-[var(--color-muted)]">
-                    <span>{g.memUsed}/{g.memTotal} mem</span>
-                    <span>{g.utilization}% util</span>
-                    <span>{g.temp}°C</span>
-                    <span>{g.power}W</span>
+                    {(loadPerCore * 100).toFixed(0)}% per-core utilization
                   </div>
                 </div>
-              ))}
-            </Section>
-          )}
+              </Section>
+            )}
 
-          {/* Network */}
-          {probe?.network?.interfaces?.length > 0 && (
-            <Section title="Network">
-              <div className="space-y-1">
-                {probe.network.interfaces
-                  .filter((i: any) => i.state === 'UP' && !i.name.startsWith('lo') && !i.name.startsWith('veth'))
-                  .map((iface: any) => (
-                  <div key={iface.name} className="flex items-center gap-3 text-sm">
-                    <span className="w-2 h-2 rounded-full bg-green-500" />
-                    <span className="font-mono">{iface.name}</span>
-                    <span className="text-[var(--color-muted)] text-xs">{iface.addrs}</span>
+            {mem && (
+              <Section title="Memory">
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm text-[var(--color-muted)]">
+                    <span>{mem.usedGB.toFixed(1)}GB / {mem.totalGB.toFixed(1)}GB ({memPct.toFixed(0)}%)</span>
+                    <span>{mem.availableGB.toFixed(1)}G available</span>
                   </div>
-                ))}
-              </div>
-            </Section>
-          )}
-
-          {/* Containers */}
-          {probe?.containers?.length > 0 && (
-            <Section title={`Containers (${probe.containers.length})`}>
-              <div className="space-y-2">
-                {probe.containers.map((c: any) => (
-                  <div key={c.id} className="text-sm">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold">{c.name}</span>
-                      <span className="text-xs text-[var(--color-muted)]">{c.status}</span>
+                  <Bar pct={memPct} color={memPct > 85 ? 'var(--color-error)' : '#60a5fa'} />
+                  <div className="flex gap-4 text-xs text-[var(--color-muted)] flex-wrap">
+                    <span>buffers: {mem.buffersGB}G</span>
+                    <span>cached: {mem.cachedGB}G</span>
+                    <span>shmem: {mem.shmemGB}G</span>
+                    {mem.dirtyMB > 0 && <span className="text-[var(--color-error)]">dirty: {mem.dirtyMB}MB</span>}
+                  </div>
+                  {mem.swapTotalGB > 0 && (
+                    <div className="text-xs text-[var(--color-muted)]">
+                      Swap: {mem.swapUsedGB}GB / {mem.swapTotalGB}GB
+                      {mem.swapUsedGB > 0.1 && (
+                        <span className="text-[var(--color-error)]"> ({((mem.swapUsedGB / mem.swapTotalGB) * 100).toFixed(0)}%)</span>
+                      )}
                     </div>
-                    <div className="text-xs text-[var(--color-muted)]">{c.image}</div>
-                    {c.ports && <div className="text-xs text-[var(--color-muted)] font-mono">{c.ports}</div>}
+                  )}
+                </div>
+              </Section>
+            )}
+
+            {probe?.temperatures?.length > 0 && (
+              <Section title="Thermal Zones">
+                <div className="flex flex-wrap gap-3">
+                  {probe.temperatures.map((t: any) => (
+                    <div key={t.zone} className="text-sm">
+                      <span className="text-[var(--color-muted)]">{t.zone}</span>{' '}
+                      <span className={t.tempC > 80 ? 'text-[var(--color-error)] font-bold' : t.tempC > 60 ? 'text-[#f97316]' : 'text-[var(--color-foreground)]'}>
+                        {t.tempC}°C
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
+          </div>
+
+          <div className="space-y-6">
+            {probe?.disk?.length > 0 && (
+              <Section title="Disk">
+                <div className="space-y-2">
+                  {probe.disk.filter((d: any) => !d.device.startsWith('tmpfs')).map((d: any) => (
+                    <div key={d.mount} className="space-y-1">
+                      <div className="flex justify-between text-xs text-[var(--color-muted)]">
+                        <span className="font-mono">{d.device}</span>
+                        <span>{d.mount} &middot; {d.used}/{d.size} ({d.usePct}%)</span>
+                      </div>
+                      <Bar pct={d.usePct} color={d.usePct > 90 ? 'var(--color-error)' : d.usePct > 75 ? '#f97316' : '#22c55e'} />
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {probe?.gpu?.hasGpu && (
+              <Section title="GPU">
+                {probe.gpu.nvidia?.map((g: any, i: number) => (
+                  <div key={i} className="text-sm space-y-1 mb-2">
+                    <div className="font-bold">{g.name}</div>
+                    <div className="flex gap-4 text-[var(--color-muted)]">
+                      <span>{g.memUsed}/{g.memTotal} mem</span>
+                      <span>{g.utilization}% util</span>
+                      <span>{g.temp}°C</span>
+                      <span>{g.power}W</span>
+                    </div>
                   </div>
                 ))}
-              </div>
-            </Section>
-          )}
+              </Section>
+            )}
 
-          {/* Sessions */}
+            {probe?.network?.interfaces?.length > 0 && (
+              <Section title="Network">
+                <div className="space-y-1">
+                  {probe.network.interfaces
+                    .filter((i: any) => i.state === 'UP' && !i.name.startsWith('lo') && !i.name.startsWith('veth'))
+                    .map((iface: any) => (
+                    <div key={iface.name} className="flex items-center gap-3 text-sm">
+                      <span className="w-2 h-2 rounded-full bg-green-500" />
+                      <span className="font-mono">{iface.name}</span>
+                      <span className="text-[var(--color-muted)] text-xs">{iface.addrs}</span>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {probe?.containers?.length > 0 && (
+              <Section title={`Containers (${probe.containers.length})`}>
+                <div className="space-y-2">
+                  {probe.containers.map((c: any) => (
+                    <div key={c.id} className="text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold">{c.name}</span>
+                        <span className="text-xs text-[var(--color-muted)]">{c.status}</span>
+                      </div>
+                      <div className="text-xs text-[var(--color-muted)]">{c.image}</div>
+                      {c.ports && <div className="text-xs text-[var(--color-muted)] font-mono">{c.ports}</div>}
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ===== PROCESSES TAB ===== */}
+      {activeTab === 'Processes' && (
+        <div className="space-y-6">
           {(probe?.sessions?.tmux?.length > 0 || probe?.sessions?.screen?.length > 0) && (
             <Section title="Sessions">
               {probe.sessions.tmux?.map((s: any) => (
@@ -425,8 +425,7 @@ export default function NodeDetailPage() {
             </Section>
           )}
 
-          {/* Top Processes */}
-          {probe?.processes?.length > 0 && (
+          {probe?.processes?.length > 0 ? (
             <Section title={`Top Processes (${probe.claudeProcesses ?? 0} claudes)`}>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
@@ -440,37 +439,38 @@ export default function NodeDetailPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {probe.processes.slice(0, 25).map((p: any, i: number) => (
+                    {probe.processes.slice(0, 40).map((p: any, i: number) => (
                       <tr key={i} className="border-t border-[var(--color-border)]">
                         <td className="py-0.5 pr-3 text-[var(--color-muted)]">{p.user}</td>
                         <td className={`py-0.5 pr-3 text-right ${parseFloat(p.cpu) > 50 ? 'text-[var(--color-error)]' : ''}`}>{p.cpu}</td>
                         <td className="py-0.5 pr-3 text-right">{p.mem}</td>
                         <td className="py-0.5 pr-3 text-right text-[var(--color-muted)]">{p.rss}</td>
-                        <td className="py-0.5 font-mono truncate max-w-[300px]">{p.command}</td>
+                        <td className="py-0.5 font-mono truncate max-w-[500px]">{p.command}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </Section>
+          ) : (
+            <div className="text-sm text-[var(--color-muted)]">No process data available.</div>
           )}
         </div>
-      </div>
+      )}
 
-      {/* ===== BOOTSTRAP HARNESSES ===== */}
-      <div className="mt-6">
-        <Section title={
-          <div className="flex items-center justify-between">
-            <span>Bootstrap Harnesses <span className="text-xs font-normal text-[var(--color-muted)]">target: {bootHost}</span></span>
+      {/* ===== BOOTSTRAP TAB ===== */}
+      {activeTab === 'Bootstrap' && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-sm text-[var(--color-muted)]">target: <span className="font-mono text-[var(--color-foreground)]">{bootHost}</span></span>
             <input
               type="text"
               placeholder="Filter..."
               value={bootFilter}
               onChange={(e) => setBootFilter(e.target.value)}
-              className="text-xs bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-1 w-32 font-normal"
+              className="text-xs bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-1 w-32"
             />
           </div>
-        }>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {HARNESSES
               .filter(h => !bootFilter || h.name.toLowerCase().includes(bootFilter.toLowerCase()) || h.tags.some(t => t.includes(bootFilter.toLowerCase())))
@@ -546,8 +546,40 @@ export default function NodeDetailPage() {
             Bootstraps into ~/git/ on {bootHost}. Uses tmux for session management.
             {!isLocal && ' Requires SSH key access.'}
           </p>
-        </Section>
-      </div>
+        </div>
+      )}
+
+      {/* ===== SETTINGS TAB ===== */}
+      {activeTab === 'Settings' && (
+        <div className="max-w-lg">
+          <Section title="Cost Tunables">
+            <div className="space-y-3">
+              <TunableRow label="Electricity rate" unit="$/kWh" step={0.01}
+                value={kwhRate}
+                onChange={(v) => { setKwhRate(v); saveSetting(`electricity_rate_${host}`, String(v)); }}
+              />
+              <TunableRow label="ISP cost" unit="$/mo" step={1}
+                value={ispCost}
+                onChange={(v) => { setIspCost(v); saveSetting(`isp_cost_${host}`, String(v)); }}
+              />
+              <TunableRow label="Spinning disks" unit="HDDs" step={1}
+                value={diskOverride ?? ''}
+                placeholder={String(node?.spinningDisks ?? 0)}
+                onChange={(v) => { setDiskOverride(v || undefined); saveSetting(`disk_override_${host}`, String(v)); }}
+              />
+              <TunableRow label="Watts override" unit="W" step={1}
+                value={wattsOverride ?? ''}
+                placeholder="auto"
+                onChange={(v) => { setWattsOverride(v || undefined); saveSetting(`watts_override_${host}`, String(v)); }}
+              />
+              <div className="text-xs text-[var(--color-muted)] pt-1">
+                Auto-detected: {node?.spinningDisks ?? '?'} HDDs, {node?.ssdCount ?? '?'} SSDs via lsblk
+                {node?.cpuTdpWatts && <> &middot; {node.cpuTdpWatts}W CPU TDP</>}
+              </div>
+            </div>
+          </Section>
+        </div>
+      )}
     </div>
   );
 }
