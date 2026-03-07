@@ -1,6 +1,6 @@
 'use client';
 
-import { use, useState } from 'react';
+import { use, useState, useEffect, useCallback } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
 import type { SessionIndexEntry, ProjectMetadata } from '@unturf/unfirehose/types';
@@ -11,6 +11,18 @@ import { SessionPopover } from '@unturf/unfirehose-ui/SessionPopover';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+const TABS = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'sessions', label: 'Sessions' },
+  { key: 'commits', label: 'Commits' },
+  { key: 'todos', label: 'Todos' },
+  { key: 'activity', label: 'Activity' },
+  { key: 'tokens', label: 'Tokens' },
+  { key: 'code', label: 'Code' },
+] as const;
+
+type TabKey = (typeof TABS)[number]['key'];
 
 function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
@@ -42,14 +54,15 @@ export default function ProjectPage({
 }) {
   const { project } = use(params);
   const decodedProject = decodeURIComponent(project);
+  const [tab, setTab] = useState<TabKey>('overview');
   const [yolo, setYolo] = useState(true);
   const [booting, setBooting] = useState(false);
   const [bootResult, setBootResult] = useState<string | null>(null);
   const [bootTmux, setBootTmux] = useState<{ session: string; host: string } | null>(null);
-  const [showAllSessions, setShowAllSessions] = useState(false);
   const [newTask, setNewTask] = useState('');
   const [taskSubmitting, setTaskSubmitting] = useState(false);
 
+  // Core data
   const { data, error } = useSWR<{
     project: string;
     originalPath: string;
@@ -66,9 +79,20 @@ export default function ProjectPage({
     fetcher
   );
 
-  // Fetch global activity for progress bars
   const { data: globalActivity } = useSWR<any[]>(
     '/api/projects/activity?days=30',
+    fetcher
+  );
+
+  // Activity data (prompt-commit correlation)
+  const { data: activityData } = useSWR<any>(
+    `/api/projects/activity?project=${encodeURIComponent(decodedProject)}`,
+    fetcher
+  );
+
+  // Git data (for code tab) — only fetch when on code tab
+  const { data: gitData, mutate: mutateGit } = useSWR<any>(
+    tab === 'code' ? `/api/projects/${project}/git` : null,
     fetcher
   );
 
@@ -121,7 +145,7 @@ export default function ProjectPage({
       });
       const todoResult = await todoRes.json();
       if (startNow && !data?.originalPath) {
-        setBootResult('Error: No project path — cannot spawn agent. Set path in project settings or re-ingest.');
+        setBootResult('Error: No project path — cannot spawn agent.');
       } else if (startNow && data?.originalPath) {
         const res = await fetch('/api/boot', {
           method: 'POST',
@@ -162,11 +186,12 @@ export default function ProjectPage({
     { input: 0, output: 0, cost: 0 }
   );
 
-  const visibleSessions = showAllSessions ? data.sessions : data.sessions.slice(0, 25);
   const fetchRemotes = meta?.remotes?.filter((r: any) => r.type === 'fetch') ?? [];
+  const todoCount = full?.todos?.length ?? 0;
+  const commitCount = meta?.recentCommits?.length ?? 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageContext
         pageType="project-detail"
         summary={`Project: ${decodedProject}. ${data.sessions.length} sessions.`}
@@ -178,11 +203,6 @@ export default function ProjectPage({
         <div className="flex items-center gap-3 text-sm">
           <Link href="/projects" className="text-[var(--color-muted)] hover:text-[var(--color-foreground)]">
             &larr; Projects
-          </Link>
-          <span className="text-[var(--color-border)]">/</span>
-          <span className="text-[var(--color-foreground)] font-bold">Overview</span>
-          <Link href={`/projects/${project}/kanban`} className="text-[var(--color-muted)] hover:text-[var(--color-accent)] transition-colors">
-            Kanban
           </Link>
         </div>
         <div className="flex items-center gap-3 mt-1">
@@ -249,6 +269,82 @@ export default function ProjectPage({
         )}
       </div>
 
+      {/* Tab bar */}
+      <div className="flex items-center gap-1 border-b border-[var(--color-border)] overflow-x-auto">
+        {TABS.map((t) => {
+          const badge =
+            t.key === 'sessions' ? data.sessions.length :
+            t.key === 'todos' ? todoCount :
+            t.key === 'commits' ? commitCount :
+            null;
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                tab === t.key
+                  ? 'border-[var(--color-accent)] text-[var(--color-accent)]'
+                  : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-foreground)] hover:border-[var(--color-border)]'
+              }`}
+            >
+              {t.label}
+              {badge != null && badge > 0 && (
+                <span className="ml-1.5 text-xs px-1.5 py-0.5 rounded-full bg-[var(--color-surface-hover)]">{badge}</span>
+              )}
+            </button>
+          );
+        })}
+        <Link
+          href={`/projects/${project}/kanban`}
+          className="px-4 py-2 text-sm font-medium border-b-2 border-transparent text-[var(--color-muted)] hover:text-[var(--color-foreground)] hover:border-[var(--color-border)] transition-colors whitespace-nowrap"
+        >
+          Kanban
+        </Link>
+      </div>
+
+      {/* Tab content */}
+      {tab === 'overview' && (
+        <OverviewTab
+          full={full}
+          data={data}
+          meta={meta}
+          project={project}
+          decodedProject={decodedProject}
+          thisActivity={thisActivity}
+          globalTotals={globalTotals}
+          fetchRemotes={fetchRemotes}
+          newTask={newTask}
+          setNewTask={setNewTask}
+          addTask={addTask}
+          taskSubmitting={taskSubmitting}
+        />
+      )}
+      {tab === 'sessions' && (
+        <SessionsTab data={data} project={project} />
+      )}
+      {tab === 'commits' && (
+        <CommitsTab meta={meta} fetchRemotes={fetchRemotes} activityData={activityData} project={project} />
+      )}
+      {tab === 'todos' && (
+        <TodosTab full={full} project={project} decodedProject={decodedProject} />
+      )}
+      {tab === 'activity' && (
+        <ActivityTab activityData={activityData} project={project} decodedProject={decodedProject} />
+      )}
+      {tab === 'tokens' && (
+        <TokensTab full={full} thisActivity={thisActivity} globalTotals={globalTotals} />
+      )}
+      {tab === 'code' && (
+        <CodeTab gitData={gitData} mutateGit={mutateGit} project={project} />
+      )}
+    </div>
+  );
+}
+
+/* ─── OVERVIEW TAB ─── */
+function OverviewTab({ full, data, meta, project, decodedProject, thisActivity, globalTotals, fetchRemotes, newTask, setNewTask, addTask, taskSubmitting }: any) {
+  return (
+    <div className="space-y-6">
       {/* Stats bar */}
       {full?.stats && (
         <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
@@ -261,16 +357,15 @@ export default function ProjectPage({
         </div>
       )}
 
-      {/* Main two-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
-        {/* Left column — actions & activity */}
+        {/* Left */}
         <div className="space-y-6 min-w-0">
           {/* Task input */}
           <div className="border-2 border-[var(--color-accent)] rounded-lg p-4 bg-[var(--color-surface)]">
             <textarea
               value={newTask}
-              onChange={(e) => setNewTask(e.target.value)}
-              onKeyDown={(e) => {
+              onChange={(e: any) => setNewTask(e.target.value)}
+              onKeyDown={(e: any) => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addTask(true); }
                 if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); addTask(false); }
               }}
@@ -284,48 +379,43 @@ export default function ProjectPage({
                 {data?.originalPath ? 'Ctrl+Enter starts now, Shift+Enter queues' : 'No project path — queue only'}
               </span>
               <div className="flex gap-2">
-                <button
-                  onClick={() => addTask(false)}
-                  disabled={!newTask.trim() || taskSubmitting}
-                  className="px-3 py-1.5 text-sm bg-[var(--color-surface-hover)] text-[var(--color-foreground)] rounded-lg hover:bg-[var(--color-border)] transition-colors disabled:opacity-40"
-                >
+                <button onClick={() => addTask(false)} disabled={!newTask.trim() || taskSubmitting}
+                  className="px-3 py-1.5 text-sm bg-[var(--color-surface-hover)] text-[var(--color-foreground)] rounded-lg hover:bg-[var(--color-border)] transition-colors disabled:opacity-40">
                   Queue
                 </button>
-                <button
-                  onClick={() => addTask(true)}
-                  disabled={!newTask.trim() || taskSubmitting}
-                  className="px-4 py-1.5 text-sm font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
-                >
+                <button onClick={() => addTask(true)} disabled={!newTask.trim() || taskSubmitting}
+                  className="px-4 py-1.5 text-sm font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40">
                   {taskSubmitting ? 'Starting...' : 'Start Now'}
                 </button>
               </div>
             </div>
           </div>
 
-          {/* Open Todos */}
+          {/* Open Todos (compact) */}
           <div className="border border-[var(--color-border)] rounded p-4">
             <div className="flex items-center gap-2 mb-3">
               <h3 className="text-sm font-bold text-[var(--color-muted)]">Open Todos</h3>
               {full?.todos?.length > 0 && <span className="text-xs text-[var(--color-muted)]">{full.todos.length}</span>}
               <Link href={`/projects/${project}/kanban`} className="text-xs text-[var(--color-accent)] hover:underline ml-auto">Kanban</Link>
-              <Link href="/todos" className="text-xs text-[var(--color-accent)] hover:underline">All todos</Link>
             </div>
-            {full?.todos?.length > 0 && (
+            {full?.todos?.length > 0 ? (
               <div className="space-y-1">
-                {full.todos.map((t: any) => (
+                {full.todos.slice(0, 8).map((t: any) => (
                   <div key={t.id} className="flex items-center gap-2 text-sm">
                     <span
                       className={`w-2 h-2 rounded-full shrink-0${t.status === 'in_progress' ? ' animate-pulse' : ''}`}
                       style={{ backgroundColor: t.status === 'pending' ? '#fbbf24' : t.status === 'in_progress' ? '#60a5fa' : '#22c55e' }}
                     />
                     <span className="flex-1 truncate">{t.content}</span>
-                    <span className="text-xs text-[var(--color-muted)] shrink-0">
-                      {t.source !== 'claude' && <span className="mr-1">[{t.source}]</span>}
-                      {formatRelativeTime(t.updatedAt)}
-                    </span>
+                    <span className="text-xs text-[var(--color-muted)] shrink-0">{formatRelativeTime(t.updatedAt)}</span>
                   </div>
                 ))}
+                {full.todos.length > 8 && (
+                  <button onClick={() => {}} className="text-xs text-[var(--color-accent)]">+{full.todos.length - 8} more</button>
+                )}
               </div>
+            ) : (
+              <p className="text-sm text-[var(--color-muted)]">No open todos</p>
             )}
           </div>
 
@@ -334,17 +424,13 @@ export default function ProjectPage({
             <div className="border border-[var(--color-border)] rounded p-4">
               <h3 className="text-sm font-bold mb-3 text-[var(--color-muted)]">Recent Prompts</h3>
               <div className="space-y-2">
-                {full.prompts.map((p: any, i: number) => (
+                {full.prompts.slice(0, 5).map((p: any, i: number) => (
                   <div key={i} className="text-sm border-l-2 border-[var(--color-border)] pl-3">
-                    <Link
-                      href={`/projects/${project}/${p.sessionUuid}`}
-                      className="text-[var(--color-foreground)] hover:text-[var(--color-accent)] transition-colors"
-                    >
+                    <Link href={`/projects/${project}/${p.sessionUuid}`} className="text-[var(--color-foreground)] hover:text-[var(--color-accent)] transition-colors">
                       {p.text}
                     </Link>
                     <div className="flex gap-2 text-xs text-[var(--color-muted)] mt-1">
                       <span>{formatRelativeTime(p.timestamp)}</span>
-                      {p.sessionDisplay && <span>{p.sessionDisplay}</span>}
                       {p.model && <span className="font-mono">{p.model.replace('claude-', '')}</span>}
                     </div>
                   </div>
@@ -353,96 +439,42 @@ export default function ProjectPage({
             </div>
           )}
 
-          {/* Sessions table */}
+          {/* Recent Sessions (compact — 5 rows) */}
           <div>
-            <h3 className="text-sm font-bold text-[var(--color-muted)] mb-3">
-              Sessions ({data.sessions.length})
-            </h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-[var(--color-muted)] border-b border-[var(--color-border)]">
-                    <th className="pb-2 pr-4">Session</th>
-                    <th className="pb-2 pr-4 w-20">Msgs</th>
-                    <th className="pb-2 pr-4 w-28">Branch</th>
-                    <th className="pb-2 pr-4 w-36">Modified</th>
-                    <th className="pb-2 w-10"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visibleSessions.map((session) => (
-                    <tr
-                      key={session.sessionId}
-                      className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]"
-                    >
-                      <td className="py-2 pr-4">
-                        <Link
-                          href={`/projects/${project}/${session.sessionId}`}
-                          className="hover:text-[var(--color-accent)] transition-colors"
-                        >
-                          {session.displayName ?? session.firstPrompt ?? session.sessionId.slice(0, 8)}
-                        </Link>
-                        {session.isSidechain && (
-                          <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-[var(--color-surface-hover)] text-[var(--color-muted)]">
-                            sidechain
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2 pr-4 text-[var(--color-muted)]">{session.messageCount ?? '?'}</td>
-                      <td className="py-2 pr-4 text-[var(--color-muted)] truncate max-w-28">{session.gitBranch ?? '-'}</td>
-                      <td className="py-2 pr-4 text-[var(--color-muted)]">
-                        {session.modified ? formatRelativeTime(session.modified) : '-'}
-                      </td>
-                      <td className="py-2">
-                        <SessionPopover
-                          sessionId={session.sessionId}
-                          project={project}
-                          projectPath={data.originalPath}
-                          firstPrompt={session.firstPrompt ?? undefined}
-                          messageCount={session.messageCount ?? undefined}
-                          gitBranch={session.gitBranch ?? undefined}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="flex items-center gap-2 mb-2">
+              <h3 className="text-sm font-bold text-[var(--color-muted)]">Recent Sessions</h3>
+              <button onClick={() => {}} className="text-xs text-[var(--color-accent)] hover:underline ml-auto">View all</button>
             </div>
-            {data.sessions.length > 25 && !showAllSessions && (
-              <button
-                onClick={() => setShowAllSessions(true)}
-                className="mt-2 text-sm text-[var(--color-accent)] hover:underline"
-              >
-                Show all {data.sessions.length} sessions
-              </button>
-            )}
+            <table className="w-full text-sm">
+              <tbody>
+                {data.sessions.slice(0, 5).map((session: SessionIndexEntry) => (
+                  <tr key={session.sessionId} className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]">
+                    <td className="py-2 pr-4">
+                      <Link href={`/projects/${project}/${session.sessionId}`} className="hover:text-[var(--color-accent)] transition-colors">
+                        {session.displayName ?? session.firstPrompt ?? session.sessionId.slice(0, 8)}
+                      </Link>
+                    </td>
+                    <td className="py-2 pr-4 text-[var(--color-muted)] w-20">{session.messageCount ?? '?'} msgs</td>
+                    <td className="py-2 text-[var(--color-muted)] w-28">{session.modified ? formatRelativeTime(session.modified) : '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
 
-        {/* Right column — info sidebar */}
+        {/* Right sidebar */}
         <div className="space-y-4">
-          {/* Usage share (30d) */}
+          {/* Usage share */}
           {thisActivity && globalTotals.cost > 0 && (
             <div className="border border-[var(--color-border)] rounded p-4 space-y-2">
               <h3 className="text-sm font-bold text-[var(--color-muted)]">30-Day Usage Share</h3>
-              <ProgressBar
-                label="Input"
-                value={thisActivity.total_input}
-                max={globalTotals.input}
-                detail={`${formatTokens(thisActivity.total_input)} / ${formatTokens(globalTotals.input)}`}
-              />
-              <ProgressBar
-                label="Output"
-                value={thisActivity.total_output}
-                max={globalTotals.output}
-                detail={`${formatTokens(thisActivity.total_output)} / ${formatTokens(globalTotals.output)}`}
-              />
-              <ProgressBar
-                label="Cost"
-                value={thisActivity.cost_estimate}
-                max={globalTotals.cost}
-                detail={`$${thisActivity.cost_estimate.toFixed(0)} / $${globalTotals.cost.toFixed(0)}`}
-              />
+              <ProgressBar label="Input" value={thisActivity.total_input} max={globalTotals.input}
+                detail={`${formatTokens(thisActivity.total_input)} / ${formatTokens(globalTotals.input)}`} />
+              <ProgressBar label="Output" value={thisActivity.total_output} max={globalTotals.output}
+                detail={`${formatTokens(thisActivity.total_output)} / ${formatTokens(globalTotals.output)}`} />
+              <ProgressBar label="Cost" value={thisActivity.cost_estimate} max={globalTotals.cost}
+                detail={`$${thisActivity.cost_estimate.toFixed(0)} / $${globalTotals.cost.toFixed(0)}`} />
             </div>
           )}
 
@@ -487,7 +519,7 @@ export default function ProjectPage({
             <div className="border border-[var(--color-border)] rounded p-4">
               <h3 className="text-sm font-bold mb-2 text-[var(--color-muted)]">Recent Commits</h3>
               <div className="space-y-1.5 font-mono text-xs">
-                {meta.recentCommits.slice(0, 10).map((c) => {
+                {meta.recentCommits.slice(0, 5).map((c: any) => {
                   const commitLinks = fetchRemotes
                     .map((r: any) => ({ name: r.name, url: commitUrl(r.url, c.hash) }))
                     .filter((l: any) => l.url);
@@ -520,6 +552,556 @@ export default function ProjectPage({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ─── SESSIONS TAB ─── */
+function SessionsTab({ data, project }: { data: any; project: string }) {
+  const [search, setSearch] = useState('');
+  const [showAll, setShowAll] = useState(false);
+
+  const filtered = data.sessions.filter((s: SessionIndexEntry) => {
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return (
+      (s.displayName ?? '').toLowerCase().includes(q) ||
+      (s.firstPrompt ?? '').toLowerCase().includes(q) ||
+      (s.gitBranch ?? '').toLowerCase().includes(q) ||
+      s.sessionId.toLowerCase().includes(q)
+    );
+  });
+
+  const visible = showAll ? filtered : filtered.slice(0, 50);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search sessions..."
+          className="flex-1 max-w-sm px-3 py-1.5 text-sm rounded border border-[var(--color-border)] bg-[var(--color-surface)] focus:outline-none focus:border-[var(--color-accent)]"
+        />
+        <span className="text-sm text-[var(--color-muted)]">{filtered.length} sessions</span>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-[var(--color-muted)] border-b border-[var(--color-border)]">
+              <th className="pb-2 pr-4">Session</th>
+              <th className="pb-2 pr-4 w-20">Msgs</th>
+              <th className="pb-2 pr-4 w-28">Branch</th>
+              <th className="pb-2 pr-4 w-36">Modified</th>
+              <th className="pb-2 w-10"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((session: SessionIndexEntry) => (
+              <tr key={session.sessionId} className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]">
+                <td className="py-2 pr-4">
+                  <Link href={`/projects/${project}/${session.sessionId}`} className="hover:text-[var(--color-accent)] transition-colors">
+                    {session.displayName ?? session.firstPrompt ?? session.sessionId.slice(0, 8)}
+                  </Link>
+                  {session.isSidechain && (
+                    <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-[var(--color-surface-hover)] text-[var(--color-muted)]">sidechain</span>
+                  )}
+                </td>
+                <td className="py-2 pr-4 text-[var(--color-muted)]">{session.messageCount ?? '?'}</td>
+                <td className="py-2 pr-4 text-[var(--color-muted)] truncate max-w-28">{session.gitBranch ?? '-'}</td>
+                <td className="py-2 pr-4 text-[var(--color-muted)]">
+                  {session.modified ? formatRelativeTime(session.modified) : '-'}
+                </td>
+                <td className="py-2">
+                  <SessionPopover
+                    sessionId={session.sessionId}
+                    project={project}
+                    projectPath={data.originalPath}
+                    firstPrompt={session.firstPrompt ?? undefined}
+                    messageCount={session.messageCount ?? undefined}
+                    gitBranch={session.gitBranch ?? undefined}
+                  />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {filtered.length > 50 && !showAll && (
+        <button onClick={() => setShowAll(true)} className="text-sm text-[var(--color-accent)] hover:underline">
+          Show all {filtered.length} sessions
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ─── COMMITS TAB ─── */
+function CommitsTab({ meta, fetchRemotes, activityData, project }: any) {
+  const commits = meta?.recentCommits ?? [];
+  const prompts = activityData?.recentPrompts ?? [];
+
+  return (
+    <div className="space-y-6">
+      {/* Git status badges */}
+      {activityData?.git && (
+        <div className="flex gap-3 text-sm">
+          {activityData.git.isDirty && (
+            <span className="px-2 py-1 rounded bg-yellow-400/10 text-yellow-400 font-mono text-xs">uncommitted changes</span>
+          )}
+          {activityData.git.unpushedCount > 0 && (
+            <span className="px-2 py-1 rounded bg-orange-400/10 text-orange-400 font-mono text-xs">{activityData.git.unpushedCount} unpushed</span>
+          )}
+          {!activityData.git.isDirty && activityData.git.unpushedCount === 0 && (
+            <span className="px-2 py-1 rounded bg-green-400/10 text-green-400 font-mono text-xs">clean</span>
+          )}
+        </div>
+      )}
+
+      {/* Commit list */}
+      <div className="border border-[var(--color-border)] rounded">
+        <div className="px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+          <h3 className="text-sm font-bold text-[var(--color-muted)]">Commits ({commits.length})</h3>
+        </div>
+        {commits.length > 0 ? (
+          <div className="divide-y divide-[var(--color-border)]">
+            {commits.map((c: any) => {
+              const commitLinks = fetchRemotes
+                .map((r: any) => ({ name: r.name, url: commitUrl(r.url, c.hash) }))
+                .filter((l: any) => l.url);
+              // Find matching prompt
+              const matchedPrompt = prompts.find((p: any) => p.commitHash === c.hash);
+              return (
+                <div key={c.hash} className="px-4 py-3 hover:bg-[var(--color-surface-hover)]">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">{c.subject}</p>
+                      {matchedPrompt && (
+                        <div className="mt-1 text-xs text-[var(--color-muted)] border-l-2 border-[var(--color-accent)] pl-2">
+                          <Link href={`/projects/${project}/${matchedPrompt.sessionId}`} className="hover:text-[var(--color-accent)]">
+                            Prompt: {matchedPrompt.prompt}
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {commitLinks.length > 0 ? (
+                        <a href={commitLinks[0].url!} target="_blank" rel="noopener noreferrer" className="font-mono text-xs text-[var(--color-accent)] hover:underline">
+                          {c.hash}
+                        </a>
+                      ) : (
+                        <span className="font-mono text-xs text-[var(--color-accent)]">{c.hash}</span>
+                      )}
+                      {c.date && <span className="text-xs text-[var(--color-muted)]">{formatRelativeTime(c.date)}</span>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="px-4 py-8 text-center text-[var(--color-muted)]">No commits found</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── TODOS TAB ─── */
+function TodosTab({ full, project, decodedProject }: any) {
+  const todos = full?.todos ?? [];
+  const pending = todos.filter((t: any) => t.status === 'pending');
+  const inProgress = todos.filter((t: any) => t.status === 'in_progress');
+  const completed = todos.filter((t: any) => t.status === 'completed');
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <div className="flex gap-2 text-sm">
+          <span className="px-2 py-0.5 rounded bg-[var(--color-surface-hover)]">{pending.length} pending</span>
+          <span className="px-2 py-0.5 rounded bg-blue-400/10 text-blue-400">{inProgress.length} active</span>
+          <span className="px-2 py-0.5 rounded bg-green-400/10 text-green-400">{completed.length} done</span>
+        </div>
+        <Link href={`/projects/${project}/kanban`} className="text-sm text-[var(--color-accent)] hover:underline ml-auto">
+          Open Kanban Board
+        </Link>
+      </div>
+
+      {/* In Progress */}
+      {inProgress.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-bold text-blue-400">In Progress</h3>
+          {inProgress.map((t: any) => (
+            <TodoRow key={t.id} todo={t} project={project} />
+          ))}
+        </div>
+      )}
+
+      {/* Pending */}
+      {pending.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-bold text-yellow-400">Pending</h3>
+          {pending.map((t: any) => (
+            <TodoRow key={t.id} todo={t} project={project} />
+          ))}
+        </div>
+      )}
+
+      {/* Completed */}
+      {completed.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-bold text-green-400">Recently Completed</h3>
+          {completed.map((t: any) => (
+            <TodoRow key={t.id} todo={t} project={project} completed />
+          ))}
+        </div>
+      )}
+
+      {todos.length === 0 && (
+        <p className="text-center text-[var(--color-muted)] py-8">No todos for this project</p>
+      )}
+    </div>
+  );
+}
+
+function TodoRow({ todo, project, completed }: { todo: any; project: string; completed?: boolean }) {
+  return (
+    <div className={`flex items-center gap-3 px-3 py-2 rounded border border-[var(--color-border)] text-sm ${completed ? 'opacity-60' : ''}`}>
+      <span
+        className={`w-2.5 h-2.5 rounded-full shrink-0 ${todo.status === 'in_progress' ? 'animate-pulse' : ''}`}
+        style={{
+          backgroundColor: todo.status === 'pending' ? '#fbbf24' : todo.status === 'in_progress' ? '#60a5fa' : '#22c55e',
+        }}
+      />
+      <span className={`flex-1 ${completed ? 'line-through text-[var(--color-muted)]' : ''}`}>{todo.content}</span>
+      <span className="text-xs text-[var(--color-muted)] shrink-0">
+        {todo.source !== 'claude' && <span className="mr-1.5 px-1 py-0.5 rounded bg-[var(--color-surface-hover)]">{todo.source}</span>}
+        {formatRelativeTime(todo.updatedAt)}
+      </span>
+      {todo.sessionUuid && (
+        <Link href={`/projects/${project}/${todo.sessionUuid}`} className="text-xs text-[var(--color-accent)] hover:underline shrink-0">
+          session
+        </Link>
+      )}
+    </div>
+  );
+}
+
+/* ─── ACTIVITY TAB ─── */
+function ActivityTab({ activityData, project, decodedProject }: any) {
+  const prompts = activityData?.recentPrompts ?? [];
+
+  return (
+    <div className="space-y-6">
+      <h3 className="text-sm font-bold text-[var(--color-muted)]">Recent Prompt-Commit Activity</h3>
+
+      {prompts.length > 0 ? (
+        <div className="space-y-3">
+          {prompts.map((p: any, i: number) => (
+            <div key={i} className="border border-[var(--color-border)] rounded p-4 hover:bg-[var(--color-surface-hover)]">
+              <div className="flex items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <Link href={`/projects/${project}/${p.sessionId}`} className="text-sm font-medium hover:text-[var(--color-accent)] transition-colors">
+                    {p.prompt}
+                  </Link>
+                  {p.response && (
+                    <p className="text-xs text-[var(--color-muted)] mt-1 line-clamp-2">{p.response.slice(0, 300)}</p>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className="text-xs text-[var(--color-muted)]">{formatRelativeTime(p.timestamp)}</span>
+                  {p.gitStatus && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${
+                      p.gitStatus === 'committed' ? 'bg-green-400/10 text-green-400' :
+                      p.gitStatus === 'uncommitted' ? 'bg-yellow-400/10 text-yellow-400' :
+                      p.gitStatus === 'unpushed' ? 'bg-orange-400/10 text-orange-400' :
+                      'bg-[var(--color-surface-hover)] text-[var(--color-muted)]'
+                    }`}>
+                      {p.gitStatus}
+                    </span>
+                  )}
+                </div>
+              </div>
+              {p.commitHash && (
+                <div className="mt-2 flex items-center gap-2 text-xs text-[var(--color-muted)]">
+                  <span className="font-mono text-[var(--color-accent)]">{p.commitHash}</span>
+                  <span>{p.commitSubject}</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-center text-[var(--color-muted)] py-8">No recent activity</p>
+      )}
+    </div>
+  );
+}
+
+/* ─── TOKENS TAB ─── */
+function TokensTab({ full, thisActivity, globalTotals }: any) {
+  const stats = full?.stats;
+  const models = full?.models ?? [];
+
+  return (
+    <div className="space-y-6">
+      {/* Token summary */}
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <StatCard label="Input Tokens" value={formatTokens(stats.totalInput)} />
+          <StatCard label="Output Tokens" value={formatTokens(stats.totalOutput)} />
+          <StatCard label="Cache Read" value={formatTokens(stats.totalCacheRead)} />
+          <StatCard label="Cache Write" value={formatTokens(stats.totalCacheWrite)} />
+        </div>
+      )}
+
+      {/* Usage share */}
+      {thisActivity && globalTotals.cost > 0 && (
+        <div className="border border-[var(--color-border)] rounded p-4 space-y-3">
+          <h3 className="text-sm font-bold text-[var(--color-muted)]">30-Day Global Share</h3>
+          <ProgressBar label="Input" value={thisActivity.total_input} max={globalTotals.input}
+            detail={`${formatTokens(thisActivity.total_input)} / ${formatTokens(globalTotals.input)}`} />
+          <ProgressBar label="Output" value={thisActivity.total_output} max={globalTotals.output}
+            detail={`${formatTokens(thisActivity.total_output)} / ${formatTokens(globalTotals.output)}`} />
+          <ProgressBar label="Cost" value={thisActivity.cost_estimate} max={globalTotals.cost}
+            detail={`$${thisActivity.cost_estimate.toFixed(2)} / $${globalTotals.cost.toFixed(2)}`} />
+        </div>
+      )}
+
+      {/* Model breakdown table */}
+      {models.length > 0 && (
+        <div className="border border-[var(--color-border)] rounded">
+          <div className="px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+            <h3 className="text-sm font-bold text-[var(--color-muted)]">Model Breakdown</h3>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[var(--color-muted)] border-b border-[var(--color-border)]">
+                <th className="px-4 py-2">Model</th>
+                <th className="px-4 py-2 text-right">Messages</th>
+                <th className="px-4 py-2 text-right">Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {models.map((m: any) => (
+                <tr key={m.model} className="border-b border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]">
+                  <td className="px-4 py-2 font-mono text-xs">{m.model}</td>
+                  <td className="px-4 py-2 text-right text-[var(--color-muted)]">{m.messages.toLocaleString()}</td>
+                  <td className="px-4 py-2 text-right">${m.cost.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="font-bold">
+                <td className="px-4 py-2">Total</td>
+                <td className="px-4 py-2 text-right">{models.reduce((s: number, m: any) => s + m.messages, 0).toLocaleString()}</td>
+                <td className="px-4 py-2 text-right">${stats?.totalCost?.toFixed(2) ?? '0.00'}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {/* Tool usage */}
+      {full?.toolUsage?.length > 0 && (
+        <div className="border border-[var(--color-border)] rounded p-4">
+          <h3 className="text-sm font-bold mb-3 text-[var(--color-muted)]">Tool Usage</h3>
+          <div className="space-y-2">
+            {full.toolUsage.map((t: any) => {
+              const maxCount = full.toolUsage[0]?.count ?? 1;
+              return (
+                <div key={t.tool_name} className="flex items-center gap-3 text-sm">
+                  <span className="font-mono w-32 shrink-0 truncate">{t.tool_name}</span>
+                  <div className="flex-1 h-2 bg-[var(--color-surface-hover)] rounded overflow-hidden">
+                    <div className="h-full bg-[var(--color-accent)] rounded" style={{ width: `${(t.count / maxCount) * 100}%` }} />
+                  </div>
+                  <span className="text-[var(--color-muted)] w-14 text-right shrink-0">{t.count}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── CODE TAB ─── */
+function CodeTab({ gitData, mutateGit, project }: any) {
+  const [commitMsg, setCommitMsg] = useState('');
+  const [committing, setCommitting] = useState(false);
+  const [commitResult, setCommitResult] = useState<string | null>(null);
+  const [showDiff, setShowDiff] = useState(false);
+
+  async function handleCommit(addAll: boolean) {
+    if (!commitMsg.trim() || committing) return;
+    setCommitting(true);
+    setCommitResult(null);
+    try {
+      const res = await fetch(`/api/projects/${project}/git`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: commitMsg.trim(), addAll }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setCommitResult(`Committed: ${result.commit}${result.pushed ? ' (pushed)' : ''}${result.pushError ? ` — push failed: ${result.pushError}` : ''}`);
+        setCommitMsg('');
+        mutateGit();
+      } else {
+        setCommitResult(`Error: ${result.error}`);
+      }
+    } catch (err) {
+      setCommitResult(`Error: ${String(err)}`);
+    }
+    setCommitting(false);
+  }
+
+  async function handlePush() {
+    setCommitting(true);
+    setCommitResult(null);
+    try {
+      const res = await fetch(`/api/projects/${project}/git`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'push' }),
+      });
+      const result = await res.json();
+      setCommitResult(result.success ? 'Pushed successfully' : `Error: ${result.error}`);
+      mutateGit();
+    } catch (err) {
+      setCommitResult(`Error: ${String(err)}`);
+    }
+    setCommitting(false);
+  }
+
+  if (!gitData) return <p className="text-[var(--color-muted)]">Loading git status...</p>;
+  if (gitData.error) return <p className="text-[var(--color-error)]">{gitData.error}</p>;
+
+  const STATUS_LABELS: Record<string, { label: string; color: string }> = {
+    'M': { label: 'Modified', color: '#fbbf24' },
+    'A': { label: 'Added', color: '#22c55e' },
+    'D': { label: 'Deleted', color: '#ef4444' },
+    '??': { label: 'Untracked', color: '#8b5cf6' },
+    'R': { label: 'Renamed', color: '#60a5fa' },
+    'MM': { label: 'Modified', color: '#fbbf24' },
+    'AM': { label: 'Added+Modified', color: '#22c55e' },
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Branch + status */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="font-mono text-sm bg-[var(--color-surface-hover)] text-[var(--color-accent)] px-2 py-1 rounded">
+          {gitData.branch}
+        </span>
+        {gitData.isDirty ? (
+          <span className="text-xs px-2 py-1 rounded bg-yellow-400/10 text-yellow-400">{gitData.files.length} changed files</span>
+        ) : (
+          <span className="text-xs px-2 py-1 rounded bg-green-400/10 text-green-400">working tree clean</span>
+        )}
+        <span className="text-xs text-[var(--color-muted)] font-mono">{gitData.repoPath}</span>
+      </div>
+
+      {/* Changed files */}
+      {gitData.files.length > 0 && (
+        <div className="border border-[var(--color-border)] rounded">
+          <div className="px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] flex items-center justify-between">
+            <h3 className="text-sm font-bold text-[var(--color-muted)]">Changed Files</h3>
+            <button onClick={() => setShowDiff(!showDiff)} className="text-xs text-[var(--color-accent)] hover:underline">
+              {showDiff ? 'Hide diff' : 'Show diff'}
+            </button>
+          </div>
+          <div className="divide-y divide-[var(--color-border)]">
+            {gitData.files.map((f: any, i: number) => {
+              const s = STATUS_LABELS[f.status] ?? { label: f.status, color: 'var(--color-muted)' };
+              return (
+                <div key={i} className="px-4 py-2 flex items-center gap-3 text-sm font-mono hover:bg-[var(--color-surface-hover)]">
+                  <span className="text-xs px-1.5 py-0.5 rounded shrink-0" style={{ backgroundColor: `${s.color}22`, color: s.color }}>
+                    {s.label}
+                  </span>
+                  <span className="truncate">{f.file}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Diff */}
+      {showDiff && gitData.diff && (
+        <div className="border border-[var(--color-border)] rounded">
+          <div className="px-4 py-2 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+            <h3 className="text-sm font-bold text-[var(--color-muted)]">Diff</h3>
+          </div>
+          <pre className="text-xs p-4 overflow-auto max-h-[500px] font-mono leading-relaxed">
+            {gitData.diff.split('\n').map((line: string, i: number) => {
+              let color = 'inherit';
+              if (line.startsWith('+') && !line.startsWith('+++')) color = '#22c55e';
+              else if (line.startsWith('-') && !line.startsWith('---')) color = '#ef4444';
+              else if (line.startsWith('@@')) color = '#60a5fa';
+              else if (line.startsWith('diff ') || line.startsWith('index ')) color = 'var(--color-muted)';
+              return <div key={i} style={{ color }}>{line || ' '}</div>;
+            })}
+          </pre>
+        </div>
+      )}
+
+      {/* Diff stat */}
+      {gitData.diffStat && (
+        <div className="text-xs font-mono text-[var(--color-muted)] whitespace-pre">{gitData.diffStat}</div>
+      )}
+
+      {/* Commit form */}
+      {gitData.isDirty && (
+        <div className="border border-[var(--color-border)] rounded p-4 bg-[var(--color-surface)] space-y-3">
+          <h3 className="text-sm font-bold text-[var(--color-muted)]">Commit</h3>
+          <input
+            type="text"
+            value={commitMsg}
+            onChange={(e) => setCommitMsg(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleCommit(true); } }}
+            placeholder="Commit message..."
+            className="w-full px-3 py-2 text-sm rounded border border-[var(--color-border)] bg-[var(--color-background)] focus:outline-none focus:border-[var(--color-accent)]"
+          />
+          <div className="flex gap-2">
+            <button onClick={() => handleCommit(false)} disabled={!commitMsg.trim() || committing}
+              className="px-3 py-1.5 text-sm bg-[var(--color-surface-hover)] rounded hover:bg-[var(--color-border)] transition-colors disabled:opacity-40">
+              Commit tracked
+            </button>
+            <button onClick={() => handleCommit(true)} disabled={!commitMsg.trim() || committing}
+              className="px-3 py-1.5 text-sm font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded hover:opacity-90 transition-opacity disabled:opacity-40">
+              Commit all
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Push button */}
+      {!gitData.isDirty && gitData.recentCommits && (
+        <button onClick={handlePush} disabled={committing}
+          className="px-4 py-2 text-sm bg-[var(--color-surface-hover)] rounded hover:bg-[var(--color-border)] transition-colors disabled:opacity-40">
+          Push
+        </button>
+      )}
+
+      {/* Commit result */}
+      {commitResult && (
+        <p className={`text-sm font-mono ${commitResult.startsWith('Error') ? 'text-[var(--color-error)]' : 'text-[var(--color-accent)]'}`}>
+          {commitResult}
+        </p>
+      )}
+
+      {/* Recent commits (from git log) */}
+      {gitData.recentCommits && (
+        <div className="border border-[var(--color-border)] rounded p-4">
+          <h3 className="text-sm font-bold mb-2 text-[var(--color-muted)]">Recent Commits</h3>
+          <pre className="text-xs font-mono text-[var(--color-muted)] whitespace-pre-wrap">{gitData.recentCommits}</pre>
+        </div>
+      )}
     </div>
   );
 }
