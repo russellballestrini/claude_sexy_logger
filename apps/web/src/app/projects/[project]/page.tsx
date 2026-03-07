@@ -45,6 +45,7 @@ export default function ProjectPage({
   const [yolo, setYolo] = useState(true);
   const [booting, setBooting] = useState(false);
   const [bootResult, setBootResult] = useState<string | null>(null);
+  const [bootTmux, setBootTmux] = useState<{ session: string; host: string } | null>(null);
   const [showAllSessions, setShowAllSessions] = useState(false);
   const [newTask, setNewTask] = useState('');
   const [taskSubmitting, setTaskSubmitting] = useState(false);
@@ -78,6 +79,7 @@ export default function ProjectPage({
     }
     setBooting(true);
     setBootResult(null);
+    setBootTmux(null);
     try {
       const res = await fetch('/api/boot', {
         method: 'POST',
@@ -93,6 +95,7 @@ export default function ProjectPage({
       if (result.success) {
         const hostLabel = result.host && result.host !== 'localhost' ? ` [${result.host}]` : '';
         setBootResult(`${result.command}${hostLabel}`);
+        if (result.tmuxSession) setBootTmux({ session: result.tmuxSession, host: result.host ?? 'localhost' });
       } else {
         setBootResult(`Error: ${result.error}${result.detail ? ' — ' + result.detail : ''}`);
       }
@@ -135,6 +138,7 @@ export default function ProjectPage({
         if (result.success) {
           const hostLabel = result.host && result.host !== 'localhost' ? ` [${result.host}]` : '';
           setBootResult(`${result.command}${hostLabel}`);
+          if (result.tmuxSession) setBootTmux({ session: result.tmuxSession, host: result.host ?? 'localhost' });
         } else {
           setBootResult(`Error: ${result.error}${result.detail ? ' — ' + result.detail : ''}`);
         }
@@ -231,9 +235,17 @@ export default function ProjectPage({
           <p className="text-sm text-[var(--color-muted)] font-mono mt-1">{data.originalPath}</p>
         )}
         {bootResult && (
-          <p className={`text-sm font-mono mt-1 ${bootResult.startsWith('Error') ? 'text-[var(--color-error)]' : 'text-[var(--color-accent)]'}`}>
-            {bootResult}
-          </p>
+          <div className={`text-sm font-mono mt-1 flex items-center gap-3 ${bootResult.startsWith('Error') ? 'text-[var(--color-error)]' : 'text-[var(--color-accent)]'}`}>
+            <span>{bootResult}</span>
+            {bootTmux && (
+              <Link
+                href={`/tmux/${encodeURIComponent(bootTmux.session)}${bootTmux.host !== 'localhost' ? `?host=${encodeURIComponent(bootTmux.host)}` : ''}`}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[var(--color-accent)]/15 text-[var(--color-accent)] hover:bg-[var(--color-accent)]/25 transition-colors text-xs font-bold"
+              >
+                ▸ Watch Terminal
+              </Link>
+            )}
+          </div>
         )}
       </div>
 

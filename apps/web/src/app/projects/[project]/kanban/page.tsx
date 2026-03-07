@@ -85,7 +85,7 @@ export default function ProjectKanbanPage({ params }: { params: Promise<{ projec
   const [newTodo, setNewTodo] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [booting, setBooting] = useState<string | null>(null);
-  const [bootResult, setBootResult] = useState<{ key: string; msg: string } | null>(null);
+  const [bootResult, setBootResult] = useState<{ key: string; msg: string; tmuxSession?: string; host?: string } | null>(null);
   const [draggedTodo, setDraggedTodo] = useState<Todo | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [landedCardId, setLandedCardId] = useState<number | null>(null);
@@ -169,6 +169,8 @@ export default function ProjectKanbanPage({ params }: { params: Promise<{ projec
         setBootResult({
           key: 'new-todo',
           msg: result.success ? `tmux: ${result.tmuxSession}` : `Error: ${result.error}`,
+          tmuxSession: result.tmuxSession,
+          host: result.host,
         });
       }
 
@@ -188,7 +190,7 @@ export default function ProjectKanbanPage({ params }: { params: Promise<{ projec
         body: JSON.stringify({ projectPath, yolo: true, prompt }),
       });
       const result = await res.json();
-      setBootResult({ key, msg: result.success ? `tmux: ${result.tmuxSession}` : `Error: ${result.error}` });
+      setBootResult({ key, msg: result.success ? `tmux: ${result.tmuxSession}` : `Error: ${result.error}`, tmuxSession: result.tmuxSession, host: result.host });
     } catch (err) {
       setBootResult({ key, msg: `Error: ${String(err)}` });
     }
@@ -417,7 +419,7 @@ export default function ProjectKanbanPage({ params }: { params: Promise<{ projec
 function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bootResult, onDragStart, onDragEnd, isDragging, landed, project }: {
   todo: Todo; onUpdate: (id: number, u: any) => void; onDelete: (id: number) => void;
   projectPath: string | null; onBoot: (p: string, k: string, pr?: string) => void;
-  booting: string | null; bootResult: { key: string; msg: string } | null;
+  booting: string | null; bootResult: { key: string; msg: string; tmuxSession?: string; host?: string } | null;
   onDragStart: (t: Todo) => void; onDragEnd: () => void; isDragging: boolean; landed: boolean;
   project: string;
 }) {
@@ -535,8 +537,17 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
       </div>
 
       {bootResult?.key === bootKey && (
-        <div className={`mt-2 text-xs font-mono px-2 py-1 rounded ${bootResult.msg.startsWith('Error') ? 'text-[var(--color-error)] bg-[var(--color-error)]/10' : 'text-[var(--color-accent)] bg-[var(--color-accent)]/10'}`}>
-          {bootResult.msg}
+        <div className={`mt-2 text-xs font-mono px-2 py-1 rounded flex items-center gap-2 ${bootResult.msg.startsWith('Error') ? 'text-[var(--color-error)] bg-[var(--color-error)]/10' : 'text-[var(--color-accent)] bg-[var(--color-accent)]/10'}`}>
+          <span>{bootResult.msg}</span>
+          {bootResult.tmuxSession && (
+            <Link
+              href={`/tmux/${encodeURIComponent(bootResult.tmuxSession)}${bootResult.host && bootResult.host !== 'localhost' ? `?host=${encodeURIComponent(bootResult.host)}` : ''}`}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[var(--color-accent)]/20 hover:bg-[var(--color-accent)]/30 transition-colors font-bold whitespace-nowrap"
+              onClick={(e) => e.stopPropagation()}
+            >
+              ▸ Watch
+            </Link>
+          )}
         </div>
       )}
     </div>
