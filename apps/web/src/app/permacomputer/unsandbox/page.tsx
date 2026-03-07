@@ -486,10 +486,10 @@ export default function UnsandboxNodePage() {
 
       {/* ===== TERMINAL TAB ===== */}
       {activeTab === 'Terminal' && (
-        <div className="space-y-4">
+        <div className="space-y-6">
           <div className="flex items-center justify-between">
             <p className="text-sm text-[var(--color-muted)]">
-              Ephemeral sandbox — container runs your command then self-destructs.
+              Ephemeral sandbox — container runs your command then self-destructs. Use <span className="text-[var(--color-foreground)]">semitrusted</span> for network access (git clone, npm install, push).
             </p>
             <div className="flex items-center gap-2">
               {(['semitrusted', 'zerotrust'] as const).map(mode => (
@@ -507,7 +507,8 @@ export default function UnsandboxNodePage() {
 
           <div className="flex gap-2">
             <input type="text" value={cmd} onChange={e => setCmd(e.target.value)}
-              placeholder="uname -a" onKeyDown={e => { if (e.key === 'Enter') executeCommand(); }}
+              placeholder="git clone https://github.com/you/repo && cd repo && npm test"
+              onKeyDown={e => { if (e.key === 'Enter') executeCommand(); }}
               className="flex-1 bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-[var(--color-accent)]" />
             <button onClick={executeCommand} disabled={cmdRunning || !cmd.trim()}
               className="px-4 py-2 text-sm font-bold rounded bg-[var(--color-accent)] text-[var(--color-background)] hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer">
@@ -530,8 +531,115 @@ export default function UnsandboxNodePage() {
               )}
             </pre>
           )}
+
+          {/* Example workflows */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-bold text-[var(--color-muted)]">Example Workflows</h3>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <ExampleCard
+                title="Clone, test, and push"
+                desc="Clone a repo, run the test suite, commit results, and push back to origin."
+                command={`git clone https://github.com/you/repo /workspace && cd /workspace && npm install && npm test && git add -A && git commit -m "ci: test run from unsandbox" && git push`}
+                network="semitrusted"
+                onRun={(c, n) => { setCmd(c); setNetwork(n); }}
+              />
+              <ExampleCard
+                title="Claude Code on a repo"
+                desc="Clone a project and run Claude Code with a prompt. Requires ANTHROPIC_API_KEY in the container."
+                command={`apt-get update && apt-get install -y nodejs npm git && npm install -g @anthropic-ai/claude-code && git clone https://github.com/you/repo /workspace && cd /workspace && claude --dangerously-skip-permissions "review this codebase and fix any defects"`}
+                network="semitrusted"
+                onRun={(c, n) => { setCmd(c); setNetwork(n); }}
+              />
+              <ExampleCard
+                title="Run CI pipeline"
+                desc="Execute a full CI pipeline: install deps, lint, type-check, test, build."
+                command={`git clone https://github.com/you/repo /workspace && cd /workspace && npm ci && npm run lint && npm run typecheck && npm test && npm run build`}
+                network="semitrusted"
+                onRun={(c, n) => { setCmd(c); setNetwork(n); }}
+              />
+              <ExampleCard
+                title="Security audit"
+                desc="Clone and run npm audit + license check in a zero-trust sandbox (no outbound after clone)."
+                command={`git clone https://github.com/you/repo /workspace && cd /workspace && npm ci && npm audit && npx license-checker --summary`}
+                network="semitrusted"
+                onRun={(c, n) => { setCmd(c); setNetwork(n); }}
+              />
+              <ExampleCard
+                title="Python project"
+                desc="Clone a Python repo, set up a venv, install deps, and run pytest."
+                command={`apt-get update && apt-get install -y python3 python3-pip python3-venv git && git clone https://github.com/you/repo /workspace && cd /workspace && python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt && pytest`}
+                network="semitrusted"
+                onRun={(c, n) => { setCmd(c); setNetwork(n); }}
+              />
+              <ExampleCard
+                title="Benchmark a commit"
+                desc="Clone at a specific commit and run benchmarks in isolation."
+                command={`git clone https://github.com/you/repo /workspace && cd /workspace && git checkout abc1234 && npm ci && npm run bench`}
+                network="semitrusted"
+                onRun={(c, n) => { setCmd(c); setNetwork(n); }}
+              />
+              <ExampleCard
+                title="Multi-repo workspace"
+                desc="Clone multiple repos and link them together for integration testing."
+                command={`mkdir -p /workspace && cd /workspace && git clone https://github.com/you/lib && git clone https://github.com/you/app && cd lib && npm ci && npm link && cd ../app && npm ci && npm link your-lib && npm test`}
+                network="semitrusted"
+                onRun={(c, n) => { setCmd(c); setNetwork(n); }}
+              />
+              <ExampleCard
+                title="System probe"
+                desc="Inspect the sandbox environment: CPU, memory, disk, installed packages."
+                command={`cat /proc/cpuinfo | head -20 && echo "---" && free -h && echo "---" && df -h && echo "---" && uname -a && echo "---" && cat /etc/os-release`}
+                network="zerotrust"
+                onRun={(c, n) => { setCmd(c); setNetwork(n); }}
+              />
+            </div>
+          </div>
+
+          {/* Tips */}
+          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-2">
+            <h3 className="text-sm font-bold text-[var(--color-muted)]">Tips</h3>
+            <ul className="text-sm text-[var(--color-muted)] space-y-1 list-disc list-inside">
+              <li><span className="text-[var(--color-foreground)]">semitrusted</span> mode gives network access via egress proxy &mdash; required for git clone/push, npm install, API calls</li>
+              <li><span className="text-[var(--color-foreground)]">zero trust</span> mode has no network at all &mdash; good for pure compute, benchmarks, security audits on already-cloned code</li>
+              <li>Each execution is ephemeral &mdash; the container is destroyed after your command finishes</li>
+              <li>For persistent work, use <span className="text-[var(--color-foreground)]">Sessions</span> tab to create long-lived containers</li>
+              <li>Chain commands with <span className="font-mono text-[var(--color-foreground)]">&&</span> &mdash; the whole pipeline runs in a single container</li>
+              <li>Set <span className="font-mono text-[var(--color-foreground)]">ANTHROPIC_API_KEY</span> in your command to use Claude Code: <span className="font-mono text-xs">export ANTHROPIC_API_KEY=sk-ant-... && claude &quot;your prompt&quot;</span></li>
+              <li>Git push requires auth &mdash; use <span className="font-mono text-xs">git clone https://TOKEN@github.com/you/repo</span> or configure SSH keys in the session</li>
+            </ul>
+          </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ExampleCard({ title, desc, command, network, onRun }: {
+  title: string;
+  desc: string;
+  command: string;
+  network: 'semitrusted' | 'zerotrust';
+  onRun: (cmd: string, net: 'semitrusted' | 'zerotrust') => void;
+}) {
+  return (
+    <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-2 hover:border-[var(--color-accent)]/30 transition-colors">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-bold">{title}</h4>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+          network === 'semitrusted' ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'bg-yellow-400/10 text-yellow-400'
+        }`}>
+          {network}
+        </span>
+      </div>
+      <p className="text-xs text-[var(--color-muted)]">{desc}</p>
+      <pre className="text-[11px] font-mono text-[var(--color-muted)] bg-[var(--color-background)] rounded p-2 overflow-x-auto whitespace-pre-wrap break-all">{command}</pre>
+      <button
+        onClick={() => onRun(command, network)}
+        className="text-xs text-[var(--color-accent)] hover:underline cursor-pointer"
+      >
+        Load into terminal
+      </button>
     </div>
   );
 }
