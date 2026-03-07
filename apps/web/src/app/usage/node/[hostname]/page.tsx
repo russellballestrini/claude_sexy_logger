@@ -57,12 +57,27 @@ function ansiToHtml(text: string): string {
 }
 
 const HARNESSES = [
+  // --- Coding agents ---
   {
     id: 'claude-code', name: 'Claude Code',
     desc: 'Anthropic CLI for Claude — agentic coding in the terminal',
     install: 'npm install -g @anthropic-ai/claude-code',
     verify: 'claude --version',
     tags: ['ml', 'coding', 'cli'],
+  },
+  {
+    id: 'gemini-cli', name: 'Gemini CLI',
+    desc: 'Google CLI for Gemini — agentic coding similar to Claude Code',
+    install: 'npm install -g @anthropic-ai/claude-code',
+    verify: 'gemini --version',
+    requiresKey: 'GOOGLE_API_KEY', tags: ['ml', 'coding', 'cli'],
+  },
+  {
+    id: 'openai-codex', name: 'OpenAI Codex CLI',
+    desc: 'OpenAI CLI coding agent — GPT-4 powered terminal assistant',
+    install: 'npm install -g @openai/codex',
+    verify: 'codex --version',
+    requiresKey: 'OPENAI_API_KEY', tags: ['ml', 'coding', 'cli'],
   },
   {
     id: 'open-code', name: 'Open Code',
@@ -79,6 +94,28 @@ const HARNESSES = [
     requiresKey: 'ANTHROPIC_API_KEY or OPENAI_API_KEY', tags: ['ml', 'coding', 'python'],
   },
   {
+    id: 'agnt', name: 'agnt',
+    desc: 'Minimal terminal coding agent — lightweight alternative to Claude Code',
+    install: 'npm install -g agnt',
+    verify: 'agnt --version',
+    requiresKey: 'ANTHROPIC_API_KEY', tags: ['ml', 'coding', 'cli'],
+  },
+  {
+    id: 'cursor', name: 'Cursor',
+    desc: 'ML-first code editor — fork of VS Code with built-in chat and autocomplete',
+    install: 'curl -fsSL https://www.cursor.com/download/linux -o cursor.appimage && chmod +x cursor.appimage',
+    verify: 'ls cursor.appimage',
+    tags: ['ml', 'coding', 'editor'],
+  },
+  {
+    id: 'continue-dev', name: 'Continue',
+    desc: 'Open source ML code assistant — VS Code and JetBrains extension',
+    install: 'pip install continue-sdk',
+    verify: 'pip show continue-sdk',
+    tags: ['ml', 'coding', 'extension'],
+  },
+  // --- Inference engines ---
+  {
     id: 'ollama', name: 'Ollama',
     desc: 'Run open source LLMs locally — llama, mistral, codellama',
     install: 'curl -fsSL https://ollama.com/install.sh | sh',
@@ -86,11 +123,48 @@ const HARNESSES = [
     tags: ['ml', 'local', 'inference'],
   },
   {
+    id: 'llama-cpp', name: 'llama.cpp',
+    desc: 'Bare-metal LLM inference in C/C++ — GGUF models, CPU and GPU',
+    install: 'git clone https://github.com/ggerganov/llama.cpp && cd llama.cpp && make -j',
+    verify: 'ls llama.cpp/llama-cli',
+    tags: ['ml', 'local', 'inference'],
+  },
+  {
+    id: 'vllm', name: 'vLLM',
+    desc: 'High-throughput LLM serving engine — PagedAttention, continuous batching',
+    install: 'pip install vllm',
+    verify: 'python -c "import vllm; print(vllm.__version__)"',
+    tags: ['ml', 'gpu', 'inference'],
+  },
+  {
+    id: 'text-generation-webui', name: 'text-generation-webui',
+    desc: 'Gradio web UI for LLMs — supports GGUF, GPTQ, AWQ, EXL2, llama.cpp, Transformers',
+    install: 'git clone https://github.com/oobabooga/text-generation-webui && cd text-generation-webui && pip install -r requirements.txt',
+    verify: 'ls text-generation-webui/server.py',
+    tags: ['ml', 'web', 'inference'],
+  },
+  // --- Web UIs ---
+  {
     id: 'open-webui', name: 'Open WebUI',
     desc: 'Self-hosted ChatGPT-like interface for Ollama and OpenAI APIs',
     install: 'pip install open-webui',
     verify: 'open-webui --version',
     tags: ['ml', 'web', 'self-hosted'],
+  },
+  // --- Agent frameworks ---
+  {
+    id: 'hermes-agent', name: 'Hermes Agent',
+    desc: 'Autonomous agent framework — tool use, memory, planning with local or cloud LLMs',
+    install: 'pip install hermes-agent',
+    verify: 'pip show hermes-agent',
+    tags: ['ml', 'agent', 'python'],
+  },
+  {
+    id: 'fetch', name: 'Fetch',
+    desc: 'HTTP harness for ML APIs — structured logging and replay',
+    install: 'pip install fetch-cli',
+    verify: 'fetch --version',
+    tags: ['ml', 'api', 'cli'],
   },
   {
     id: 'uncloseai-cli', name: 'uncloseai-cli',
@@ -494,13 +568,28 @@ export default function NodeDetailPage() {
       {activeTab === 'Harnesses' && (() => {
         // tmuxData comes from /api/tmux/stream (with host param for remote)
         const sessions: string[] = tmuxData?.sessions ?? [];
-        const allEntries = sessions.map((s: string) => ({ name: s }));
+        const tmuxEntries = sessions.map((s: string) => ({ name: s, type: 'tmux' as const }));
+
+        // Bare claude processes (not in tmux) from probe data
+        const claudeProcs: any[] = Array.isArray(probe?.claudeProcesses) ? probe.claudeProcesses : [];
+        const bareEntries = claudeProcs.map((p: any) => ({
+          name: `claude (PID ${p.pid})`,
+          type: 'process' as const,
+          pid: p.pid,
+          tty: p.tty,
+          cpu: p.cpu,
+          mem: p.mem,
+          start: p.start,
+          command: (p.command ?? '').slice(0, 120),
+        }));
+
+        const allEntries = [...tmuxEntries, ...bareEntries];
 
         return (
           <div className="space-y-4">
             {allEntries.length === 0 && (
               <div className="text-sm text-[var(--color-muted)] text-center py-8 bg-[var(--color-surface)] rounded border border-[var(--color-border)]">
-                No tmux sessions running on {host}.
+                No harnesses running on {host}.
               </div>
             )}
 
