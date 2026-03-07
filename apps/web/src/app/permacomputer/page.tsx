@@ -1777,6 +1777,7 @@ function UnsandboxPanel() {
           <label className="text-base text-[var(--color-muted)] block mb-1">Public Key</label>
           <input type="text" defaultValue={publicKey} placeholder="unsb-pk-xxxx-xxxx-xxxx-xxxx"
             className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono"
+            autoComplete="off" data-1p-ignore data-lpignore="true" data-form-type="other"
             onBlur={(e) => { if (e.target.value !== publicKey) saveSetting(SETTINGS_KEYS.unsandboxPublicKey, e.target.value.trim()); }}
             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
         </div>
@@ -1785,6 +1786,7 @@ function UnsandboxPanel() {
           <div className="flex gap-2">
             <input type={showSecret ? 'text' : 'password'} defaultValue={secretKey} placeholder="unsb-sk-xxxx-xxxx-xxxx-xxxx"
               className="flex-1 bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base font-mono"
+              autoComplete="off" data-1p-ignore data-lpignore="true" data-form-type="other"
               onBlur={(e) => { if (e.target.value !== secretKey) saveSetting(SETTINGS_KEYS.unsandboxSecretKey, e.target.value.trim()); }}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
             <button onClick={() => setShowSecret(!showSecret)}
