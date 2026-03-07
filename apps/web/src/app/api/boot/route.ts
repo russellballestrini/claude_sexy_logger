@@ -417,10 +417,12 @@ async function ensureRemoteTools(sshBase: string[], host: string): Promise<{ boo
     bootstrapped.push('tmux');
   }
 
+  // Helper to source nvm before running commands (bashrc guards against non-interactive)
+  const nvmPrefix = 'export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; ';
+
   // Check and install node/npm if missing (needed for claude)
-  // Use bash -lc to pick up nvm paths if nvm is installed
   try {
-    await exec(sshCmd, [...sshArgs, 'bash -lc "which node"'], { timeout: 10000 });
+    await exec(sshCmd, [...sshArgs, `${nvmPrefix}which node`], { timeout: 10000 });
   } catch {
     // Install node via nvm
     const installCmd = [
@@ -430,6 +432,7 @@ async function ensureRemoteTools(sshBase: string[], host: string): Promise<{ boo
       '&& export NVM_DIR="$HOME/.nvm"',
       '&& . "$NVM_DIR/nvm.sh"',
       '&& nvm install --lts',
+      '&& nvm alias default lts/*',
     ].join(' ');
     await exec(sshCmd, [...sshArgs, installCmd], { timeout: 180000 });
     bootstrapped.push('node');
@@ -437,16 +440,15 @@ async function ensureRemoteTools(sshBase: string[], host: string): Promise<{ boo
 
   // Check and install claude CLI
   try {
-    await exec(sshCmd, [...sshArgs, 'bash -lc "which claude"'], { timeout: 15000 });
+    await exec(sshCmd, [...sshArgs, `${nvmPrefix}which claude`], { timeout: 15000 });
   } catch {
-    // Install via npm (use bash -l to pick up nvm paths)
-    await exec(sshCmd, [...sshArgs, 'bash -lc "npm install -g @anthropic-ai/claude-code"'], { timeout: 180000 });
+    await exec(sshCmd, [...sshArgs, `${nvmPrefix}npm install -g @anthropic-ai/claude-code`], { timeout: 180000 });
     bootstrapped.push('claude');
   }
 
   // Verify claude is now available
   try {
-    await exec(sshCmd, [...sshArgs, 'bash -lc "which claude"'], { timeout: 15000 });
+    await exec(sshCmd, [...sshArgs, `${nvmPrefix}which claude`], { timeout: 15000 });
   } catch {
     throw new Error(`Failed to bootstrap claude on ${host}. Check that npm install succeeded and claude is in PATH.`);
   }
@@ -467,6 +469,8 @@ async function bootRemote(host: string, opts: BootOpts) {
   // Build the claude command for remote execution
   const claudeCmd = buildClaudeCmd(opts);
   const envVars = [
+    'export NVM_DIR="$HOME/.nvm"',
+    '[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"',
     'unset CLAUDECODE',
     `export UNFIREHOSE_TMUX_SESSION=${opts.sessionName}`,
     `export UNFIREHOSE_TMUX_WINDOW=${opts.windowName}`,
