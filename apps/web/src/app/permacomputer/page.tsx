@@ -418,6 +418,7 @@ export default function PermacomputerPage() {
 
       {/* Node Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        <AddNodeButton hosts={hosts} keys={sshData?.keys ?? []} mutate={() => { mutateSsh(); mutateMesh(); }} />
         {allNodes.map(({ meshNode, sshHost, key }) => (
           <NodeCard
             key={key}
@@ -428,7 +429,6 @@ export default function PermacomputerPage() {
             egressGroups={egressGroups}
           />
         ))}
-        <AddNodeButton hosts={hosts} keys={sshData?.keys ?? []} mutate={() => { mutateSsh(); mutateMesh(); }} />
       </div>
 
       {/* Unsandbox */}
