@@ -8,91 +8,95 @@ import Link from 'next/link';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
-function Section({ title, children, actions }: { title: string; children: React.ReactNode; actions?: React.ReactNode }) {
-  return (
-    <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-bold text-[var(--color-muted)] uppercase tracking-wide">{title}</h2>
-        {actions}
-      </div>
-      {children}
-    </div>
-  );
-}
+// Bootstrap script: turns an unsandbox service into a mesh node.
+const UNFIREHOSE_BOOTSTRAP = `#!/bin/bash
+set -e
+
+# Install Node.js LTS
+which node || (curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - && apt-get install -y nodejs)
+
+# Install git
+which git || apt-get install -y git
+
+# Clone and build unfirehose
+if [ ! -d /opt/unfirehose ]; then
+  git clone https://github.com/russellballestrini/unfirehose-nextjs-logger.git /opt/unfirehose
+fi
+cd /opt/unfirehose
+npm install
+npm run build --filter=web
+
+# Start the dashboard on port 3000
+cd apps/web
+PORT=3000 node .next/standalone/server.js
+`.trim();
 
 export default function UnsandboxNodePage() {
-  const { data: status, mutate: mutateStatus } = useSWR('/api/unsandbox', fetcher, { refreshInterval: 30000 });
-  const { data: sessions, mutate: mutateSessions } = useSWR('/api/unsandbox?action=sessions', fetcher, { refreshInterval: 10000 });
+  const { data: status } = useSWR('/api/unsandbox', fetcher, { refreshInterval: 30000 });
   const { data: services, mutate: mutateServices } = useSWR('/api/unsandbox?action=services', fetcher, { refreshInterval: 10000 });
+  const { data: sessions, mutate: mutateSessions } = useSWR('/api/unsandbox?action=sessions', fetcher, { refreshInterval: 10000 });
 
-  // Execute code
-  const [code, setCode] = useState('');
-  const [language, setLanguage] = useState('bash');
-  const [execResult, setExecResult] = useState<any>(null);
-  const [executing, setExecuting] = useState(false);
+  const [deploying, setDeploying] = useState(false);
+  const [deployResult, setDeployResult] = useState<any>(null);
+  const [deployError, setDeployError] = useState<string | null>(null);
 
-  // Boot harness
-  const [bootPrompt, setBootPrompt] = useState('');
-  const [booting, setBooting] = useState(false);
-  const [bootResult, setBootResult] = useState<any>(null);
-  const [bootError, setBootError] = useState<string | null>(null);
+  const [cmd, setCmd] = useState('');
+  const [cmdResult, setCmdResult] = useState<any>(null);
+  const [cmdRunning, setCmdRunning] = useState(false);
+  const [network, setNetwork] = useState<'semitrusted' | 'zero_trust'>('semitrusted');
 
-  // Session management
   const [killingSession, setKillingSession] = useState<string | null>(null);
 
-  // Service creation
-  const [serviceName, setServiceName] = useState('');
-  const [servicePorts, setServicePorts] = useState('80');
-  const [serviceBootstrap, setServiceBootstrap] = useState('');
-  const [creatingService, setCreatingService] = useState(false);
-  const [serviceResult, setServiceResult] = useState<any>(null);
+  const serviceList: any[] = services?.services ?? [];
+  const sessionList: any[] = sessions?.sessions ?? [];
 
-  const executeCode = useCallback(async () => {
-    if (!code.trim()) return;
-    setExecuting(true);
-    setExecResult(null);
-    try {
-      const res = await fetch('/api/unsandbox', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'execute', language, code }),
-      });
-      setExecResult(await res.json());
-    } catch (err) {
-      setExecResult({ error: String(err) });
-    } finally {
-      setExecuting(false);
-    }
-  }, [code, language]);
+  const unfirehoseService = serviceList.find((s: any) =>
+    (s.name || '').includes('unfirehose') || (s.name || '').includes('firehose')
+  );
 
-  const bootHarness = useCallback(async () => {
-    setBooting(true);
-    setBootResult(null);
-    setBootError(null);
+  const deployUnfirehose = useCallback(async () => {
+    setDeploying(true);
+    setDeployResult(null);
+    setDeployError(null);
     try {
       const res = await fetch('/api/unsandbox', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'boot-harness',
-          harness: 'claude',
-          prompt: bootPrompt.trim() || undefined,
-          network: 'semitrusted',
+          action: 'create-service',
+          name: 'unfirehose',
+          ports: '3000',
+          bootstrap: UNFIREHOSE_BOOTSTRAP,
+          network,
         }),
       });
       const data = await res.json();
-      if (data.success) {
-        setBootResult(data);
-        mutateSessions();
-      } else {
-        setBootError(data.error || 'Boot failed');
-      }
+      if (data.error) setDeployError(data.error);
+      else { setDeployResult(data); mutateServices(); }
     } catch (err) {
-      setBootError(String(err));
+      setDeployError(String(err));
     } finally {
-      setBooting(false);
+      setDeploying(false);
     }
-  }, [bootPrompt, mutateSessions]);
+  }, [mutateServices, network]);
+
+  const executeCommand = useCallback(async () => {
+    if (!cmd.trim()) return;
+    setCmdRunning(true);
+    setCmdResult(null);
+    try {
+      const res = await fetch('/api/unsandbox', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'execute', language: 'bash', code: cmd, network }),
+      });
+      setCmdResult(await res.json());
+    } catch (err) {
+      setCmdResult({ error: String(err) });
+    } finally {
+      setCmdRunning(false);
+    }
+  }, [cmd, network]);
 
   const killSession = useCallback(async (sessionId: string) => {
     setKillingSession(sessionId);
@@ -103,42 +107,9 @@ export default function UnsandboxNodePage() {
         body: JSON.stringify({ action: 'kill-session', sessionId }),
       });
       mutateSessions();
-    } catch {
-      // ignore
-    } finally {
-      setKillingSession(null);
-    }
+    } catch { /* ignore */ }
+    finally { setKillingSession(null); }
   }, [mutateSessions]);
-
-  const createService = useCallback(async () => {
-    if (!serviceName.trim()) return;
-    setCreatingService(true);
-    setServiceResult(null);
-    try {
-      const res = await fetch('/api/unsandbox', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'create-service',
-          name: serviceName.trim(),
-          ports: servicePorts.trim(),
-          bootstrap: serviceBootstrap.trim() || undefined,
-          network: 'semitrusted',
-        }),
-      });
-      const data = await res.json();
-      setServiceResult(data);
-      if (!data.error) {
-        mutateServices();
-        setServiceName('');
-        setServiceBootstrap('');
-      }
-    } catch (err) {
-      setServiceResult({ error: String(err) });
-    } finally {
-      setCreatingService(false);
-    }
-  }, [serviceName, servicePorts, serviceBootstrap, mutateServices]);
 
   const destroyService = useCallback(async (serviceId: string) => {
     if (!confirm(`Destroy service ${serviceId}?`)) return;
@@ -149,9 +120,7 @@ export default function UnsandboxNodePage() {
         body: JSON.stringify({ action: 'destroy-service', serviceId }),
       });
       mutateServices();
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
   }, [mutateServices]);
 
   if (!status) {
@@ -164,17 +133,14 @@ export default function UnsandboxNodePage() {
 
   if (!status.connected) {
     return (
-      <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] p-6">
-        <div className="space-y-4">
-          <h1 className="text-2xl font-bold">unsandbox.com</h1>
-          <div className="text-red-400">Not connected. Configure your API keys on the <Link href="/permacomputer" className="text-[var(--color-accent)] hover:underline">Permacomputer</Link> page.</div>
+      <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] p-6 space-y-4">
+        <h1 className="text-2xl font-bold">unsandbox.com</h1>
+        <div className="text-red-400">
+          Not connected. <Link href="/permacomputer" className="text-[var(--color-accent)] hover:underline">Configure API keys</Link>.
         </div>
       </div>
     );
   }
-
-  const sessionList: any[] = sessions?.sessions ?? [];
-  const serviceList: any[] = services?.services ?? [];
 
   return (
     <div className="min-h-screen bg-[var(--color-background)] text-[var(--color-foreground)] p-6 space-y-6">
@@ -184,229 +150,209 @@ export default function UnsandboxNodePage() {
           <Link href="/permacomputer" className="text-[var(--color-muted)] hover:text-[var(--color-foreground)] transition-colors">&larr;</Link>
           <div>
             <h1 className="text-2xl font-bold">unsandbox.com</h1>
-            <p className="text-sm text-[var(--color-muted)]">Virtual compute node &middot; cloud sandbox</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-green-400">● connected</span>
-          <span className="font-mono font-bold text-[var(--color-accent)]">tier {status.tier}</span>
-          <span className="text-[var(--color-muted)]">{status.rateLimit} rpm</span>
-          <span className="text-[var(--color-muted)]">{status.maxSessions} max sessions</span>
-        </div>
-      </div>
-
-      {/* Tier banner */}
-      <div className="bg-gradient-to-r from-[var(--color-accent)]/10 to-transparent rounded border border-[var(--color-accent)]/30 p-4">
-        <div className="flex items-center gap-4">
-          <div className="text-3xl font-bold text-[var(--color-accent)]">T{status.tier}</div>
-          <div className="space-y-0.5">
-            <div className="text-sm font-bold">Tier {status.tier} &middot; {status.rateLimit} requests/min &middot; {status.maxSessions} concurrent sessions</div>
-            <div className="text-xs text-[var(--color-muted)]">
-              42 languages &middot; semitrusted network &middot; persistent services &middot; snapshots &middot; custom domains
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Boot Harness */}
-        <Section title="Boot Agent Harness">
-          <div className="space-y-3">
-            <p className="text-xs text-[var(--color-muted)]">
-              Spin up Claude Code in a cloud sandbox with semitrusted network access.
+            <p className="text-sm text-[var(--color-muted)]">
+              Cloud node &middot; tier {status.tier} &middot; {status.rateLimit} rpm &middot; {status.maxSessions} sessions
             </p>
-            <input
-              type="text"
-              value={bootPrompt}
-              onChange={e => setBootPrompt(e.target.value)}
-              placeholder="Initial prompt (optional)"
-              className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-sm"
-              onKeyDown={e => { if (e.key === 'Enter') bootHarness(); }}
-            />
-            <button
-              onClick={bootHarness}
-              disabled={booting}
-              className="w-full px-4 py-2 text-sm font-bold rounded bg-[var(--color-accent)] text-[var(--color-background)] hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
-            >
-              {booting ? 'Booting...' : 'Boot Claude on unsandbox'}
-            </button>
-            {bootResult && (
-              <div className="text-sm text-green-400 font-mono bg-[var(--color-background)] rounded p-2 border border-[var(--color-border)]">
-                Session: {bootResult.sessionId}
-                {bootResult.domain && <span className="ml-2 text-[var(--color-muted)]">{bootResult.domain}</span>}
-              </div>
-            )}
-            {bootError && <div className="text-sm text-red-400">{bootError}</div>}
           </div>
-        </Section>
-
-        {/* Execute Code */}
-        <Section title="Execute Code">
-          <div className="space-y-3">
-            <div className="flex gap-2">
-              <select
-                value={language}
-                onChange={e => setLanguage(e.target.value)}
-                className="bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-1 text-sm cursor-pointer"
-              >
-                {['bash', 'python', 'javascript', 'typescript', 'ruby', 'go', 'rust', 'c', 'cpp'].map(l => (
-                  <option key={l} value={l}>{l}</option>
-                ))}
-              </select>
-              <button
-                onClick={executeCode}
-                disabled={executing || !code.trim()}
-                className="px-4 py-1 text-sm font-bold rounded bg-[var(--color-accent)] text-[var(--color-background)] hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
-              >
-                {executing ? 'Running...' : 'Run'}
-              </button>
-            </div>
-            <textarea
-              value={code}
-              onChange={e => setCode(e.target.value)}
-              placeholder={language === 'bash' ? 'echo "hello from unsandbox"' : `# ${language} code here`}
-              className="w-full h-28 bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-sm font-mono resize-y"
-              onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) executeCode(); }}
-            />
-            {execResult && (
-              <pre className="bg-[#0d0d0d] rounded border border-[var(--color-border)] p-3 text-xs font-mono overflow-auto max-h-60 whitespace-pre-wrap">
-                {execResult.error ? (
-                  <span className="text-red-400">{execResult.error}</span>
-                ) : (
-                  <>
-                    {execResult.stdout && <span className="text-[#d4d4d4]">{execResult.stdout}</span>}
-                    {execResult.stderr && <span className="text-yellow-400">{execResult.stderr}</span>}
-                    {execResult.exit_code !== undefined && execResult.exit_code !== 0 && (
-                      <span className="text-red-400 block mt-1">exit code: {execResult.exit_code}</span>
-                    )}
-                  </>
-                )}
-              </pre>
-            )}
-          </div>
-        </Section>
+        </div>
+        <span className="text-green-400 text-sm">● connected</span>
       </div>
 
-      {/* Active Sessions */}
-      <Section
-        title={`Sessions (${sessionList.length})`}
-        actions={
-          <button onClick={() => mutateSessions()} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-foreground)] cursor-pointer">refresh</button>
-        }
-      >
-        {sessionList.length === 0 ? (
-          <div className="text-sm text-[var(--color-muted)] text-center py-6">
-            No active sessions. Boot a harness or create a session to get started.
+      {/* === Primary action: Deploy unfirehose === */}
+      {!unfirehoseService ? (
+        <div className="bg-[var(--color-surface)] rounded border-2 border-[var(--color-accent)]/40 p-6 space-y-4">
+          <div className="space-y-2">
+            <h2 className="text-lg font-bold">Add unsandbox as a mesh node</h2>
+            <p className="text-sm text-[var(--color-muted)]">
+              Deploy unfirehose on unsandbox.com as a persistent service.
+              It joins your mesh alongside SSH hosts &mdash; bootstrap harnesses,
+              monitor sessions, and track usage like any other node.
+            </p>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {sessionList.map((s: any) => (
-              <div key={s.session_id || s.id} className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-                    <span className="font-mono text-sm font-bold">{s.session_id || s.id}</span>
-                  </div>
-                  <button
-                    onClick={() => killSession(s.session_id || s.id)}
-                    disabled={killingSession === (s.session_id || s.id)}
-                    className="text-xs text-red-400 hover:text-red-300 cursor-pointer disabled:opacity-50"
-                  >
-                    {killingSession === (s.session_id || s.id) ? 'killing...' : 'kill'}
-                  </button>
-                </div>
-                {s.domain && <div className="text-xs text-[var(--color-muted)] mt-1 font-mono">{s.domain}</div>}
-                {s.shell && <div className="text-xs text-[var(--color-muted)] mt-1">shell: {s.shell}</div>}
-                {s.created_at && <div className="text-xs text-[var(--color-muted)] mt-1">created: {new Date(s.created_at).toLocaleString()}</div>}
-              </div>
-            ))}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={deployUnfirehose}
+              disabled={deploying}
+              className="px-6 py-2.5 text-sm font-bold rounded bg-[var(--color-accent)] text-[var(--color-background)] hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
+            >
+              {deploying ? 'Deploying...' : 'Deploy unfirehose'}
+            </button>
+            <span className="text-xs text-[var(--color-muted)]">port 3000 &middot; {network === 'zero_trust' ? 'zero trust' : 'semitrusted'} network</span>
           </div>
-        )}
-      </Section>
-
-      {/* Services */}
-      <Section
-        title={`Services (${serviceList.length})`}
-        actions={
-          <button onClick={() => mutateServices()} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-foreground)] cursor-pointer">refresh</button>
-        }
-      >
-        <div className="space-y-3">
-          {serviceList.length > 0 && (
-            <div className="grid grid-cols-1 gap-3">
-              {serviceList.map((svc: any) => (
-                <div key={svc.service_id || svc.id} className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2 h-2 rounded-full ${svc.state === 'running' ? 'bg-green-400' : svc.state === 'frozen' ? 'bg-blue-400' : 'bg-yellow-400'}`} />
-                      <span className="font-mono text-sm font-bold">{svc.name || svc.service_id || svc.id}</span>
-                      {svc.state && <span className="text-xs text-[var(--color-muted)]">{svc.state}</span>}
-                    </div>
-                    <button
-                      onClick={() => destroyService(svc.service_id || svc.id)}
-                      className="text-xs text-red-400 hover:text-red-300 cursor-pointer"
-                    >
-                      destroy
-                    </button>
-                  </div>
-                  {svc.domain && (
-                    <div className="text-xs mt-1">
-                      <a href={`https://${svc.domain}`} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline font-mono">{svc.domain}</a>
-                    </div>
-                  )}
-                  {svc.ports && <div className="text-xs text-[var(--color-muted)] mt-1">ports: {svc.ports}</div>}
-                </div>
-              ))}
+          {deployResult && (
+            <div className="text-sm text-green-400 font-mono bg-[var(--color-background)] rounded p-3 border border-green-500/30">
+              Deployed: {deployResult.service_id || deployResult.name}
+              {deployResult.domain && (
+                <> &middot; <a href={`https://${deployResult.domain}`} target="_blank" rel="noopener noreferrer" className="text-[var(--color-accent)] hover:underline">{deployResult.domain}</a></>
+              )}
             </div>
           )}
-
-          {/* Create new service */}
-          <div className="border-t border-[var(--color-border)] pt-3 space-y-2">
-            <div className="text-xs font-bold text-[var(--color-muted)]">Deploy New Service</div>
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="text"
-                value={serviceName}
-                onChange={e => setServiceName(e.target.value)}
-                placeholder="service name"
-                className="bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-sm font-mono"
-              />
-              <input
-                type="text"
-                value={servicePorts}
-                onChange={e => setServicePorts(e.target.value)}
-                placeholder="ports (e.g. 80,443)"
-                className="bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-1.5 text-sm font-mono"
-              />
-            </div>
-            <textarea
-              value={serviceBootstrap}
-              onChange={e => setServiceBootstrap(e.target.value)}
-              placeholder="bootstrap command (e.g. python -m http.server 80)"
-              className="w-full h-16 bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-sm font-mono resize-y"
-            />
-            <button
-              onClick={createService}
-              disabled={creatingService || !serviceName.trim()}
-              className="px-4 py-1.5 text-sm font-bold rounded border border-[var(--color-accent)] text-[var(--color-accent)] hover:bg-[var(--color-accent)]/10 transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              {creatingService ? 'Deploying...' : 'Deploy Service'}
-            </button>
-            {serviceResult?.error && <div className="text-sm text-red-400">{serviceResult.error}</div>}
-            {serviceResult && !serviceResult.error && (
-              <div className="text-sm text-green-400 font-mono">
-                Deployed: {serviceResult.service_id || serviceResult.name}
-                {serviceResult.domain && <span className="ml-2 text-[var(--color-muted)]">{serviceResult.domain}</span>}
+          {deployError && <div className="text-sm text-red-400">{deployError}</div>}
+        </div>
+      ) : (
+        /* === Unfirehose is deployed === */
+        <div className="bg-[var(--color-surface)] rounded border border-green-500/30 p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className={`w-3 h-3 rounded-full ${unfirehoseService.state === 'running' ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
+              <div>
+                <div className="font-bold text-lg">unfirehose</div>
+                <div className="text-xs text-[var(--color-muted)]">
+                  {unfirehoseService.state || 'unknown'} &middot; {unfirehoseService.service_id || unfirehoseService.id}
+                  {unfirehoseService.ports && <> &middot; port {unfirehoseService.ports}</>}
+                </div>
               </div>
-            )}
+            </div>
+            <div className="flex items-center gap-3">
+              {unfirehoseService.domain && (
+                <a
+                  href={`https://${unfirehoseService.domain}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-2 rounded bg-[var(--color-accent)] text-[var(--color-background)] text-sm font-bold hover:opacity-90 transition-opacity"
+                >
+                  Open Dashboard
+                </a>
+              )}
+              {unfirehoseService.locked ? (
+                <span className="text-xs text-[var(--color-muted)] px-2 py-1">🔒 locked</span>
+              ) : (
+                <button
+                  onClick={() => destroyService(unfirehoseService.service_id || unfirehoseService.id)}
+                  className="text-xs text-red-400 hover:text-red-300 cursor-pointer px-2 py-1"
+                >
+                  destroy
+                </button>
+              )}
+            </div>
+          </div>
+          {unfirehoseService.domain && (
+            <div className="text-xs font-mono text-[var(--color-muted)]">
+              https://{unfirehoseService.domain}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* === Sessions === */}
+      {sessionList.length > 0 && (
+        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-[var(--color-muted)] uppercase tracking-wide">Sessions ({sessionList.length})</h2>
+            <button onClick={() => mutateSessions()} className="text-xs text-[var(--color-muted)] hover:text-[var(--color-foreground)] cursor-pointer">refresh</button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            {sessionList.map((s: any) => {
+              const id = s.session_id || s.id;
+              return (
+                <div key={id} className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-3 flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                      <span className="font-mono text-xs font-bold">{id}</span>
+                    </div>
+                    {s.shell && <div className="text-xs text-[var(--color-muted)] mt-0.5">shell: {s.shell}</div>}
+                  </div>
+                  <button
+                    onClick={() => killSession(id)}
+                    disabled={killingSession === id}
+                    className="text-xs text-red-400 hover:text-red-300 cursor-pointer disabled:opacity-50"
+                  >
+                    {killingSession === id ? '...' : 'kill'}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
-      </Section>
+      )}
 
-      {/* Quick reference */}
-      <div className="text-xs text-[var(--color-muted)] space-y-1">
-        <div>CLI: <code className="font-mono text-[var(--color-foreground)]">curl -o un https://unsandbox.com/downloads/un && chmod +x un</code></div>
-        <div>Sessions: <code className="font-mono text-[var(--color-foreground)]">un session --tmux</code> &middot; Services: <code className="font-mono text-[var(--color-foreground)]">un service --name myapp --ports 80 --bootstrap &quot;...&quot;</code></div>
+      {/* === Other services === */}
+      {serviceList.filter(s => s !== unfirehoseService).length > 0 && (
+        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
+          <h2 className="text-sm font-bold text-[var(--color-muted)] uppercase tracking-wide">Other Services</h2>
+          <div className="space-y-2">
+            {serviceList.filter(s => s !== unfirehoseService).map((svc: any) => {
+              const id = svc.service_id || svc.id;
+              return (
+                <div key={id} className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className={`w-2 h-2 rounded-full ${svc.state === 'running' ? 'bg-green-400' : svc.state === 'frozen' ? 'bg-blue-400' : 'bg-yellow-400'}`} />
+                    <span className="font-mono text-sm font-bold">{svc.name || id}</span>
+                    <span className="text-xs text-[var(--color-muted)]">{svc.state}</span>
+                    {svc.ports && <span className="text-xs text-[var(--color-muted)]">:{svc.ports}</span>}
+                    {svc.domain && (
+                      <a href={`https://${svc.domain}`} target="_blank" rel="noopener noreferrer" className="text-xs text-[var(--color-accent)] hover:underline font-mono">{svc.domain}</a>
+                    )}
+                  </div>
+                  {svc.locked ? (
+                    <span className="text-xs text-[var(--color-muted)]">🔒 locked</span>
+                  ) : (
+                    <button onClick={() => destroyService(id)} className="text-xs text-red-400 hover:text-red-300 cursor-pointer">destroy</button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* === Terminal === */}
+      <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-bold text-[var(--color-muted)] uppercase tracking-wide">Terminal</h2>
+          <div className="flex items-center gap-2">
+            {(['semitrusted', 'zero_trust'] as const).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setNetwork(mode)}
+                className={`px-2.5 py-1 text-xs rounded cursor-pointer transition-colors ${
+                  network === mode
+                    ? 'bg-[var(--color-accent)] text-[var(--color-background)] font-bold'
+                    : 'text-[var(--color-muted)] hover:text-[var(--color-foreground)] border border-[var(--color-border)]'
+                }`}
+              >
+                {mode === 'semitrusted' ? 'semitrusted' : 'zero trust'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-xs text-[var(--color-muted)]">
+          Run a command on unsandbox (one-shot, fresh container).
+          {network === 'zero_trust' && <span className="text-yellow-400 ml-1">⚠ full network access</span>}
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={cmd}
+            onChange={e => setCmd(e.target.value)}
+            placeholder="uname -a"
+            className="flex-1 bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-sm font-mono"
+            onKeyDown={e => { if (e.key === 'Enter') executeCommand(); }}
+          />
+          <button
+            onClick={executeCommand}
+            disabled={cmdRunning || !cmd.trim()}
+            className="px-4 py-2 text-sm font-bold rounded bg-[var(--color-accent)] text-[var(--color-background)] hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer"
+          >
+            {cmdRunning ? '...' : 'Run'}
+          </button>
+        </div>
+        {cmdResult && (
+          <pre className="bg-[#0d0d0d] rounded border border-[var(--color-border)] p-3 text-xs font-mono overflow-auto max-h-48 whitespace-pre-wrap">
+            {cmdResult.error ? (
+              <span className="text-red-400">{cmdResult.error}</span>
+            ) : (
+              <>
+                {cmdResult.stdout && <span className="text-[#d4d4d4]">{cmdResult.stdout}</span>}
+                {cmdResult.stderr && <span className="text-yellow-400">{cmdResult.stderr}</span>}
+                {cmdResult.exit_code !== undefined && cmdResult.exit_code !== 0 && (
+                  <span className="text-red-400 block mt-1">exit code: {cmdResult.exit_code}</span>
+                )}
+              </>
+            )}
+          </pre>
+        )}
       </div>
     </div>
   );
