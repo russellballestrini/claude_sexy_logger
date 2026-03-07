@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { isMultiTenant } from '@unfirehose/core/auth';
-import { getControlDb } from '@unfirehose/core/db/control';
-import { tierFromString } from '@unfirehose/core/tiers';
+import { isMultiTenant } from '@unturf/unfirehose/auth';
+import { getControlDb } from '@unturf/unfirehose/db/control';
+import { tierFromString } from '@unturf/unfirehose/tiers';
 
 export async function POST(request: NextRequest) {
   if (!isMultiTenant()) {

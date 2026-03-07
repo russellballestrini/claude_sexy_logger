@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac } from 'crypto';
-import { validateApiKey } from '@unfirehose/core/db/api-keys';
+import { validateApiKey } from '@unturf/unfirehose/db/api-keys';
 
 const AUTH_SECRET = process.env.AUTH_SECRET ?? '';
 const THIRTY_DAYS = 30 * 24 * 60 * 60;

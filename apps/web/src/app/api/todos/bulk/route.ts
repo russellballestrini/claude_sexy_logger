@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@unfirehose/core/db/schema';
-import { recordTriageBatch } from '@unfirehose/core/db/triage';
+import { getDb } from '@unturf/unfirehose/db/schema';
+import { recordTriageBatch } from '@unturf/unfirehose/db/triage';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

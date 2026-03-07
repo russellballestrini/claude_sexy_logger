@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from 'fs/promises';
-import { claudePaths, decodeProjectName } from '@unfirehose/core/claude-paths';
+import { claudePaths, decodeProjectName } from '@unturf/unfirehose/claude-paths';
 import { NextResponse } from 'next/server';
-import type { ProjectInfo, SessionsIndex } from '@unfirehose/core/types';
+import type { ProjectInfo, SessionsIndex } from '@unturf/unfirehose/types';
 
 // Try to resolve actual filesystem path from encoded project name
 // e.g. "-home-fox-git-unsandbox-com" → check if /home/fox/git/unsandbox-com or similar exists

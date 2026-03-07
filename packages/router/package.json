@@ -1,15 +1,38 @@
 {
-  "name": "@unfirehose/router",
+  "name": "@unturf/unfirehose-router",
   "version": "0.1.0",
   "description": "Lightweight daemon that watches Claude Code JSONL and forwards to unfirehose.com",
   "type": "module",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/russellballestrini/unfirehose.git",
+    "directory": "packages/router"
+  },
+  "homepage": "https://github.com/russellballestrini/unfirehose#readme",
+  "keywords": [
+    "claude-code",
+    "jsonl",
+    "router",
+    "daemon",
+    "unturf",
+    "permacomputer"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "bin": {
     "unfirehose-router": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/cli.ts",
-    "start": "node dist/cli.js"
+    "start": "node dist/cli.js",
+    "prepublishOnly": "npm run build"
   },
   "dependencies": {
     "tsx": "^4.7.0"

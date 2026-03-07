@@ -3,9 +3,9 @@ import { execFile } from 'child_process';
 import { readFile } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
-import { getAllSettings } from '@unfirehose/core/db/ingest';
-import { claudePaths } from '@unfirehose/core/claude-paths';
-import type { SessionsIndex } from '@unfirehose/core/types';
+import { getAllSettings } from '@unturf/unfirehose/db/ingest';
+import { claudePaths } from '@unturf/unfirehose/claude-paths';
+import type { SessionsIndex } from '@unturf/unfirehose/types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

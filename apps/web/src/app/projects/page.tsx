@@ -2,10 +2,10 @@
 
 import useSWR from 'swr';
 import Link from 'next/link';
-import type { ProjectInfo } from '@unfirehose/core/types';
-import { PageContext } from '@unfirehose/ui/PageContext';
-import { TimeRangeSelect, useTimeRange, getTimeRangeMinutes } from '@unfirehose/ui/TimeRangeSelect';
-import { formatRelativeTime, formatTokens } from '@unfirehose/core/format';
+import type { ProjectInfo } from '@unturf/unfirehose/types';
+import { PageContext } from '@unturf/unfirehose-ui/PageContext';
+import { TimeRangeSelect, useTimeRange, getTimeRangeMinutes } from '@unturf/unfirehose-ui/TimeRangeSelect';
+import { formatRelativeTime, formatTokens } from '@unturf/unfirehose/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

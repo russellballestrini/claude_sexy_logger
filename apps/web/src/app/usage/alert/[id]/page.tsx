@@ -8,9 +8,9 @@ import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from 'recharts';
-import type { ProjectMetadata } from '@unfirehose/core/types';
-import { PageContext } from '@unfirehose/ui/PageContext';
-import { formatTokens, formatCost, formatRelativeTime, formatTimestamp, gitRemoteToWebUrl, commitUrl } from '@unfirehose/core/format';
+import type { ProjectMetadata } from '@unturf/unfirehose/types';
+import { PageContext } from '@unturf/unfirehose-ui/PageContext';
+import { formatTokens, formatCost, formatRelativeTime, formatTimestamp, gitRemoteToWebUrl, commitUrl } from '@unturf/unfirehose/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

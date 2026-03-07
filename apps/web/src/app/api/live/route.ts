@@ -2,9 +2,9 @@ import { readdir, readFile, stat } from 'fs/promises';
 import { watch, createReadStream } from 'fs';
 import { createInterface } from 'readline';
 import path from 'path';
-import { claudePaths } from '@unfirehose/core/claude-paths';
-import { decodeProjectName } from '@unfirehose/core/claude-paths';
-import type { SessionsIndex } from '@unfirehose/core/types';
+import { claudePaths } from '@unturf/unfirehose/claude-paths';
+import { decodeProjectName } from '@unturf/unfirehose/claude-paths';
+import type { SessionsIndex } from '@unturf/unfirehose/types';
 
 interface TrackedFile {
   path: string;

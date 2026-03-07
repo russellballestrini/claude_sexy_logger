@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import Link from 'next/link';
-import { PageContext } from '@unfirehose/ui/PageContext';
-import { formatTokens, formatRelativeTime, formatTimestamp } from '@unfirehose/core/format';
+import { PageContext } from '@unturf/unfirehose-ui/PageContext';
+import { formatTokens, formatRelativeTime, formatTimestamp } from '@unturf/unfirehose/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

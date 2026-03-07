@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@unfirehose/core/db/schema';
-import { sanitizePII } from '@unfirehose/core/pii';
+import { getDb } from '@unturf/unfirehose/db/schema';
+import { sanitizePII } from '@unturf/unfirehose/pii';
 
 /**
  * POST /api/pii-backfill

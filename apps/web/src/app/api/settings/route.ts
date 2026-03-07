@@ -4,7 +4,7 @@ import {
   getAllSettings,
   setSetting,
   deleteSetting,
-} from '@unfirehose/core/db/ingest';
+} from '@unturf/unfirehose/db/ingest';
 
 export async function GET() {
   const settings = getAllSettings();

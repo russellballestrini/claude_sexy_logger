@@ -2,8 +2,8 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import useSWR from 'swr';
-import { PageContext } from '@unfirehose/ui/PageContext';
-import { AVAILABLE_CURRENCIES } from '@unfirehose/ui/useCurrency';
+import { PageContext } from '@unturf/unfirehose-ui/PageContext';
+import { AVAILABLE_CURRENCIES } from '@unturf/unfirehose-ui/useCurrency';
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 

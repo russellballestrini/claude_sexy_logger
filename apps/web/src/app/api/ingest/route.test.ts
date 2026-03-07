@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('@unfirehose/core/db/ingest', () => ({
+vi.mock('@unturf/unfirehose/db/ingest', () => ({
   ingestAll: vi.fn().mockResolvedValue({
     projectsAdded: 1, sessionsAdded: 2, messagesAdded: 10, blocksAdded: 20, filesScanned: 3, alertsTriggered: 0,
   }),
@@ -10,20 +10,20 @@ vi.mock('@unfirehose/core/db/ingest', () => ({
   ingestJsonlLines: vi.fn().mockReturnValue({ accepted: 0, errors: 0 }),
 }));
 
-vi.mock('@unfirehose/core/auth', () => ({
+vi.mock('@unturf/unfirehose/auth', () => ({
   isMultiTenant: vi.fn().mockReturnValue(false),
   authenticateRequest: vi.fn().mockResolvedValue(null),
 }));
 
-vi.mock('@unfirehose/core/db/tenant', () => ({
+vi.mock('@unturf/unfirehose/db/tenant', () => ({
   getTenantDb: vi.fn(),
 }));
 
-vi.mock('@unfirehose/core/db/control', () => ({
+vi.mock('@unturf/unfirehose/db/control', () => ({
   getControlDb: vi.fn(),
 }));
 
-vi.mock('@unfirehose/core/uuidv7', () => ({
+vi.mock('@unturf/unfirehose/uuidv7', () => ({
   uuidv7: vi.fn().mockReturnValue('test-uuid'),
 }));
 

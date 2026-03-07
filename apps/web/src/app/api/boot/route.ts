@@ -4,9 +4,9 @@ import { stat } from 'fs/promises';
 import { writeFile, unlink } from 'fs/promises';
 import path from 'path';
 import { tmpdir, platform, homedir } from 'os';
-import { getSetting } from '@unfirehose/core/db/ingest';
-import { getDb } from '@unfirehose/core/db/schema';
-import { discoverNodes } from '@unfirehose/core/mesh';
+import { getSetting } from '@unturf/unfirehose/db/ingest';
+import { getDb } from '@unturf/unfirehose/db/schema';
+import { discoverNodes } from '@unturf/unfirehose/mesh';
 
 const UUID_RE = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const IS_WINDOWS = platform() === 'win32';

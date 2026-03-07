@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@unfirehose/core/db/schema';
+import { getDb } from '@unturf/unfirehose/db/schema';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

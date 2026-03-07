@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSetting } from '@unfirehose/core/db/ingest';
+import { getSetting } from '@unturf/unfirehose/db/ingest';
 
 /**
  * GET /api/mesh/rates

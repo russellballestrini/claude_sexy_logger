@@ -2,13 +2,13 @@
 
 import { useState, useRef, Fragment } from 'react';
 import useSWR from 'swr';
-import { TimeRangeSelect, useTimeRange } from '@unfirehose/ui/TimeRangeSelect';
+import { TimeRangeSelect, useTimeRange } from '@unturf/unfirehose-ui/TimeRangeSelect';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
   AreaChart, Area,
 } from 'recharts';
-import { PageContext } from '@unfirehose/ui/PageContext';
+import { PageContext } from '@unturf/unfirehose-ui/PageContext';
 
 // --- Mock data ---
 
@@ -475,7 +475,7 @@ export default function StyleguidePage() {
             <TimeRangeSelect value={timeRange} onChange={setTimeRange} />
             <span className="text-base text-[var(--color-muted)]">Current: {timeRange}</span>
           </div>
-          <pre className="text-sm text-[var(--color-muted)] bg-[var(--color-background)] p-3 rounded overflow-x-auto">{`import { TimeRangeSelect, useTimeRange, getTimeRangeFrom } from '@unfirehose/ui/TimeRangeSelect';
+          <pre className="text-sm text-[var(--color-muted)] bg-[var(--color-background)] p-3 rounded overflow-x-auto">{`import { TimeRangeSelect, useTimeRange, getTimeRangeFrom } from '@unturf/unfirehose-ui/TimeRangeSelect';
 
 const [range, setRange] = useTimeRange('my_page_range', '7d');
 const from = getTimeRangeFrom(range); // ISO string or undefined

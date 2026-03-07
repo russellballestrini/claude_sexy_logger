@@ -1,5 +1,5 @@
-import { startWatcher, stopWatcher } from '@unfirehose/core/db/watcher';
-import { ingestAll, getDbStats } from '@unfirehose/core/db/ingest';
+import { startWatcher, stopWatcher } from '@unturf/unfirehose/db/watcher';
+import { ingestAll, getDbStats } from '@unturf/unfirehose/db/ingest';
 
 const POLL_INTERVAL_MS = 60_000;
 

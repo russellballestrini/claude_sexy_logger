@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { execFile } from 'child_process';
 import { readFile } from 'fs/promises';
-import { claudePaths } from '@unfirehose/core/claude-paths';
-import { getSetting } from '@unfirehose/core/db/ingest';
-import type { SessionsIndex } from '@unfirehose/core/types';
+import { claudePaths } from '@unturf/unfirehose/claude-paths';
+import { getSetting } from '@unturf/unfirehose/db/ingest';
+import type { SessionsIndex } from '@unturf/unfirehose/types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { validateApiKey } from '@unfirehose/core/db/api-keys';
-import { getControlDb } from '@unfirehose/core/db/control';
-import { tierName, tierLimits } from '@unfirehose/core/tiers';
+import { validateApiKey } from '@unturf/unfirehose/db/api-keys';
+import { getControlDb } from '@unturf/unfirehose/db/control';
+import { tierName, tierLimits } from '@unturf/unfirehose/tiers';
 
 function getAccountId(request: NextRequest): string | null {
   const accountId = request.headers.get('X-Account-Id');

@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ingestAll, getDbStats, ingestJsonlLines } from '@unfirehose/core/db/ingest';
-import { isMultiTenant, authenticateRequest } from '@unfirehose/core/auth';
-import { getTenantDb, pruneOldData } from '@unfirehose/core/db/tenant';
-import { getControlDb } from '@unfirehose/core/db/control';
-import { uuidv7 } from '@unfirehose/core/uuidv7';
-import { tierLimits } from '@unfirehose/core/tiers';
-import { checkRateLimit } from '@unfirehose/core/rate-limit';
+import { ingestAll, getDbStats, ingestJsonlLines } from '@unturf/unfirehose/db/ingest';
+import { isMultiTenant, authenticateRequest } from '@unturf/unfirehose/auth';
+import { getTenantDb, pruneOldData } from '@unturf/unfirehose/db/tenant';
+import { getControlDb } from '@unturf/unfirehose/db/control';
+import { uuidv7 } from '@unturf/unfirehose/uuidv7';
+import { tierLimits } from '@unturf/unfirehose/tiers';
+import { checkRateLimit } from '@unturf/unfirehose/rate-limit';
 
 export async function POST(request: NextRequest) {
   if (isMultiTenant()) {

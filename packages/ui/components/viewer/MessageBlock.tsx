@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Markdown from 'react-markdown';
-import { formatTimestamp, formatDuration } from '@unfirehose/core/format';
+import { formatTimestamp, formatDuration } from '@unturf/unfirehose/format';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ['better-sqlite3'],
-  transpilePackages: ['@unfirehose/core', '@unfirehose/ui'],
+  transpilePackages: ['@unturf/unfirehose', '@unturf/unfirehose-ui'],
 };
 
 export default nextConfig;

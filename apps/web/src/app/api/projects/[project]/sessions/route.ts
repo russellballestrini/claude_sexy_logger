@@ -1,8 +1,8 @@
 import { readFile, readdir, stat } from 'fs/promises';
-import { claudePaths } from '@unfirehose/core/claude-paths';
+import { claudePaths } from '@unturf/unfirehose/claude-paths';
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@unfirehose/core/db/schema';
-import type { SessionsIndex } from '@unfirehose/core/types';
+import { getDb } from '@unturf/unfirehose/db/schema';
+import type { SessionsIndex } from '@unturf/unfirehose/types';
 
 /**
  * Resolve a Claude project name (e.g. "-home-fox-git-unfirehose-nextjs-logger")

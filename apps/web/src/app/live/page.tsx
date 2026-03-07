@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { formatTimestamp } from '@unfirehose/core/format';
-import { decodeProjectName } from '@unfirehose/core/claude-paths-client';
-import { PageContext } from '@unfirehose/ui/PageContext';
-import { SessionPopover } from '@unfirehose/ui/SessionPopover';
+import { formatTimestamp } from '@unturf/unfirehose/format';
+import { decodeProjectName } from '@unturf/unfirehose/claude-paths-client';
+import { PageContext } from '@unturf/unfirehose-ui/PageContext';
+import { SessionPopover } from '@unturf/unfirehose-ui/SessionPopover';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

@@ -6,7 +6,7 @@ import {
   acknowledgeAlert,
   getAlertThresholds,
   updateAlertThreshold,
-} from '@unfirehose/core/db/ingest';
+} from '@unturf/unfirehose/db/ingest';
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);

@@ -1,9 +1,9 @@
 'use client';
 
 import useSWR from 'swr';
-import { formatTokens } from '@unfirehose/core/format';
-import { PageContext } from '@unfirehose/ui/PageContext';
-import { TimeRangeSelect, useTimeRange } from '@unfirehose/ui/TimeRangeSelect';
+import { formatTokens } from '@unturf/unfirehose/format';
+import { PageContext } from '@unturf/unfirehose-ui/PageContext';
+import { TimeRangeSelect, useTimeRange } from '@unturf/unfirehose-ui/TimeRangeSelect';
 import {
   BarChart,
   Bar,

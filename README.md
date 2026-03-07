@@ -89,6 +89,36 @@ Built-in jsonblog.org compatible posting system. Write status updates, link exte
 ### Settings
 Configure alert thresholds, display preferences, compute settings, and integration settings.
 
+## Packages
+
+This is a Turborepo monorepo. Three packages are published to npm under the `@unturf` scope:
+
+| Package | npm | Description |
+|---------|-----|-------------|
+| [`@unturf/unfirehose`](packages/core) | [![npm](https://img.shields.io/npm/v/@unturf/unfirehose)](https://www.npmjs.com/package/@unturf/unfirehose) | Core data layer — ingestion, SQLite schema, types, PII detection, formatters |
+| [`@unturf/unfirehose-router`](packages/router) | [![npm](https://img.shields.io/npm/v/@unturf/unfirehose-router)](https://www.npmjs.com/package/@unturf/unfirehose-router) | CLI daemon — watches JSONL and forwards to cloud |
+| [`@unturf/unfirehose-ui`](packages/ui) | [![npm](https://img.shields.io/npm/v/@unturf/unfirehose-ui)](https://www.npmjs.com/package/@unturf/unfirehose-ui) | Shared React components for dashboard UI |
+
+Internal packages (not published):
+
+| Package | Description |
+|---------|-------------|
+| `@unturf/unfirehose-web` | Next.js 15 dashboard app |
+| `@unturf/unfirehose-worker` | Background ingestion service |
+| `@unturf/unfirehose-config` | Shared TypeScript configuration |
+
+```
+unfirehose/
+├── apps/
+│   ├── web/         @unturf/unfirehose-web      Next.js dashboard (private)
+│   └── worker/      @unturf/unfirehose-worker   Background ingestion (private)
+└── packages/
+    ├── core/        @unturf/unfirehose           Data layer, types, ingestion
+    ├── router/      @unturf/unfirehose-router    CLI daemon
+    ├── ui/          @unturf/unfirehose-ui         React components
+    └── config/      @unturf/unfirehose-config    TypeScript config (private)
+```
+
 ## Stack
 
 | Layer | Tech |

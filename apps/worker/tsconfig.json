@@ -1,5 +1,5 @@
 {
-  "extends": "@unfirehose/config/tsconfig/node",
+  "extends": "@unturf/unfirehose-config/tsconfig/node",
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist"

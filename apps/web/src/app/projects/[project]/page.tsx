@@ -3,10 +3,10 @@
 import { use, useState } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
-import type { SessionIndexEntry, ProjectMetadata } from '@unfirehose/core/types';
-import { formatRelativeTime, formatTokens, gitRemoteToWebUrl, commitUrl } from '@unfirehose/core/format';
-import { PageContext } from '@unfirehose/ui/PageContext';
-import { SessionPopover } from '@unfirehose/ui/SessionPopover';
+import type { SessionIndexEntry, ProjectMetadata } from '@unturf/unfirehose/types';
+import { formatRelativeTime, formatTokens, gitRemoteToWebUrl, commitUrl } from '@unturf/unfirehose/format';
+import { PageContext } from '@unturf/unfirehose-ui/PageContext';
+import { SessionPopover } from '@unturf/unfirehose-ui/SessionPopover';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

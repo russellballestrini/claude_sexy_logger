@@ -1,18 +1,42 @@
 {
-  "name": "@unfirehose/core",
-  "version": "0.0.0",
-  "private": true,
+  "name": "@unturf/unfirehose",
+  "version": "0.1.0",
+  "description": "Core data layer for unfirehose — Claude Code session ingestion, SQLite schema, types, PII detection, and formatters",
   "type": "module",
-  "scripts": {
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "lint": "tsc --noEmit"
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/russellballestrini/unfirehose.git",
+    "directory": "packages/core"
   },
+  "homepage": "https://github.com/russellballestrini/unfirehose#readme",
+  "keywords": [
+    "claude-code",
+    "jsonl",
+    "session-logs",
+    "sqlite",
+    "ingestion",
+    "observability",
+    "unturf",
+    "permacomputer"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "*.ts",
+    "db/*.ts",
+    "!**/*.test.ts",
+    "!vitest.config.ts"
+  ],
   "exports": {
     "./db/schema": "./db/schema.ts",
     "./db/ingest": "./db/ingest.ts",
     "./db/watcher": "./db/watcher.ts",
+    "./db/control": "./db/control.ts",
+    "./db/api-keys": "./db/api-keys.ts",
+    "./db/tenant": "./db/tenant.ts",
+    "./db/triage": "./db/triage.ts",
     "./claude-paths": "./claude-paths.ts",
     "./claude-paths-client": "./claude-paths-client.ts",
     "./fetch-paths": "./fetch-paths.ts",
@@ -25,20 +49,22 @@
     "./session-name": "./session-name.ts",
     "./uuidv7": "./uuidv7.ts",
     "./mesh": "./mesh.ts",
-    "./db/control": "./db/control.ts",
-    "./db/api-keys": "./db/api-keys.ts",
-    "./db/tenant": "./db/tenant.ts",
     "./tiers": "./tiers.ts",
     "./auth": "./auth.ts",
     "./rate-limit": "./rate-limit.ts",
-    "./apmonitor-adapter": "./apmonitor-adapter.ts",
-    "./db/triage": "./db/triage.ts"
+    "./apmonitor-adapter": "./apmonitor-adapter.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "better-sqlite3": "^12.6.2"
   },
   "devDependencies": {
-    "@unfirehose/config": "*",
+    "@unturf/unfirehose-config": "*",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20",
     "@vitest/coverage-v8": "^4.0.18",

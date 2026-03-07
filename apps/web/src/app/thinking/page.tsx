@@ -3,9 +3,9 @@
 import { useState, useMemo } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
-import { formatTimestamp, formatRelativeTime } from '@unfirehose/core/format';
-import { PageContext } from '@unfirehose/ui/PageContext';
-import { TimeRangeSelect, useTimeRange, getTimeRangeFrom } from '@unfirehose/ui/TimeRangeSelect';
+import { formatTimestamp, formatRelativeTime } from '@unturf/unfirehose/format';
+import { PageContext } from '@unturf/unfirehose-ui/PageContext';
+import { TimeRangeSelect, useTimeRange, getTimeRangeFrom } from '@unturf/unfirehose-ui/TimeRangeSelect';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

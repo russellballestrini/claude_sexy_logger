@@ -1,8 +1,8 @@
 import { readFile } from 'fs/promises';
-import { claudePaths } from '@unfirehose/core/claude-paths';
+import { claudePaths } from '@unturf/unfirehose/claude-paths';
 import { NextRequest, NextResponse } from 'next/server';
-import type { StatsCache } from '@unfirehose/core/types';
-import { getDb } from '@unfirehose/core/db/schema';
+import type { StatsCache } from '@unturf/unfirehose/types';
+import { getDb } from '@unturf/unfirehose/db/schema';
 
 // Anthropic API pricing per million tokens (2026 rates)
 // Used to show equivalent value even on Max plan

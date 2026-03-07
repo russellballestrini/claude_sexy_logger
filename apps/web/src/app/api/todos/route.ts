@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb } from '@unfirehose/core/db/schema';
-import { uuidv7 } from '@unfirehose/core/uuidv7';
-import { recordTriage } from '@unfirehose/core/db/triage';
+import { getDb } from '@unturf/unfirehose/db/schema';
+import { uuidv7 } from '@unturf/unfirehose/uuidv7';
+import { recordTriage } from '@unturf/unfirehose/db/triage';
 import { execFile } from 'child_process';
 import { readFile, stat } from 'fs/promises';
-import { claudePaths } from '@unfirehose/core/claude-paths';
-import type { SessionsIndex } from '@unfirehose/core/types';
+import { claudePaths } from '@unturf/unfirehose/claude-paths';
+import type { SessionsIndex } from '@unturf/unfirehose/types';
 
 function execAsync(cmd: string, args: string[], opts: { timeout: number }): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -184,7 +184,7 @@ export async function DELETE(request: NextRequest) {
 
     // Write triage file outside transaction
     if (triageEntries.length > 0) {
-      const { recordTriageBatch } = await import('@unfirehose/core/db/triage');
+      const { recordTriageBatch } = await import('@unturf/unfirehose/db/triage');
       recordTriageBatch(triageEntries);
     }
 

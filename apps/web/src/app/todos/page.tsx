@@ -3,8 +3,8 @@
 import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import Link from 'next/link';
 import useSWR from 'swr';
-import { formatRelativeTime, formatTimestamp } from '@unfirehose/core/format';
-import { PageContext } from '@unfirehose/ui/PageContext';
+import { formatRelativeTime, formatTimestamp } from '@unturf/unfirehose/format';
+import { PageContext } from '@unturf/unfirehose-ui/PageContext';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 

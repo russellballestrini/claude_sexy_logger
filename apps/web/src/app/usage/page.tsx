@@ -3,10 +3,10 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import useSWR from 'swr';
 import Link from 'next/link';
-import { formatTokens, formatRelativeTime } from '@unfirehose/core/format';
-import { PageContext } from '@unfirehose/ui/PageContext';
-import { TimeRangeSelect, useTimeRange, getTimeRangeMinutes } from '@unfirehose/ui/TimeRangeSelect';
-import { useCurrency } from '@unfirehose/ui/useCurrency';
+import { formatTokens, formatRelativeTime } from '@unturf/unfirehose/format';
+import { PageContext } from '@unturf/unfirehose-ui/PageContext';
+import { TimeRangeSelect, useTimeRange, getTimeRangeMinutes } from '@unturf/unfirehose-ui/TimeRangeSelect';
+import { useCurrency } from '@unturf/unfirehose-ui/useCurrency';
 import {
   AreaChart,
   Area,

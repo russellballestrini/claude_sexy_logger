@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { execSync } from 'child_process';
-import { discoverNodes } from '@unfirehose/core/mesh';
+import { discoverNodes } from '@unturf/unfirehose/mesh';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

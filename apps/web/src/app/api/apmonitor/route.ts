@@ -2,9 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   readAPMonitorState,
   readRemoteAPMonitorState,
-} from '@unfirehose/core/apmonitor-adapter';
-import { discoverNodes } from '@unfirehose/core/mesh';
-import { getDb } from '@unfirehose/core/db/schema';
+} from '@unturf/unfirehose/apmonitor-adapter';
+import { discoverNodes } from '@unturf/unfirehose/mesh';
+import { getDb } from '@unturf/unfirehose/db/schema';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

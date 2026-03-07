@@ -1,4 +1,4 @@
-import { getDb } from '@unfirehose/core/db/schema';
+import { getDb } from '@unturf/unfirehose/db/schema';
 
 const db = getDb();
 

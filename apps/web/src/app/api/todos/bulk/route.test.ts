@@ -4,7 +4,7 @@ import { createTestDb } from '@/test/db-helper';
 
 const db = createTestDb();
 
-vi.mock('@unfirehose/core/db/schema', () => ({ getDb: () => db }));
+vi.mock('@unturf/unfirehose/db/schema', () => ({ getDb: () => db }));
 
 const { PATCH } = await import('./route');
 

@@ -1,7 +1,7 @@
-import { claudePaths } from '@unfirehose/core/claude-paths';
-import { streamJsonl } from '@unfirehose/core/jsonl-reader';
+import { claudePaths } from '@unturf/unfirehose/claude-paths';
+import { streamJsonl } from '@unturf/unfirehose/jsonl-reader';
 import { NextRequest, NextResponse } from 'next/server';
-import type { ThinkingExcerpt, ContentBlock } from '@unfirehose/core/types';
+import type { ThinkingExcerpt, ContentBlock } from '@unturf/unfirehose/types';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyEntry = any;

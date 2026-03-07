@@ -1,5 +1,5 @@
 {
-  "extends": "@unfirehose/config/tsconfig/nextjs",
+  "extends": "@unturf/unfirehose-config/tsconfig/nextjs",
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["node_modules"]
 }

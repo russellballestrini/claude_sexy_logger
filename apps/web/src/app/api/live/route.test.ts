@@ -11,7 +11,7 @@ vi.mock('fs', () => ({
   createReadStream: vi.fn(),
 }));
 
-vi.mock('@unfirehose/core/claude-paths', () => ({
+vi.mock('@unturf/unfirehose/claude-paths', () => ({
   claudePaths: { projects: '/mock/projects' },
   decodeProjectName: (name: string) => name,
 }));

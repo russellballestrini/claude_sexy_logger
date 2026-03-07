@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getDb } from '@unfirehose/core/db/schema';
-import { getSetting } from '@unfirehose/core/db/ingest';
+import { getDb } from '@unturf/unfirehose/db/schema';
+import { getSetting } from '@unturf/unfirehose/db/ingest';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

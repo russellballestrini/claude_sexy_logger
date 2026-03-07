@@ -8,12 +8,12 @@ vi.mock('fs/promises', () => ({
   })),
 }));
 
-vi.mock('@unfirehose/core/claude-paths', () => ({
+vi.mock('@unturf/unfirehose/claude-paths', () => ({
   claudePaths: { statsCache: '/mock/.claude/stats-cache.json' },
 }));
 
 const mockAll = vi.fn();
-vi.mock('@unfirehose/core/db/schema', () => ({
+vi.mock('@unturf/unfirehose/db/schema', () => ({
   getDb: () => ({
     prepare: () => ({ all: mockAll }),
   }),

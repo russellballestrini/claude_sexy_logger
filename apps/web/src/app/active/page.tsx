@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import useSWR from 'swr';
-import { formatRelativeTime, formatTokens } from '@unfirehose/core/format';
-import { PageContext } from '@unfirehose/ui/PageContext';
-import { TimeRangeSelect, useTimeRange, getTimeRangeMinutes } from '@unfirehose/ui/TimeRangeSelect';
+import { formatRelativeTime, formatTokens } from '@unturf/unfirehose/format';
+import { PageContext } from '@unturf/unfirehose-ui/PageContext';
+import { TimeRangeSelect, useTimeRange, getTimeRangeMinutes } from '@unturf/unfirehose-ui/TimeRangeSelect';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 

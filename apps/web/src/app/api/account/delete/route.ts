@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { validateApiKey, listApiKeys, revokeApiKey } from '@unfirehose/core/db/api-keys';
-import { getControlDb } from '@unfirehose/core/db/control';
-import { closeTenantDb } from '@unfirehose/core/db/tenant';
+import { validateApiKey, listApiKeys, revokeApiKey } from '@unturf/unfirehose/db/api-keys';
+import { getControlDb } from '@unturf/unfirehose/db/control';
+import { closeTenantDb } from '@unturf/unfirehose/db/tenant';
 import { unlinkSync } from 'fs';
 import path from 'path';
 

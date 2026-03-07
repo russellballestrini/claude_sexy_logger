@@ -3,7 +3,7 @@ import {
   getPosts,
   createPost,
   deletePost,
-} from '@unfirehose/core/db/ingest';
+} from '@unturf/unfirehose/db/ingest';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;

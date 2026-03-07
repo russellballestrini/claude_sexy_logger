@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createApiKey, listApiKeys, revokeApiKey } from '@unfirehose/core/db/api-keys';
-import { validateApiKey } from '@unfirehose/core/db/api-keys';
+import { createApiKey, listApiKeys, revokeApiKey } from '@unturf/unfirehose/db/api-keys';
+import { validateApiKey } from '@unturf/unfirehose/db/api-keys';
 
 function getAccountId(request: NextRequest): string | null {
   // In cloud mode, middleware sets X-Account-Id for session-based requests.

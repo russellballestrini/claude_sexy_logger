@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHmac } from 'crypto';
-import { getSetting } from '@unfirehose/core/db/ingest';
+import { getSetting } from '@unturf/unfirehose/db/ingest';
 
 // Auth pattern matches official un.ts CLI: https://unsandbox.com/cli/typescript
 const API_BASE = 'https://api.unsandbox.com';

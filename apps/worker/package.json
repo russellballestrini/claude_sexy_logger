@@ -1,5 +1,5 @@
 {
-  "name": "@unfirehose/worker",
+  "name": "@unturf/unfirehose-worker",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,10 +11,10 @@
     "test": "echo 'no tests yet'"
   },
   "dependencies": {
-    "@unfirehose/core": "*"
+    "@unturf/unfirehose": "*"
   },
   "devDependencies": {
-    "@unfirehose/config": "*",
+    "@unturf/unfirehose-config": "*",
     "@types/node": "^20",
     "tsx": "^4",
     "typescript": "^5",
