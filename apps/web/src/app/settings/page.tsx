@@ -330,16 +330,10 @@ export default function SettingsPage() {
           </label>
         </div>
 
-        <div>
-          <label className="text-base text-[var(--color-muted)] block mb-1">Display Currency</label>
-          <select
-            value={settings?.[SETTINGS_KEYS.displayCurrency] ?? 'USD'}
-            className="w-full bg-[var(--color-background)] border border-[var(--color-border)] rounded px-3 py-2 text-base"
-            onChange={(e) => saveSetting(SETTINGS_KEYS.displayCurrency, e.target.value)}
-          >
-            {AVAILABLE_CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
-          </select>
-        </div>
+        <CurrencyPicker
+          selected={(settings?.[SETTINGS_KEYS.displayCurrency] ?? 'USD').split(',').filter(Boolean)}
+          onChange={(codes) => saveSetting(SETTINGS_KEYS.displayCurrency, codes.join(','))}
+        />
 
         {/* Geo-region overrides */}
         <GeoRegionOverrides settings={settings} saveSetting={saveSetting} />
@@ -841,6 +835,74 @@ function LlmProviders({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function CurrencyPicker({ selected, onChange }: { selected: string[]; onChange: (codes: string[]) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const groups = new Map<string, typeof AVAILABLE_CURRENCIES>();
+  for (const c of AVAILABLE_CURRENCIES) {
+    const g = (c as any).group || 'Other';
+    if (!groups.has(g)) groups.set(g, []);
+    groups.get(g)!.push(c);
+  }
+
+  const toggle = (code: string) => {
+    if (selected.includes(code)) {
+      // Don't allow deselecting last currency
+      if (selected.length === 1) return;
+      onChange(selected.filter(c => c !== code));
+    } else {
+      onChange([...selected, code]);
+    }
+  };
+
+  return (
+    <div>
+      <label className="text-base text-[var(--color-muted)] block mb-1">Display Currencies</label>
+      <div className="flex flex-wrap gap-1 mb-2">
+        {selected.map(code => {
+          const c = AVAILABLE_CURRENCIES.find(x => x.code === code);
+          return (
+            <span key={code} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[var(--color-accent)]/20 text-[var(--color-accent)] text-sm font-mono">
+              {code}
+              {selected.length > 1 && (
+                <button onClick={() => toggle(code)} className="hover:text-[var(--color-error)] cursor-pointer text-xs">&times;</button>
+              )}
+            </span>
+          );
+        })}
+      </div>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="text-sm text-[var(--color-muted)] hover:text-[var(--color-foreground)] cursor-pointer"
+      >
+        {expanded ? '\u25bc Hide currencies' : '\u25b6 Add currencies'} ({AVAILABLE_CURRENCIES.length} available)
+      </button>
+      {expanded && (
+        <div className="mt-2 border border-[var(--color-border)] rounded bg-[var(--color-surface)] p-3 max-h-[50vh] overflow-y-auto space-y-3">
+          {[...groups.entries()].map(([group, currencies]) => (
+            <div key={group}>
+              <div className="text-xs font-bold text-[var(--color-muted)] uppercase mb-1">{group}</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-0.5">
+                {currencies.map(c => (
+                  <label key={c.code} className="flex items-center gap-2 text-sm cursor-pointer py-0.5 hover:text-[var(--color-foreground)]">
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(c.code)}
+                      onChange={() => toggle(c.code)}
+                      className="accent-[var(--color-accent)]"
+                    />
+                    <span className="font-mono text-xs w-8">{c.code}</span>
+                    <span className="text-[var(--color-muted)]">{c.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
