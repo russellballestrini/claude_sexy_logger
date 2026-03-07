@@ -129,11 +129,7 @@ export default function NodeDetailPage() {
   );
   const { data: settings } = useSWR('/api/settings', fetcher, { revalidateOnFocus: false });
   const { data: sshConfig, mutate: mutateSsh } = useSWR('/api/ssh-config', fetcher, { revalidateOnFocus: false });
-  const { data: tmuxData } = useSWR(
-    activeTab === 'Harnesses' ? '/api/tmux/stream' : null,
-    fetcher,
-    { refreshInterval: 5000 },
-  );
+
 
   // Per-node tunables
   const [kwhRate, setKwhRate] = useState(DEFAULT_KWH_RATE);
@@ -156,6 +152,14 @@ export default function NodeDetailPage() {
   // Determine the SSH host to use for booting (localhost if this is the local machine)
   const isLocal = mesh?.localHostname === host || host === 'localhost';
   const bootHost = isLocal ? 'localhost' : host;
+
+  const { data: tmuxData } = useSWR(
+    activeTab === 'Harnesses'
+      ? `/api/tmux/stream${!isLocal ? `?host=${encodeURIComponent(host)}` : ''}`
+      : null,
+    fetcher,
+    { refreshInterval: 5000 },
+  );
 
   // Bootstrap harness state
   const [bootStatuses, setBootStatuses] = useState<Record<string, BootStatus>>({});
@@ -488,14 +492,9 @@ export default function NodeDetailPage() {
 
       {/* ===== HARNESSES TAB ===== */}
       {activeTab === 'Harnesses' && (() => {
-        // Combine tmux sessions from probe (remote) and local tmux API
-        const probeSessions: any[] = probe?.sessions?.tmux ?? [];
-        const localSessions: string[] = isLocal ? (tmuxData?.sessions ?? []) : [];
-        const sessions: any[] = isLocal
-          ? localSessions.map(s => ({ name: s }))
-          : probeSessions;
-
-        const allEntries = sessions;
+        // tmuxData comes from /api/tmux/stream (with host param for remote)
+        const sessions: string[] = tmuxData?.sessions ?? [];
+        const allEntries = sessions.map((s: string) => ({ name: s }));
 
         return (
           <div className="space-y-4">
@@ -522,9 +521,6 @@ export default function NodeDetailPage() {
                       <div className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                         <span className="font-bold font-mono text-sm">{s.name}</span>
-                        {s.windows && (
-                          <span className="text-xs text-[var(--color-muted)]">({s.windows} windows)</span>
-                        )}
                       </div>
                       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                         {isLocal && (
