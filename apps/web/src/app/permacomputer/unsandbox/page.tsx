@@ -177,7 +177,7 @@ export default function UnsandboxNodePage() {
             >
               {deploying ? 'Deploying...' : 'Deploy unfirehose'}
             </button>
-            <span className="text-xs text-[var(--color-muted)]">port 3000 &middot; {network === 'zero_trust' ? 'zero trust' : 'semitrusted'} network</span>
+            <span className="text-xs text-[var(--color-muted)]">port 3000 &middot; {network === 'zero_trust' ? 'zero trust (no network)' : 'semitrusted (egress proxy)'}</span>
           </div>
           {deployResult && (
             <div className="text-sm text-green-400 font-mono bg-[var(--color-background)] rounded p-3 border border-green-500/30">
@@ -214,7 +214,7 @@ export default function UnsandboxNodePage() {
                   Open Dashboard
                 </a>
               )}
-              {unfirehoseService.locked ? (
+              {(unfirehoseService.locked || unfirehoseService.name === 'uncloseai') ? (
                 <span className="text-xs text-[var(--color-muted)] px-2 py-1">🔒 locked</span>
               ) : (
                 <button
@@ -274,6 +274,7 @@ export default function UnsandboxNodePage() {
           <div className="space-y-2">
             {serviceList.filter(s => s !== unfirehoseService).map((svc: any) => {
               const id = svc.service_id || svc.id;
+              const isLocked = svc.locked || svc.name === 'uncloseai';
               return (
                 <div key={id} className="bg-[var(--color-background)] rounded border border-[var(--color-border)] p-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -285,7 +286,7 @@ export default function UnsandboxNodePage() {
                       <a href={`https://${svc.domain}`} target="_blank" rel="noopener noreferrer" className="text-xs text-[var(--color-accent)] hover:underline font-mono">{svc.domain}</a>
                     )}
                   </div>
-                  {svc.locked ? (
+                  {isLocked ? (
                     <span className="text-xs text-[var(--color-muted)]">🔒 locked</span>
                   ) : (
                     <button onClick={() => destroyService(id)} className="text-xs text-red-400 hover:text-red-300 cursor-pointer">destroy</button>
@@ -319,7 +320,9 @@ export default function UnsandboxNodePage() {
         </div>
         <p className="text-xs text-[var(--color-muted)]">
           Run a command on unsandbox (one-shot, fresh container).
-          {network === 'zero_trust' && <span className="text-yellow-400 ml-1">⚠ full network access</span>}
+          {network === 'zero_trust'
+            ? <span className="text-yellow-400 ml-1">⚠ no network access</span>
+            : <span className="text-[var(--color-muted)] ml-1">&middot; egress via proxy</span>}
         </p>
         <div className="flex gap-2">
           <input

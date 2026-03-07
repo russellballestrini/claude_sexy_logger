@@ -80,6 +80,7 @@ Override cursor path with `UNFIREHOSE_CURSORS` env var.
 | Package | Description |
 |---|---|
 | [@unturf/unfirehose](https://www.npmjs.com/package/@unturf/unfirehose) | Core data layer |
+| [@unturf/unfirehose-schema](https://www.npmjs.com/package/@unturf/unfirehose-schema) | unfirehose/1.0 spec — JSON Schema, TypeScript types |
 | **@unturf/unfirehose-router** | CLI daemon (this package) |
 | [@unturf/unfirehose-ui](https://www.npmjs.com/package/@unturf/unfirehose-ui) | Shared React components |
 

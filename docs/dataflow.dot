@@ -39,7 +39,7 @@ digraph dataflow {
   }
 
   subgraph cluster_ingest_path {
-    label="Ingestion Path\n(batch, normalized)"
+    label="Ingestion Path — @unturf/unfirehose (npm)\n(batch, normalized)"
     style=dashed
     color="#333366"
     fontcolor="#666699"

@@ -72,7 +72,7 @@ Cross-session todo tracking extracted from all harness JSONL. Drag-and-drop kanb
 4-view DOT/SVG graph visualization of session relationships, project dependencies, and todo graphs. Raw `.dot` download support.
 
 ### Schema Browser
-Browse the unfirehose/1.0 spec and harness adapter documentation directly in the dashboard.
+Browse the [unfirehose/1.0](packages/schema/docs/README.md) spec and harness adapter documentation directly in the dashboard. The spec is also published as [`@unturf/unfirehose-schema`](https://www.npmjs.com/package/@unturf/unfirehose-schema) with JSON Schema files and TypeScript types.
 
 ### All Logs
 Raw JSONL log browser with filtering and search. When you need to see exactly what happened.
@@ -91,11 +91,12 @@ Configure alert thresholds, display preferences, compute settings, and integrati
 
 ## Packages
 
-This is a Turborepo monorepo. Three packages are published to npm under the `@unturf` scope:
+This is a Turborepo monorepo. Four packages are published to npm under the [`@unturf`](https://www.npmjs.com/org/unturf) scope:
 
 | Package | npm | Description |
 |---------|-----|-------------|
 | [`@unturf/unfirehose`](packages/core) | [![npm](https://img.shields.io/npm/v/@unturf/unfirehose)](https://www.npmjs.com/package/@unturf/unfirehose) | Core data layer — ingestion, SQLite schema, types, PII detection, formatters |
+| [`@unturf/unfirehose-schema`](packages/schema) | [![npm](https://img.shields.io/npm/v/@unturf/unfirehose-schema)](https://www.npmjs.com/package/@unturf/unfirehose-schema) | [unfirehose/1.0](packages/schema/docs/README.md) spec — JSON Schema, TypeScript types, 16 harness adapter docs |
 | [`@unturf/unfirehose-router`](packages/router) | [![npm](https://img.shields.io/npm/v/@unturf/unfirehose-router)](https://www.npmjs.com/package/@unturf/unfirehose-router) | CLI daemon — watches JSONL and forwards to cloud |
 | [`@unturf/unfirehose-ui`](packages/ui) | [![npm](https://img.shields.io/npm/v/@unturf/unfirehose-ui)](https://www.npmjs.com/package/@unturf/unfirehose-ui) | Shared React components for dashboard UI |
 
@@ -110,13 +111,14 @@ Internal packages (not published):
 ```
 unfirehose/
 ├── apps/
-│   ├── web/         @unturf/unfirehose-web      Next.js dashboard (private)
-│   └── worker/      @unturf/unfirehose-worker   Background ingestion (private)
+│   ├── web/         @unturf/unfirehose-web       Next.js dashboard (private)
+│   └── worker/      @unturf/unfirehose-worker    Background ingestion (private)
 └── packages/
-    ├── core/        @unturf/unfirehose           Data layer, types, ingestion
-    ├── router/      @unturf/unfirehose-router    CLI daemon
-    ├── ui/          @unturf/unfirehose-ui         React components
-    └── config/      @unturf/unfirehose-config    TypeScript config (private)
+    ├── core/        @unturf/unfirehose            Data layer, types, ingestion
+    ├── schema/      @unturf/unfirehose-schema     unfirehose/1.0 spec + JSON Schema
+    ├── router/      @unturf/unfirehose-router     CLI daemon
+    ├── ui/          @unturf/unfirehose-ui          React components
+    └── config/      @unturf/unfirehose-config     TypeScript config (private)
 ```
 
 ## Stack
@@ -131,7 +133,7 @@ unfirehose/
 | Data fetching | SWR with auto-refresh |
 | Real-time | Server-Sent Events (SSE) |
 | File watching | `fs.watch` on JSONL files for auto-ingest |
-| Monorepo | Turborepo (`apps/web`, `packages/core`, `packages/ui`, `packages/config`) |
+| Monorepo | Turborepo (`apps/web`, `packages/core`, `packages/schema`, `packages/ui`, `packages/config`) |
 
 ~22K lines of TypeScript across 165 commits. No external services. No API keys. No Docker. Just `npm install && npm run dev`.
 
@@ -166,7 +168,7 @@ The first load triggers an ingestion of your `~/.claude/` session data into SQLi
   [file watcher]             fs.watch on active JSONL files
         │
         ▼
-  packages/core              Ingestion, adapters, DB schema, todo extraction
+  packages/core              @unturf/unfirehose — ingestion, adapters, DB schema, todo extraction
         │
         ▼
   ~/.claude/unfirehose.db   SQLite (normalized: projects → sessions → messages → content_blocks)

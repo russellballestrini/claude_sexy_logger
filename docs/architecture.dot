@@ -19,7 +19,7 @@ digraph architecture {
 
   // Ingestion layer
   subgraph cluster_ingest {
-    label="Ingestion"
+    label="Ingestion\n@unturf/unfirehose (npm)"
     style=dashed
     color="#444466"
     fontcolor="#999999"
@@ -41,7 +41,7 @@ digraph architecture {
 
   // API layer
   subgraph cluster_api {
-    label="Next.js API Routes"
+    label="Next.js API Routes\n@unturf/unfirehose-web"
     style=dashed
     color="#444466"
     fontcolor="#999999"
@@ -63,7 +63,7 @@ digraph architecture {
 
   // Frontend
   subgraph cluster_ui {
-    label="React Pages (App Router)"
+    label="React Pages (App Router)\n@unturf/unfirehose-ui (npm)"
     style=dashed
     color="#444466"
     fontcolor="#999999"

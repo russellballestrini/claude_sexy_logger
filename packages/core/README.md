@@ -143,6 +143,7 @@ import { TIERS } from '@unturf/unfirehose/tiers'
 | Package | Description |
 |---|---|
 | **@unturf/unfirehose** | Core data layer (this package) |
+| [@unturf/unfirehose-schema](https://www.npmjs.com/package/@unturf/unfirehose-schema) | unfirehose/1.0 spec — JSON Schema, TypeScript types, harness docs |
 | [@unturf/unfirehose-router](https://www.npmjs.com/package/@unturf/unfirehose-router) | CLI daemon — forwards JSONL to cloud |
 | [@unturf/unfirehose-ui](https://www.npmjs.com/package/@unturf/unfirehose-ui) | Shared React components |
 

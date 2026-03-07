@@ -1,8 +1,16 @@
 # unfirehose.org Schema Specification
 
+[![npm](https://img.shields.io/npm/v/@unturf/unfirehose-schema)](https://www.npmjs.com/package/@unturf/unfirehose-schema)
+
 Version: `unfirehose/1.0`
 
 A standard JSON format for machine learning agent session logging. Any harness can either log in this format natively or be adapted just-in-time on ingestion.
+
+Published as [`@unturf/unfirehose-schema`](https://www.npmjs.com/package/@unturf/unfirehose-schema) on npm — includes JSON Schema files for validation and TypeScript type definitions.
+
+```bash
+npm install @unturf/unfirehose-schema
+```
 
 All objects carry `$schema: "unfirehose/1.0"` for forward compatibility. Consumers ignore unknown fields.
 
@@ -103,9 +111,22 @@ Provider API → unfirehose canonical field mappings:
 6. **Idempotent ingestion** — UUID dedup + byte offsets = safe re-run
 7. **Graceful degradation** — missing fields show "unknown", not errors
 
+## npm Packages
+
+| Package | npm | Purpose |
+|---------|-----|---------|
+| [`@unturf/unfirehose-schema`](https://www.npmjs.com/package/@unturf/unfirehose-schema) | [![npm](https://img.shields.io/npm/v/@unturf/unfirehose-schema)](https://www.npmjs.com/package/@unturf/unfirehose-schema) | This spec — JSON Schema files, TypeScript types, harness docs |
+| [`@unturf/unfirehose`](https://www.npmjs.com/package/@unturf/unfirehose) | [![npm](https://img.shields.io/npm/v/@unturf/unfirehose)](https://www.npmjs.com/package/@unturf/unfirehose) | Core data layer — ingestion, SQLite, PII, formatters |
+| [`@unturf/unfirehose-router`](https://www.npmjs.com/package/@unturf/unfirehose-router) | [![npm](https://img.shields.io/npm/v/@unturf/unfirehose-router)](https://www.npmjs.com/package/@unturf/unfirehose-router) | CLI daemon — watches JSONL, forwards to cloud |
+| [`@unturf/unfirehose-ui`](https://www.npmjs.com/package/@unturf/unfirehose-ui) | [![npm](https://img.shields.io/npm/v/@unturf/unfirehose-ui)](https://www.npmjs.com/package/@unturf/unfirehose-ui) | Shared React components |
+
 ## Implementing the Standard
 
 To adopt unfirehose/1.0 in a new harness:
+
+```bash
+npm install @unturf/unfirehose-schema  # types + JSON Schema for validation
+```
 
 ```
 1. Log JSONL with $schema: "unfirehose/1.0" header

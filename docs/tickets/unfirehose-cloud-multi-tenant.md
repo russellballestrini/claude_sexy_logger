@@ -147,7 +147,7 @@ Response: { "accepted": 47, "errors": 0 }
 
 ### Lightweight local router
 
-Minimal package (`@unfirehose/router` or standalone binary):
+Minimal package (`@unturf/unfirehose-router` or standalone binary):
 
 1. Watches `~/.claude/projects/` for new JSONL writes (inotify/fswatch)
 2. Batches events (every 5s or 100 events, whichever first)
@@ -166,7 +166,7 @@ Minimal package (`@unfirehose/router` or standalone binary):
 }
 ```
 
-Installable via: `npx @unfirehose/router` or a single compiled binary.
+Installable via: `npx @unturf/unfirehose-router` or a single compiled binary.
 
 ### Auth middleware (cloud mode)
 
@@ -219,7 +219,7 @@ In cloud mode, `getDb()` becomes `getTenantDb(accountId)` — all existing API r
 - [x] Usage logging per key
 
 ### M2: Lightweight router
-- [x] `@unfirehose/router` package — file watcher + batch POST
+- [x] `@unturf/unfirehose-router` package — file watcher + batch POST
 - [x] `~/.unfirehose.json` config
 - [x] Cursor tracking (resume after restart)
 - [x] Exponential backoff retry

@@ -93,7 +93,7 @@ To add support for a new harness:
 ### Adapter Function Signature
 
 ```typescript
-import type { SessionEntry } from '@unfirehose/core/types';
+import type { SessionEntry } from '@unturf/unfirehose/types';
 
 export function normalizeEntry(raw: unknown): SessionEntry | null {
   // Map native harness fields → canonical format

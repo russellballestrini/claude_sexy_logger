@@ -37,6 +37,7 @@ import { useCurrency } from '@unturf/unfirehose-ui/useCurrency'
 | Package | Description |
 |---|---|
 | [@unturf/unfirehose](https://www.npmjs.com/package/@unturf/unfirehose) | Core data layer |
+| [@unturf/unfirehose-schema](https://www.npmjs.com/package/@unturf/unfirehose-schema) | unfirehose/1.0 spec — JSON Schema, TypeScript types |
 | [@unturf/unfirehose-router](https://www.npmjs.com/package/@unturf/unfirehose-router) | CLI daemon |
 | **@unturf/unfirehose-ui** | Shared React components (this package) |
 
