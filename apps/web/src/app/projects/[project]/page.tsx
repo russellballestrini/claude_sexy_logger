@@ -12,6 +12,21 @@ import { SessionPopover } from '@unturf/unfirehose-ui/SessionPopover';
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+const HARNESSES = [
+  { value: 'claude', label: 'Claude Code', cmd: 'claude' },
+  { value: 'gemini', label: 'Gemini CLI', cmd: 'gemini' },
+  { value: 'codex', label: 'Codex CLI', cmd: 'codex' },
+  { value: 'open-code', label: 'Open Code', cmd: 'opencode' },
+  { value: 'aider', label: 'Aider', cmd: 'aider' },
+  { value: 'agnt', label: 'agnt', cmd: 'agnt' },
+  { value: 'cursor', label: 'Cursor', cmd: 'cursor' },
+  { value: 'continue', label: 'Continue', cmd: 'continue' },
+  { value: 'ollama', label: 'Ollama', cmd: 'ollama' },
+  { value: 'fetch', label: 'Fetch', cmd: 'fetch' },
+  { value: 'uncloseai', label: 'uncloseai-cli', cmd: 'uncloseai' },
+  { value: 'custom', label: 'Custom...', cmd: '' },
+] as const;
+
 const TABS = [
   { key: 'overview', label: 'Overview' },
   { key: 'sessions', label: 'Sessions' },
@@ -61,6 +76,17 @@ export default function ProjectPage({
   const [bootTmux, setBootTmux] = useState<{ session: string; host: string } | null>(null);
   const [newTask, setNewTask] = useState('');
   const [taskSubmitting, setTaskSubmitting] = useState(false);
+  const [harness, setHarness] = useState('claude');
+  const [customCmd, setCustomCmd] = useState('');
+  const [target, setTarget] = useState('localhost');
+
+  // Mesh nodes for target dropdown
+  const { data: mesh } = useSWR('/api/mesh', fetcher, { revalidateOnFocus: false });
+  const meshNodes: { hostname: string; reachable: boolean }[] = mesh?.nodes ?? [];
+  const targets = [
+    { value: 'localhost', label: 'localhost' },
+    ...meshNodes.filter(n => n.reachable && n.hostname !== mesh?.localHostname).map(n => ({ value: n.hostname, label: n.hostname })),
+  ];
 
   // Core data
   const { data, error } = useSWR<{
@@ -96,6 +122,11 @@ export default function ProjectPage({
     fetcher
   );
 
+  function resolveHarness(): string {
+    if (harness === 'custom') return customCmd.trim() || 'claude';
+    return HARNESSES.find(h => h.value === harness)?.cmd ?? 'claude';
+  }
+
   async function bootSession(sessionId?: string) {
     if (!data?.originalPath) {
       setBootResult('Error: No project path — cannot boot session.');
@@ -113,6 +144,8 @@ export default function ProjectPage({
           projectName: decodedProject,
           sessionId,
           yolo,
+          harness: resolveHarness(),
+          host: target !== 'localhost' ? target : undefined,
         }),
       });
       const result = await res.json();
@@ -156,6 +189,8 @@ export default function ProjectPage({
             yolo: true,
             prompt: newTask.trim(),
             todoIds: todoResult.id ? [todoResult.id] : undefined,
+            harness: resolveHarness(),
+            host: target !== 'localhost' ? target : undefined,
           }),
         });
         const result = await res.json();
@@ -317,6 +352,13 @@ export default function ProjectPage({
           setNewTask={setNewTask}
           addTask={addTask}
           taskSubmitting={taskSubmitting}
+          harness={harness}
+          setHarness={setHarness}
+          customCmd={customCmd}
+          setCustomCmd={setCustomCmd}
+          target={target}
+          setTarget={setTarget}
+          targets={targets}
         />
       )}
       {tab === 'sessions' && (
@@ -342,7 +384,7 @@ export default function ProjectPage({
 }
 
 /* ─── OVERVIEW TAB ─── */
-function OverviewTab({ full, data, meta, project, decodedProject, thisActivity, globalTotals, fetchRemotes, newTask, setNewTask, addTask, taskSubmitting }: any) {
+function OverviewTab({ full, data, meta, project, decodedProject, thisActivity, globalTotals, fetchRemotes, newTask, setNewTask, addTask, taskSubmitting, harness, setHarness, customCmd, setCustomCmd, target, setTarget, targets }: any) {
   return (
     <div className="space-y-6">
       {/* Stats bar */}
@@ -369,25 +411,59 @@ function OverviewTab({ full, data, meta, project, decodedProject, thisActivity, 
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addTask(true); }
                 if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); addTask(false); }
               }}
-              placeholder="What should Claude work on? (Ctrl+Enter to start now, Shift+Enter to queue)"
+              placeholder="What should the agent work on? (Ctrl+Enter to start now, Shift+Enter to queue)"
               rows={3}
               className="w-full px-3 py-2 text-base bg-[var(--color-background)] border border-[var(--color-border)] rounded-lg focus:border-[var(--color-accent)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] resize-y"
               disabled={taskSubmitting}
             />
-            <div className="flex items-center justify-between mt-2">
-              <span className="text-xs text-[var(--color-muted)]">
+            {/* Harness + Target selectors */}
+            <div className="flex items-center gap-3 mt-2 flex-wrap">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-[var(--color-muted)]">Harness</span>
+                <select
+                  value={harness}
+                  onChange={(e: any) => setHarness(e.target.value)}
+                  className="text-sm bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-1 focus:outline-none focus:border-[var(--color-accent)]"
+                >
+                  {HARNESSES.map(h => (
+                    <option key={h.value} value={h.value}>{h.label}</option>
+                  ))}
+                </select>
+              </div>
+              {harness === 'custom' && (
+                <input
+                  type="text"
+                  value={customCmd}
+                  onChange={(e: any) => setCustomCmd(e.target.value)}
+                  placeholder="command to run..."
+                  className="text-sm bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-1 font-mono w-48 focus:outline-none focus:border-[var(--color-accent)]"
+                />
+              )}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-[var(--color-muted)]">Target</span>
+                <select
+                  value={target}
+                  onChange={(e: any) => setTarget(e.target.value)}
+                  className="text-sm bg-[var(--color-background)] border border-[var(--color-border)] rounded px-2 py-1 focus:outline-none focus:border-[var(--color-accent)]"
+                >
+                  {targets.map((t: any) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <span className="text-xs text-[var(--color-muted)] ml-auto">
                 {data?.originalPath ? 'Ctrl+Enter starts now, Shift+Enter queues' : 'No project path — queue only'}
               </span>
-              <div className="flex gap-2">
-                <button onClick={() => addTask(false)} disabled={!newTask.trim() || taskSubmitting}
-                  className="px-3 py-1.5 text-sm bg-[var(--color-surface-hover)] text-[var(--color-foreground)] rounded-lg hover:bg-[var(--color-border)] transition-colors disabled:opacity-40">
-                  Queue
-                </button>
-                <button onClick={() => addTask(true)} disabled={!newTask.trim() || taskSubmitting}
-                  className="px-4 py-1.5 text-sm font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40">
-                  {taskSubmitting ? 'Starting...' : 'Start Now'}
-                </button>
-              </div>
+            </div>
+            <div className="flex items-center justify-end mt-2 gap-2">
+              <button onClick={() => addTask(false)} disabled={!newTask.trim() || taskSubmitting}
+                className="px-3 py-1.5 text-sm bg-[var(--color-surface-hover)] text-[var(--color-foreground)] rounded-lg hover:bg-[var(--color-border)] transition-colors disabled:opacity-40">
+                Queue
+              </button>
+              <button onClick={() => addTask(true)} disabled={!newTask.trim() || taskSubmitting}
+                className="px-4 py-1.5 text-sm font-bold bg-[var(--color-accent)] text-[var(--color-background)] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40">
+                {taskSubmitting ? 'Starting...' : 'Start Now'}
+              </button>
             </div>
           </div>
 
