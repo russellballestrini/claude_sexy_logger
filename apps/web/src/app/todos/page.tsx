@@ -2,8 +2,11 @@
 
 import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import Link from 'next/link';
+import useSWR from 'swr';
 import { formatRelativeTime, formatTimestamp } from '@unfirehose/core/format';
 import { PageContext } from '@unfirehose/ui/PageContext';
+
+const fetcher = (url: string) => fetch(url).then(r => r.json());
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -167,6 +170,9 @@ export default function TodosPage() {
   const [burst, setBurst] = useState<{ x: number; y: number; color: string; targetStatus: string } | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number>(-1);
 
+  const { data: meshData } = useSWR('/api/mesh', fetcher, { refreshInterval: 30000 });
+  const meshNodes: { hostname: string; reachable: boolean }[] = meshData?.nodes ?? [];
+
   const fetchTodos = useCallback((showLoading = true) => {
     if (showLoading) setLoading(true);
     const statusParam = filter === 'active' ? '?status=pending,in_progress' : '';
@@ -216,19 +222,21 @@ export default function TodosPage() {
     fetchTodos(false);
   }, [fetchTodos]);
 
-  const bootAgent = useCallback(async (projectPath: string, key: string, prompt?: string) => {
+  const bootAgent = useCallback(async (projectPath: string, key: string, prompt?: string, host?: string) => {
     setBooting(key);
     setBootResult(null);
     try {
+      const body: any = { projectPath, yolo: true, prompt };
+      if (host && host !== 'localhost') body.host = host;
       const res = await fetch('/api/boot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectPath, yolo: true, prompt }),
+        body: JSON.stringify(body),
       });
       const result = await res.json();
       setBootResult({
         key,
-        msg: result.success ? `tmux: ${result.tmuxSession}` : `Error: ${result.error}${result.detail ? ` — ${result.detail}` : ''}`,
+        msg: result.success ? `tmux: ${result.tmuxSession}${host && host !== 'localhost' ? ` @${host}` : ''}` : `Error: ${result.error}${result.detail ? ` — ${result.detail}` : ''}`,
       });
     } catch (err) {
       setBootResult({ key, msg: `Error: ${String(err)}` });
@@ -500,6 +508,7 @@ export default function TodosPage() {
                               onDragStart={handleDragStart} onDragEnd={handleDragEnd}
                               isDragging={draggedTodo?.id === todo.id}
                               landed={landedCardId === todo.id}
+                              meshNodes={meshNodes}
                             />
                           );
                         })}
@@ -525,12 +534,12 @@ export default function TodosPage() {
                     {groupEst > 0 && <span className="text-sm text-[var(--color-muted)]">~{groupEst < 60 ? `${groupEst}m` : `${Math.floor(groupEst / 60)}h ${groupEst % 60}m`}</span>}
                     <Link href={`/projects/${encodeURIComponent(group.project)}/kanban`} className="text-xs text-[var(--color-accent)] hover:underline">kanban</Link>
                     {group.projectPath && (
-                      <button onClick={() => {
-                        const activeTodos = group.todos.filter(t => t.status !== 'completed').slice(0, 10).map(t => `- ${t.content}`).join('\n');
-                        bootAgent(group.projectPath!, `project-${group.project}`, `Work on the pending todos for this project:\n${activeTodos}`);
-                      }} disabled={booting === `project-${group.project}`} className="ml-auto px-2 py-1 text-xs font-bold bg-[var(--color-accent)] text-white rounded-lg hover:opacity-90 disabled:opacity-50">
-                        {booting === `project-${group.project}` ? 'Deploying...' : 'Deploy Agent'}
-                      </button>
+                      <ProjectDeployButton
+                        group={group}
+                        meshNodes={meshNodes}
+                        booting={booting}
+                        onBoot={bootAgent}
+                      />
                     )}
                   </div>
                   <div className="mt-3 space-y-1">
@@ -557,16 +566,18 @@ export default function TodosPage() {
 }
 
 // --- Kanban Card (Pending / In Progress) ---
-function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bootResult, onDragStart, onDragEnd, isDragging, landed }: {
+function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bootResult, onDragStart, onDragEnd, isDragging, landed, meshNodes }: {
   todo: Todo; onUpdate: (id: number, u: any) => void; onDelete: (id: number) => void;
-  projectPath: string | null; onBoot: (p: string, k: string, pr?: string) => void;
+  projectPath: string | null; onBoot: (p: string, k: string, pr?: string, host?: string) => void;
   booting: string | null; bootResult: { key: string; msg: string } | null;
   onDragStart: (t: Todo) => void; onDragEnd: () => void; isDragging: boolean; landed: boolean;
+  meshNodes: { hostname: string; reachable: boolean }[];
 }) {
   const [showEstimate, setShowEstimate] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(todo.content);
+  const [showNodePicker, setShowNodePicker] = useState(false);
   const needsTicket = (todo.estimatedMinutes ?? 0) > TICKET_THRESHOLD;
   const bootKey = `todo-${todo.id}`;
   const isActive = todo.status === 'in_progress';
@@ -665,10 +676,33 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
           <Link href={`/projects/${encodeURIComponent(todo.projectName)}/${todo.sessionUuid}`} className="hover:text-[var(--color-accent)] truncate max-w-[100px]" onClick={(e) => e.stopPropagation()}>{todo.sessionDisplay}</Link>
         )}
         {projectPath && !isActive && (
-          <button onClick={(e) => { e.stopPropagation(); onBoot(projectPath, bootKey, `Work on this task: ${todo.content}`); }} disabled={booting === bootKey}
-            className="px-1.5 py-0.5 text-xs font-bold bg-[var(--color-accent)] text-white rounded hover:opacity-90 disabled:opacity-50 cursor-pointer">
-            {booting === bootKey ? '...' : 'Deploy'}
-          </button>
+          <div className="relative">
+            <button onClick={(e) => { e.stopPropagation(); setShowNodePicker(!showNodePicker); }} disabled={booting === bootKey}
+              className="px-1.5 py-0.5 text-xs font-bold bg-[var(--color-accent)] text-white rounded hover:opacity-90 disabled:opacity-50 cursor-pointer">
+              {booting === bootKey ? '...' : 'Deploy'}
+            </button>
+            {showNodePicker && (
+              <div className="absolute z-50 top-full mt-1 left-0 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl py-1 min-w-[140px]" onClick={(e) => e.stopPropagation()}>
+                <button
+                  onClick={() => { onBoot(projectPath, bootKey, `Work on this task: ${todo.content}`, 'localhost'); setShowNodePicker(false); }}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--color-surface-hover)] flex items-center gap-2 cursor-pointer"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                  localhost
+                </button>
+                {meshNodes.filter(n => n.hostname !== 'localhost').map(n => (
+                  <button
+                    key={n.hostname}
+                    onClick={() => { onBoot(projectPath, bootKey, `Work on this task: ${todo.content}`, n.hostname); setShowNodePicker(false); }}
+                    className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--color-surface-hover)] flex items-center gap-2 cursor-pointer"
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${n.reachable ? 'bg-green-400' : 'bg-red-400'}`} />
+                    {n.hostname}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         {isActive && todo.tmuxSession && (
           <Link href={`/tmux/${encodeURIComponent(todo.tmuxSession)}`} onClick={(e) => e.stopPropagation()}
@@ -769,6 +803,41 @@ function InsertionGap({ color, label }: { color: string; label: string }) {
       style={{ borderColor: color, backgroundColor: `color-mix(in srgb, ${color} 7%, transparent)` }}
     >
       <span className="text-sm font-bold" style={{ color }}>{label}</span>
+    </div>
+  );
+}
+
+// --- Project Deploy Button with node picker ---
+function ProjectDeployButton({ group, meshNodes, booting, onBoot }: {
+  group: ProjectGroup;
+  meshNodes: { hostname: string; reachable: boolean }[];
+  booting: string | null;
+  onBoot: (p: string, k: string, pr?: string, host?: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const bootKey = `project-${group.project}`;
+  const prompt = `Work on the pending todos for this project:\n${group.todos.filter(t => t.status !== 'completed').slice(0, 10).map(t => `- ${t.content}`).join('\n')}`;
+
+  return (
+    <div className="relative ml-auto">
+      <button onClick={() => setOpen(!open)} disabled={booting === bootKey}
+        className="px-2 py-1 text-xs font-bold bg-[var(--color-accent)] text-white rounded-lg hover:opacity-90 disabled:opacity-50 cursor-pointer">
+        {booting === bootKey ? 'Deploying...' : 'Deploy Agent'}
+      </button>
+      {open && (
+        <div className="absolute z-50 top-full mt-1 right-0 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl py-1 min-w-[140px]">
+          <button onClick={() => { onBoot(group.projectPath!, bootKey, prompt, 'localhost'); setOpen(false); }}
+            className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--color-surface-hover)] flex items-center gap-2 cursor-pointer">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400" /> localhost
+          </button>
+          {meshNodes.filter(n => n.hostname !== 'localhost').map(n => (
+            <button key={n.hostname} onClick={() => { onBoot(group.projectPath!, bootKey, prompt, n.hostname); setOpen(false); }}
+              className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--color-surface-hover)] flex items-center gap-2 cursor-pointer">
+              <span className={`w-1.5 h-1.5 rounded-full ${n.reachable ? 'bg-green-400' : 'bg-red-400'}`} /> {n.hostname}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
