@@ -228,7 +228,7 @@ export default function TodosPage() {
       const result = await res.json();
       setBootResult({
         key,
-        msg: result.success ? `tmux: ${result.tmuxSession}` : `Error: ${result.error}`,
+        msg: result.success ? `tmux: ${result.tmuxSession}` : `Error: ${result.error}${result.detail ? ` — ${result.detail}` : ''}`,
       });
     } catch (err) {
       setBootResult({ key, msg: `Error: ${String(err)}` });
