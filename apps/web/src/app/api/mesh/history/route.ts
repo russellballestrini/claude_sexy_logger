@@ -91,8 +91,11 @@ export async function GET(req: NextRequest) {
     nodes: e.nodes,
   }));
 
-  // Distinct hostnames
-  const hostnames = [...new Set(rows.map(r => r.hostname))];
+  // Distinct hostnames — deduplicate short names that have FQDN variants
+  const rawHostnames = [...new Set(rows.map(r => r.hostname))];
+  const hostnames = rawHostnames.filter(h =>
+    !rawHostnames.some(other => other !== h && other.startsWith(h + '.'))
+  );
 
   return NextResponse.json({ timeline, hostnames, hours, count: rows.length });
 }
