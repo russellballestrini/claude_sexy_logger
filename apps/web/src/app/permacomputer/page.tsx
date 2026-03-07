@@ -433,9 +433,6 @@ export default function PermacomputerPage() {
 
       {/* Unsandbox */}
       <UnsandboxPanel />
-
-      {/* Bootstrap Harness */}
-      <BootstrapPanel />
     </div>
   );
 }

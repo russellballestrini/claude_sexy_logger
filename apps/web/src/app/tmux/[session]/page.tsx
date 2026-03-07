@@ -113,7 +113,7 @@ export default function TmuxViewerPage() {
   }, [connectSSE]);
 
   // Interactive mode
-  const [interactive, setInteractive] = useState(false);
+  const [interactive, setInteractive] = useState(true);
   const sendingRef = useRef(false);
 
   const sendKeys = useCallback(async (payload: { keys?: string; special?: string }) => {
