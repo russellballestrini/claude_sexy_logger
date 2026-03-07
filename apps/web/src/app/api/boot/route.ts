@@ -128,10 +128,8 @@ export async function POST(request: NextRequest) {
     } else if (IS_WINDOWS) {
       response = await bootWindows(opts);
     } else {
-      // Use preferred multiplexer, or auto-detect
-      const mux = (preferMultiplexer === 'screen' || preferMultiplexer === 'tmux')
-        ? preferMultiplexer
-        : await detectMultiplexer();
+      // Default to tmux — only use screen if explicitly requested
+      const mux = preferMultiplexer === 'screen' ? 'screen' : 'tmux' as const;
       if (mux === 'tmux') {
         response = await bootTmux(opts);
       } else if (mux === 'screen') {

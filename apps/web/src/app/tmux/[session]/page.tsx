@@ -100,8 +100,8 @@ export default function TmuxViewerPage() {
     es.onerror = () => {
       setConnected(false);
       es.close();
-      // Reconnect after 2s
-      setTimeout(connectSSE, 2000);
+      // Reconnect after 500ms
+      setTimeout(connectSSE, 500);
     };
 
     return es;

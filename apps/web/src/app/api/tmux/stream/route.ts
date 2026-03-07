@@ -95,8 +95,8 @@ export async function GET(request: NextRequest) {
         return;
       }
 
-      // Poll — remote is slower so use 1s interval
-      const pollMs = host && host !== 'localhost' ? 1000 : 500;
+      // Poll — remote is slower so use 500ms interval, local is 150ms
+      const pollMs = host && host !== 'localhost' ? 500 : 150;
       const interval = setInterval(async () => {
         if (!alive) { clearInterval(interval); controller.close(); return; }
         try {
