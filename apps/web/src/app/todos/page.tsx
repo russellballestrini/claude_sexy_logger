@@ -22,6 +22,7 @@ interface Todo {
   updatedAt: string;
   completedAt: string | null;
   estimatedMinutes: number | null;
+  tmuxSession: string | null;
 }
 
 interface ProjectGroup {
@@ -669,6 +670,12 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
             {booting === bootKey ? '...' : 'Deploy'}
           </button>
         )}
+        {isActive && todo.tmuxSession && (
+          <Link href={`/tmux/${encodeURIComponent(todo.tmuxSession)}`} onClick={(e) => e.stopPropagation()}
+            className="px-1.5 py-0.5 text-xs font-bold bg-blue-500 text-white rounded hover:opacity-90">
+            Watch
+          </Link>
+        )}
         {confirmDelete ? (
           <span className="flex items-center gap-1 shrink-0">
             <button onClick={(e) => { e.stopPropagation(); onDelete(todo.id); setConfirmDelete(false); }} className="px-1.5 py-0.5 text-xs font-bold bg-[var(--color-error)] text-white rounded hover:opacity-90 cursor-pointer">Confirm</button>
@@ -682,7 +689,11 @@ function KanbanCard({ todo, onUpdate, onDelete, projectPath, onBoot, booting, bo
 
       {bootResult?.key === bootKey && (
         <div className={`mt-2 text-xs font-mono px-2 py-1 rounded ${bootResult.msg.startsWith('Error') ? 'text-[var(--color-error)] bg-[var(--color-error)]/10' : 'text-[var(--color-accent)] bg-[var(--color-accent)]/10'}`}>
-          {bootResult.msg}
+          {bootResult.msg.startsWith('tmux: ') ? (
+            <Link href={`/tmux/${encodeURIComponent(bootResult.msg.slice(6))}`} className="hover:underline" onClick={(e) => e.stopPropagation()}>
+              {bootResult.msg} →
+            </Link>
+          ) : bootResult.msg}
         </div>
       )}
     </div>

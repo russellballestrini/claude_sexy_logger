@@ -42,6 +42,13 @@ export default function ActivePage() {
   );
   const sessions = data?.sessions ?? [];
 
+  const { data: tmuxData } = useSWR<{ sessions: string[] }>(
+    '/api/tmux/stream',
+    fetcher,
+    { refreshInterval: 10000 },
+  );
+  const tmuxSessions = tmuxData?.sessions ?? [];
+
   return (
     <div className="p-6 max-w-6xl">
       <PageContext pageType="active-sessions" summary={`Active Sessions. ${sessions.length} active.`} metrics={{ active: sessions.length }} />
@@ -107,8 +114,17 @@ export default function ActivePage() {
                 </div>
               </div>
 
-              <div className="mt-3 text-xs text-[var(--color-muted)]">
-                Last activity {formatRelativeTime(session.updatedAt)}
+              <div className="mt-3 flex items-center gap-2 text-xs text-[var(--color-muted)]">
+                <span>Last activity {formatRelativeTime(session.updatedAt)}</span>
+                {tmuxSessions.some(t => session.projectName.includes(t) || t.includes(session.projectName.split('-').pop() || '____')) && (
+                  <Link
+                    href={`/tmux/${encodeURIComponent(tmuxSessions.find(t => session.projectName.includes(t) || t.includes(session.projectName.split('-').pop() || '____'))!)}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="px-1.5 py-0.5 font-bold bg-blue-500 text-white rounded hover:opacity-90 ml-auto"
+                  >
+                    Watch
+                  </Link>
+                )}
               </div>
             </Link>
           ))}

@@ -233,6 +233,18 @@ export async function GET(request: NextRequest) {
 
     const todos = db.prepare(query).all(...params) as any[];
 
+    // Build map of todo_id → tmux_session from running deployments
+    const deploymentMap = new Map<number, string>();
+    try {
+      const deployments = db.prepare(
+        "SELECT tmux_session, todo_ids FROM agent_deployments WHERE status = 'running'"
+      ).all() as any[];
+      for (const d of deployments) {
+        const ids: number[] = JSON.parse(d.todo_ids || '[]');
+        for (const tid of ids) deploymentMap.set(tid, d.tmux_session);
+      }
+    } catch { /* table may not exist */ }
+
     // Group by project for overview
     const byProject: Record<string, { project: string; display: string; projectPath: string | null; todos: any[] }> = {};
     for (const todo of todos) {
@@ -260,6 +272,7 @@ export async function GET(request: NextRequest) {
         updatedAt: todo.updated_at,
         completedAt: todo.completed_at,
         estimatedMinutes: todo.estimated_minutes,
+        tmuxSession: deploymentMap.get(todo.id) ?? null,
       });
     }
 

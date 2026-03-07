@@ -26,6 +26,15 @@ export default function SessionViewerPage({
     `/api/projects/${project}/sessions`,
     fetcher
   );
+  const { data: tmuxData } = useSWR<{ sessions: string[] }>(
+    '/api/tmux/stream',
+    fetcher,
+    { refreshInterval: 10000 }
+  );
+  const tmuxSessions = tmuxData?.sessions ?? [];
+  // Match project name to tmux session (tmux sessions often use the project dir name)
+  const decodedProject = decodeURIComponent(project);
+  const matchingTmux = tmuxSessions.find(s => decodedProject.includes(s) || s.includes(decodedProject.split('-').pop() || ''));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -129,6 +138,15 @@ export default function SessionViewerPage({
             projectPath={projectData?.originalPath}
             label="actions"
           />
+          {matchingTmux && (
+            <Link
+              href={`/tmux/${encodeURIComponent(matchingTmux)}`}
+              className="px-2 py-1 text-xs font-bold bg-blue-500 text-white rounded hover:opacity-90 flex items-center gap-1.5"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+              Watch terminal
+            </Link>
+          )}
         </div>
         <div className="flex items-center gap-4 mt-2">
           <span className="text-base text-[var(--color-muted)]">
