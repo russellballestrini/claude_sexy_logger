@@ -3,13 +3,58 @@
 import { useParams } from 'next/navigation';
 import useSWR from 'swr';
 import Link from 'next/link';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
 const DEFAULT_KWH_RATE = 0.31;
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+// Convert basic ANSI escape codes to styled spans
+function ansiToHtml(text: string): string {
+  const colorMap: Record<string, string> = {
+    '30': '#1e1e1e', '31': '#ef4444', '32': '#22c55e', '33': '#eab308',
+    '34': '#60a5fa', '35': '#c084fc', '36': '#22d3ee', '37': '#d4d4d4',
+    '90': '#737373', '91': '#f87171', '92': '#4ade80', '93': '#facc15',
+    '94': '#93c5fd', '95': '#d8b4fe', '96': '#67e8f9', '97': '#ffffff',
+  };
+  const bgMap: Record<string, string> = {
+    '40': '#1e1e1e', '41': '#991b1b', '42': '#166534', '43': '#854d0e',
+    '44': '#1e3a5f', '45': '#581c87', '46': '#164e63', '47': '#404040',
+  };
+  let result = '';
+  let fg = '', bg = '';
+  let bold = false, dim = false;
+  // eslint-disable-next-line no-control-regex
+  const parts = text.split(/(\x1b\[[0-9;]*m)/);
+  for (const part of parts) {
+    // eslint-disable-next-line no-control-regex
+    const match = part.match(/^\x1b\[([0-9;]*)m$/);
+    if (match) {
+      const codes = match[1].split(';').filter(Boolean);
+      for (const code of codes) {
+        if (code === '0') { fg = ''; bg = ''; bold = false; dim = false; }
+        else if (code === '1') bold = true;
+        else if (code === '2') dim = true;
+        else if (code === '22') { bold = false; dim = false; }
+        else if (colorMap[code]) fg = colorMap[code];
+        else if (bgMap[code]) bg = bgMap[code];
+        else if (code === '39') fg = '';
+        else if (code === '49') bg = '';
+      }
+    } else if (part) {
+      const escaped = part.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const styles: string[] = [];
+      if (fg) styles.push(`color:${fg}`);
+      if (bg) styles.push(`background:${bg}`);
+      if (bold) styles.push('font-weight:bold');
+      if (dim) styles.push('opacity:0.6');
+      result += styles.length > 0 ? `<span style="${styles.join(';')}">${escaped}</span>` : escaped;
+    }
+  }
+  return result;
+}
 
 const HARNESSES = [
   {
@@ -86,7 +131,7 @@ const HARNESSES = [
 
 type BootStatus = { state: 'idle' } | { state: 'booting' } | { state: 'success'; detail: any } | { state: 'error'; detail: string };
 
-const TABS = ['Overview', 'Processes', 'Bootstrap', 'Settings'] as const;
+const TABS = ['Overview', 'Harnesses', 'Processes', 'Bootstrap', 'Settings'] as const;
 type Tab = (typeof TABS)[number];
 
 export default function NodeDetailPage() {
@@ -102,6 +147,11 @@ export default function NodeDetailPage() {
   );
   const { data: settings } = useSWR('/api/settings', fetcher, { revalidateOnFocus: false });
   const { data: sshConfig, mutate: mutateSsh } = useSWR('/api/ssh-config', fetcher, { revalidateOnFocus: false });
+  const { data: tmuxData } = useSWR(
+    activeTab === 'Harnesses' ? '/api/tmux/stream' : null,
+    fetcher,
+    { refreshInterval: 5000 },
+  );
 
   // Per-node tunables
   const [kwhRate, setKwhRate] = useState(DEFAULT_KWH_RATE);
@@ -121,10 +171,35 @@ export default function NodeDetailPage() {
     if (w) setWattsOverride(parseFloat(w) || undefined);
   }, [settings, host]);
 
+  // Determine the SSH host to use for booting (localhost if this is the local machine)
+  const isLocal = mesh?.localHostname === host || host === 'localhost';
+  const bootHost = isLocal ? 'localhost' : host;
+
   // Bootstrap harness state
   const [bootStatuses, setBootStatuses] = useState<Record<string, BootStatus>>({});
   const [authModes, setAuthModes] = useState<Record<string, string>>({});
   const [bootFilter, setBootFilter] = useState('');
+  // Harness preview state
+  const [previewSession, setPreviewSession] = useState<string | null>(null);
+  const [previewContent, setPreviewContent] = useState('');
+  const previewRef = useRef<HTMLPreElement>(null);
+
+  // SSE connection for inline tmux preview
+  useEffect(() => {
+    if (!previewSession || !isLocal) return;
+    const es = new EventSource(`/api/tmux/stream?session=${encodeURIComponent(previewSession)}`);
+    es.onmessage = (e) => {
+      try {
+        setPreviewContent(JSON.parse(e.data));
+        if (previewRef.current) {
+          previewRef.current.scrollTop = previewRef.current.scrollHeight;
+        }
+      } catch { /* skip */ }
+    };
+    es.onerror = () => es.close();
+    return () => es.close();
+  }, [previewSession, isLocal]);
+
   const [sshEditing, setSshEditing] = useState(false);
   const [sshForm, setSshForm] = useState<{ name: string; hostname?: string; port?: string; user?: string; identityFile?: string; forwardAgent?: string }>({ name: host });
   const [sshSaving, setSshSaving] = useState(false);
@@ -149,10 +224,6 @@ export default function NodeDetailPage() {
     } catch { /* ignore */ }
     setSshSaving(false);
   };
-
-  // Determine the SSH host to use for booting (localhost if this is the local machine)
-  const isLocal = mesh?.localHostname === host || host === 'localhost';
-  const bootHost = isLocal ? 'localhost' : host;
 
   const bootHarness = useCallback(async (harness: typeof HARNESSES[0]) => {
     setBootStatuses(prev => ({ ...prev, [harness.id]: { state: 'booting' } }));
@@ -430,6 +501,86 @@ export default function NodeDetailPage() {
           </div>
         </div>
       )}
+
+      {/* ===== HARNESSES TAB ===== */}
+      {activeTab === 'Harnesses' && (() => {
+        // Combine tmux sessions from probe (remote) and local tmux API
+        const probeSessions: any[] = probe?.sessions?.tmux ?? [];
+        const localSessions: string[] = isLocal ? (tmuxData?.sessions ?? []) : [];
+        // Merge — local API has the definitive list for local nodes
+        const sessions: any[] = isLocal
+          ? localSessions.map(s => ({ name: s }))
+          : probeSessions;
+
+        return (
+          <div className="space-y-4">
+            {sessions.length === 0 && (
+              <div className="text-sm text-[var(--color-muted)] text-center py-8 bg-[var(--color-surface)] rounded border border-[var(--color-border)]">
+                No tmux sessions running on {host}.
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-3">
+              {sessions.map(s => (
+                <div
+                  key={s.name}
+                  className={`bg-[var(--color-surface)] rounded border p-4 ${
+                    previewSession === s.name ? 'border-[var(--color-accent)]' : 'border-[var(--color-border)]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                      <span className="font-bold font-mono text-sm">{s.name}</span>
+                      {s.windows && (
+                        <span className="text-xs text-[var(--color-muted)]">({s.windows} windows)</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isLocal && (
+                        <>
+                          <button
+                            onClick={() => setPreviewSession(previewSession === s.name ? null : s.name)}
+                            className="text-xs px-2 py-1 rounded bg-[var(--color-surface-hover)] hover:bg-[var(--color-border)] transition-colors cursor-pointer font-mono"
+                          >
+                            {previewSession === s.name ? 'Close Preview' : 'Preview'}
+                          </button>
+                          <Link
+                            href={`/tmux/${encodeURIComponent(s.name)}`}
+                            className="text-xs px-2 py-1 rounded bg-[var(--color-accent)] text-[var(--color-background)] font-bold hover:opacity-90 transition-opacity"
+                          >
+                            Full View
+                          </Link>
+                        </>
+                      )}
+                      {!isLocal && (
+                        <span className="text-xs text-[var(--color-muted)] font-mono">
+                          ssh {host} -t tmux attach -t {s.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Inline preview */}
+                  {previewSession === s.name && isLocal && (
+                    <pre
+                      ref={previewRef}
+                      className="mt-3 bg-[#0d0d0d] rounded border border-[var(--color-border)] p-3 overflow-auto max-h-[50vh] font-mono text-xs leading-relaxed text-[#d4d4d4] whitespace-pre"
+                      dangerouslySetInnerHTML={{ __html: previewContent ? ansiToHtml(previewContent) : 'Connecting...' }}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {sessions.length > 0 && (
+              <p className="text-xs text-[var(--color-muted)]">
+                {isLocal ? 'Local tmux sessions — click Preview for live tail or Full View for the terminal viewer.' : `Remote sessions on ${host} — attach via SSH.`}
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ===== PROCESSES TAB ===== */}
       {activeTab === 'Processes' && (
