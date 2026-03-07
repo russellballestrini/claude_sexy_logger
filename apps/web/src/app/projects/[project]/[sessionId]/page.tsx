@@ -34,7 +34,8 @@ export default function SessionViewerPage({
   const tmuxSessions = tmuxData?.sessions ?? [];
   // Match project name to tmux session (tmux sessions often use the project dir name)
   const decodedProject = decodeURIComponent(project);
-  const matchingTmux = tmuxSessions.find(s => decodedProject.includes(s) || s.includes(decodedProject.split('-').pop() || ''));
+  const projectSuffix = decodedProject.split('-').pop() || '';
+  const matchingTmux = tmuxSessions.find(s => decodedProject.includes(s) || (projectSuffix.length > 3 && s.includes(projectSuffix)));
 
   useEffect(() => {
     const controller = new AbortController();

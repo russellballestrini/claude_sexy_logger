@@ -31,6 +31,11 @@ const SESSION_COLORS = [
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
+function findMatchingTmux(projectName: string, tmuxSessions: string[]): string | undefined {
+  const suffix = projectName.split('-').pop() || '';
+  return tmuxSessions.find(t => projectName.includes(t) || (suffix.length > 3 && t.includes(suffix)));
+}
+
 export default function ActivePage() {
   const [timeRange, setTimeRange] = useTimeRange('active_time_range', '1h');
   const minutes = getTimeRangeMinutes(timeRange) || 60 * 24 * 365 * 10; // 'all' = 10 years
@@ -116,15 +121,18 @@ export default function ActivePage() {
 
               <div className="mt-3 flex items-center gap-2 text-xs text-[var(--color-muted)]">
                 <span>Last activity {formatRelativeTime(session.updatedAt)}</span>
-                {tmuxSessions.some(t => session.projectName.includes(t) || t.includes(session.projectName.split('-').pop() || '____')) && (
-                  <Link
-                    href={`/tmux/${encodeURIComponent(tmuxSessions.find(t => session.projectName.includes(t) || t.includes(session.projectName.split('-').pop() || '____'))!)}`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="px-1.5 py-0.5 font-bold bg-blue-500 text-white rounded hover:opacity-90 ml-auto"
-                  >
-                    Watch
-                  </Link>
-                )}
+                {(() => {
+                  const tmux = findMatchingTmux(session.projectName, tmuxSessions);
+                  return tmux ? (
+                    <a
+                      href={`/tmux/${encodeURIComponent(tmux)}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="px-1.5 py-0.5 font-bold bg-blue-500 text-white rounded hover:opacity-90 ml-auto"
+                    >
+                      Watch
+                    </a>
+                  ) : null;
+                })()}
               </div>
             </Link>
           ))}

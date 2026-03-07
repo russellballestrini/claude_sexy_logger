@@ -120,7 +120,7 @@ export default function TmuxViewerPage() {
     <div className="flex flex-col h-[calc(100vh-2rem)]">
       {/* Header */}
       <div className="flex items-center gap-3 mb-3">
-        <Link href="/permacomputer" className="text-[var(--color-muted)] hover:text-[var(--color-foreground)] text-sm">
+        <Link href="/tmux" className="text-[var(--color-muted)] hover:text-[var(--color-foreground)] text-sm">
           &larr; Back
         </Link>
         <h2 className="text-lg font-bold font-mono">{decodeURIComponent(session)}</h2>
