@@ -622,6 +622,8 @@ export default function NodeDetailPage() {
               <TimeRangeSelect value={range} onChange={setRange} />
             </div>
 
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
             {/* Active Claudes */}
             <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
               <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
@@ -769,6 +771,8 @@ export default function NodeDetailPage() {
               </ResponsiveContainer>
             </div>
             )}
+
+            </div>{/* end grid */}
           </div>
           );
         })()}
