@@ -144,6 +144,19 @@ export default function UsageMonitorPage() {
     }).then(() => mutateMeshHistory());
   }, [mesh, mutateMeshHistory]);
 
+  // Unsandbox status + probe
+  const { data: unsandbox } = useSWR('/api/unsandbox', fetcher, { refreshInterval: 30000 });
+  const [unsandboxProbe, setUnsandboxProbe] = useState<any>(null);
+  const unsandboxProbeRef = useRef(false);
+  useEffect(() => {
+    if (!unsandbox?.connected || unsandboxProbeRef.current) return;
+    unsandboxProbeRef.current = true;
+    fetch('/api/unsandbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'probe' }) })
+      .then(r => r.json())
+      .then(d => { if (d.probe) setUnsandboxProbe(d.probe); })
+      .catch(() => {});
+  }, [unsandbox?.connected]);
+
   const { data: apmonitor } = useSWR('/api/apmonitor', fetcher, {
     refreshInterval: 15000,
   });
@@ -662,7 +675,7 @@ export default function UsageMonitorPage() {
       {activeTab === 'infra' && (<>
 
       {/* Mesh Status */}
-      {mesh && (
+      {(mesh || unsandbox) && (
         <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-base font-bold text-[var(--color-muted)]">
@@ -672,7 +685,7 @@ export default function UsageMonitorPage() {
               <span className="text-[var(--color-accent)] font-bold">{mesh.summary?.totalClaudes ?? 0} claudes</span>
               <span className="text-[var(--color-muted)]">{mesh.summary?.totalCores ?? 0} cores</span>
               <span className="text-[var(--color-muted)]">{mesh.summary?.totalMemGB ?? 0}GB total</span>
-              <span className="text-[var(--color-muted)]">{mesh.summary?.reachableNodes ?? 0}/{mesh.summary?.totalNodes ?? 0} nodes</span>
+              <span className="text-[var(--color-muted)]">{(mesh.summary?.reachableNodes ?? 0) + (unsandbox?.connected ? 1 : 0)}/{(mesh.summary?.totalNodes ?? 0) + (unsandbox ? 1 : 0)} nodes</span>
               {(() => {
                 const reachable = (mesh.nodes ?? []).filter((n: any) => n.reachable);
                 const elecCost = reachable.reduce((sum: number, n: any) => {
@@ -692,10 +705,11 @@ export default function UsageMonitorPage() {
               <span className="text-[var(--color-muted)]">{mesh.summary?.totalPowerWatts ?? 0}W total</span>
             </div>
           </div>
-          <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(mesh.nodes?.length ?? 1, 3)}, 1fr)` }}>
+          <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min((mesh.nodes?.length ?? 0) + (unsandbox ? 1 : 0), 3)}, 1fr)` }}>
             {mesh.nodes?.map((node: any) => (
               <MeshNodeCard key={node.hostname} node={node} kwhRate={getKwhRate(node.hostname)} onRateChange={saveKwhRate} ispCost={getIspCost(node.hostname)} onIspCostChange={saveIspCost} diskOverride={getDiskOverride(node.hostname)} onDiskOverrideChange={saveDiskOverride} wattsOverride={getWattsOverride(node.hostname)} onWattsOverrideChange={saveWattsOverride} formatCost={currency.format} />
             ))}
+            {unsandbox && <UnsandboxCard status={unsandbox} probe={unsandboxProbe} />}
           </div>
         </div>
       )}
@@ -1152,6 +1166,107 @@ function MeshNodeCard({ node, kwhRate, onRateChange, ispCost, onIspCostChange, d
           </div>
         );
       })()}
+    </div>
+  );
+}
+
+function UnsandboxCard({ status, probe }: { status: any; probe: any }) {
+  const connected = status?.connected;
+  if (!connected) {
+    return (
+      <div className="rounded border border-[var(--color-border)] p-3 opacity-40">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="w-2 h-2 rounded-full bg-[var(--color-error)]" />
+          <Link href="/permacomputer/unsandbox" className="font-bold text-sm text-purple-400 hover:underline">
+            unsandbox.com
+          </Link>
+          <span className="text-xs text-[var(--color-error)] ml-auto">Disconnected</span>
+        </div>
+      </div>
+    );
+  }
+
+  const memPct = probe?.memTotalGB > 0 ? (probe.memUsedGB / probe.memTotalGB) * 100 : 0;
+  const loadPerCore = probe?.cpuCores > 0 ? probe.loadAvg[0] / probe.cpuCores : 0;
+  const loadWarn = loadPerCore > 2;
+  const memWarn = memPct > 85;
+
+  return (
+    <div className={`rounded border p-3 ${loadWarn || memWarn ? 'border-[var(--color-error)] bg-red-950/30' : 'border-purple-500/30'}`}>
+      {/* Header */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+        <Link href="/permacomputer/unsandbox" className="font-bold text-sm text-purple-400 hover:underline transition-colors">
+          unsandbox.com
+        </Link>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400">ephemeral</span>
+        {probe?.uptime && <span className="text-xs text-[var(--color-muted)] ml-auto">up {probe.uptime}</span>}
+      </div>
+
+      {/* Tier info */}
+      <div className="flex items-baseline gap-2 mb-3">
+        <span className="text-3xl font-bold text-purple-400">T{status.tier}</span>
+        <span className="text-sm text-[var(--color-muted)]">tier</span>
+        <span className="text-xs text-[var(--color-muted)] ml-2">{status.maxSessions} max sessions</span>
+      </div>
+
+      {probe ? (<>
+        {/* CPU info */}
+        <div className="mb-2 text-xs text-[var(--color-muted)] space-y-0.5">
+          {probe.cpuModel && (
+            <div className="truncate" title={probe.cpuModel}>
+              {probe.cpuModel.replace(/\(R\)|\(TM\)/g, '').replace(/CPU\s+/i, '').trim()}
+            </div>
+          )}
+          <div className="flex gap-2 flex-wrap">
+            <span className="text-[10px] px-1 py-0.5 rounded bg-[var(--color-surface-hover)]">x86_64</span>
+            {probe.cpuModel && /intel/i.test(probe.cpuModel) && <span className="text-[10px] px-1 py-0.5 rounded bg-blue-500/20 text-blue-400">Intel</span>}
+            {probe.cpuModel && /amd|epyc|ryzen/i.test(probe.cpuModel) && <span className="text-[10px] px-1 py-0.5 rounded bg-red-500/20 text-red-400">AMD</span>}
+          </div>
+        </div>
+
+        {/* CPU load */}
+        <div className="mb-2">
+          <div className="flex justify-between text-xs text-[var(--color-muted)] mb-1">
+            <span>{probe.cpuCores} cores</span>
+            <span className={loadWarn ? 'text-[var(--color-error)] font-bold' : ''}>
+              load {probe.loadAvg[0].toFixed(1)} / {probe.loadAvg[1].toFixed(1)} / {probe.loadAvg[2].toFixed(1)}
+            </span>
+          </div>
+          <div className="h-1.5 rounded bg-[var(--color-background)] overflow-hidden">
+            <div
+              className={`h-full rounded ${loadWarn ? 'bg-[var(--color-error)]' : 'bg-[#f97316]'}`}
+              style={{ width: `${Math.min(loadPerCore * 100, 100)}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Memory */}
+        <div className="mb-2">
+          <div className="flex justify-between text-xs text-[var(--color-muted)] mb-1">
+            <span>{probe.memUsedGB}GB / {probe.memTotalGB}GB</span>
+            <span className={memWarn ? 'text-[var(--color-error)] font-bold' : ''}>
+              {memPct.toFixed(0)}%
+            </span>
+          </div>
+          <div className="h-1.5 rounded bg-[var(--color-background)] overflow-hidden">
+            <div
+              className={`h-full rounded ${memWarn ? 'bg-[var(--color-error)]' : 'bg-[#60a5fa]'}`}
+              style={{ width: `${memPct}%` }}
+            />
+          </div>
+        </div>
+      </>) : (
+        <div className="text-xs text-[var(--color-muted)] animate-pulse">Probing...</div>
+      )}
+
+      {/* Rate limit */}
+      <div className="mt-2 pt-2 border-t border-[var(--color-border)]">
+        <div className="flex justify-between text-xs text-[var(--color-muted)]">
+          <span>Rate: {status.rateLimit}/min</span>
+          <span>Burst: {status.burst}</span>
+        </div>
+      </div>
     </div>
   );
 }
