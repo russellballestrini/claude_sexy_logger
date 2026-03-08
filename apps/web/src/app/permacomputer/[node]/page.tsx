@@ -4,6 +4,18 @@ import { useParams } from 'next/navigation';
 import useSWR from 'swr';
 import Link from 'next/link';
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { TimeRangeSelect, useTimeRange, getTimeRangeMinutes } from '@unturf/unfirehose-ui/TimeRangeSelect';
+import {
+  AreaChart,
+  Area,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -195,7 +207,18 @@ export default function NodeDetailPage() {
     window.location.hash = tab;
   };
 
+  const [range, setRange] = useTimeRange('node_chart_range', '24h');
+  const chartHours = (() => {
+    const mins = getTimeRangeMinutes(range);
+    return mins === 0 ? 720 : Math.max(1, Math.ceil(mins / 60));
+  })();
+
   const { data: mesh } = useSWR('/api/mesh', fetcher, { refreshInterval: 10000 });
+  const { data: meshHistory } = useSWR(
+    `/api/mesh/history?hours=${chartHours}`,
+    fetcher,
+    { refreshInterval: 60000 },
+  );
   const { data: probe, isLoading: probeLoading } = useSWR(
     `/api/mesh/node?host=${encodeURIComponent(host)}`,
     fetcher,
@@ -417,7 +440,7 @@ export default function NodeDetailPage() {
       </div>
 
       {/* ===== OVERVIEW TAB ===== */}
-      {activeTab === 'Overview' && (
+      {activeTab === 'Overview' && (<>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="space-y-6">
             <Section title="System">
@@ -562,7 +585,194 @@ export default function NodeDetailPage() {
             )}
           </div>
         </div>
-      )}
+
+        {/* Time-Series Charts */}
+        {meshHistory?.timeline?.length > 0 && (() => {
+          const tooltipStyle = { background: '#18181b', border: '1px solid #3f3f46', borderRadius: 4 };
+          const xAxisProps = { dataKey: 'timestamp', tick: { fill: '#71717a', fontSize: 12 }, tickFormatter: (t: string) => t.slice(11, 16) };
+
+          const chartData = meshHistory.timeline
+            .filter((t: any) => t.nodes?.[host])
+            .map((t: any) => {
+              const n = t.nodes[host];
+              return {
+                timestamp: t.timestamp,
+                watts: n.watts ?? 0,
+                cpuWatts: (n.watts ?? 0) - (n.gpuWatts ?? 0),
+                gpuWatts: n.gpuWatts ?? 0,
+                load: n.load ?? 0,
+                cores: n.cores ?? 0,
+                memUsedGB: n.memUsed ?? 0,
+                memTotalGB: Math.round(((probe?.memory?.totalKB ?? 0) / 1048576) * 10) / 10,
+                claudes: n.claudes ?? 0,
+                gpuUtil: n.gpuUtil ?? 0,
+                gpuMemUsedGB: Math.round((n.gpuMemUsedMB ?? 0) / 1024 * 10) / 10,
+                gpuMemTotalGB: Math.round((n.gpuMemTotalMB ?? 0) / 1024 * 10) / 10,
+                elecCostPerHour: Math.round(((n.watts ?? 0) / 1000) * kwhRate * 100) / 100,
+              };
+            });
+
+          if (chartData.length === 0) return null;
+          const last = chartData[chartData.length - 1];
+
+          return (
+          <div className="mt-8 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold">History</h2>
+              <TimeRangeSelect value={range} onChange={setRange} />
+            </div>
+
+            {/* Active Claudes */}
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+              <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
+                Active Claudes
+                <span className="text-xs font-normal ml-2">{last.claudes} current</span>
+              </h3>
+              <ResponsiveContainer width="100%" height={140}>
+                <AreaChart data={chartData}>
+                  <XAxis {...xAxisProps} />
+                  <YAxis tick={{ fill: '#71717a', fontSize: 12 }} allowDecimals={false} />
+                  <Tooltip labelFormatter={(t) => String(t)} formatter={(v, name) => [v, name]} contentStyle={tooltipStyle} />
+                  <Area type="stepAfter" dataKey="claudes" name="Claudes" stroke="var(--color-accent)" fill="var(--color-accent)" fillOpacity={0.2} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Wattage */}
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+              <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
+                Compute Wattage
+                <span className="text-xs font-normal ml-2">{last.watts}W current</span>
+              </h3>
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={chartData}>
+                  <XAxis {...xAxisProps} />
+                  <YAxis tick={{ fill: '#71717a', fontSize: 12 }} unit="W" />
+                  <Tooltip labelFormatter={(t) => String(t)} formatter={(v, name) => [`${v}W`, name]} contentStyle={tooltipStyle} />
+                  <Legend />
+                  <Line type="monotone" dataKey="watts" name="Total" stroke="var(--color-accent)" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="cpuWatts" name="CPU" stroke="#f97316" strokeWidth={1.5} dot={false} />
+                  {chartData.some((t: any) => t.gpuWatts > 0) && (
+                    <Line type="monotone" dataKey="gpuWatts" name="GPU" stroke="#a78bfa" strokeWidth={1.5} dot={false} />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* CPU Load */}
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+              <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
+                CPU Load
+                <span className="text-xs font-normal ml-2">{last.load.toFixed(1)} / {last.cores} cores</span>
+              </h3>
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={chartData}>
+                  <XAxis {...xAxisProps} />
+                  <YAxis tick={{ fill: '#71717a', fontSize: 12 }} />
+                  <Tooltip labelFormatter={(t) => String(t)} formatter={(v, name) => [typeof v === 'number' ? v.toFixed(1) : v, name]} contentStyle={tooltipStyle} />
+                  <Legend />
+                  <Area type="monotone" dataKey="cores" name="Total Cores" stroke="#3f3f46" fill="#3f3f46" fillOpacity={0.2} dot={false} />
+                  <Area type="monotone" dataKey="load" name="Load Average" stroke="#f97316" fill="#f97316" fillOpacity={0.3} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Memory */}
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+              <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
+                Memory Usage
+                <span className="text-xs font-normal ml-2">{last.memUsedGB} / {last.memTotalGB || '?'} GB</span>
+              </h3>
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={chartData}>
+                  <XAxis {...xAxisProps} />
+                  <YAxis tick={{ fill: '#71717a', fontSize: 12 }} unit="GB" />
+                  <Tooltip labelFormatter={(t) => String(t)} formatter={(v, name) => [`${v}GB`, name]} contentStyle={tooltipStyle} />
+                  <Legend />
+                  {last.memTotalGB > 0 && (
+                    <Area type="monotone" dataKey="memTotalGB" name="Total" stroke="#3f3f46" fill="#3f3f46" fillOpacity={0.2} dot={false} />
+                  )}
+                  <Area type="monotone" dataKey="memUsedGB" name="Used" stroke="#60a5fa" fill="#60a5fa" fillOpacity={0.3} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Electricity Cost */}
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+              <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
+                Electricity Cost
+                <span className="text-xs font-normal ml-2">
+                  ${last.elecCostPerHour.toFixed(3)}/hr &middot; ~${(last.elecCostPerHour * 24 * 30).toFixed(0)}/mo
+                </span>
+              </h3>
+              <ResponsiveContainer width="100%" height={140}>
+                <AreaChart data={chartData}>
+                  <XAxis {...xAxisProps} />
+                  <YAxis tick={{ fill: '#71717a', fontSize: 12 }} tickFormatter={(v: number) => `$${v.toFixed(2)}`} />
+                  <Tooltip labelFormatter={(t) => String(t)} formatter={(v) => [`$${Number(v).toFixed(3)}/hr`]} contentStyle={tooltipStyle} />
+                  <Area type="monotone" dataKey="elecCostPerHour" name="$/hr" stroke="#facc15" fill="#facc15" fillOpacity={0.2} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* GPU Utilization */}
+            {chartData.some((t: any) => t.gpuUtil > 0 || t.gpuWatts > 0) && (
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+              <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
+                GPU Utilization
+                <span className="text-xs font-normal ml-2">{last.gpuUtil}%</span>
+              </h3>
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={chartData}>
+                  <XAxis {...xAxisProps} />
+                  <YAxis tick={{ fill: '#71717a', fontSize: 12 }} unit="%" domain={[0, 100]} />
+                  <Tooltip labelFormatter={(t) => String(t)} formatter={(v, name) => [`${v}%`, name]} contentStyle={tooltipStyle} />
+                  <Area type="monotone" dataKey="gpuUtil" name="GPU Util" stroke="#22c55e" fill="#22c55e" fillOpacity={0.3} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            )}
+
+            {/* GPU Power */}
+            {chartData.some((t: any) => t.gpuWatts > 0) && (
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+              <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
+                GPU Power
+                <span className="text-xs font-normal ml-2">{last.gpuWatts}W</span>
+              </h3>
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={chartData}>
+                  <XAxis {...xAxisProps} />
+                  <YAxis tick={{ fill: '#71717a', fontSize: 12 }} unit="W" />
+                  <Tooltip labelFormatter={(t) => String(t)} formatter={(v, name) => [`${v}W`, name]} contentStyle={tooltipStyle} />
+                  <Area type="monotone" dataKey="gpuWatts" name="GPU Power" stroke="#a78bfa" fill="#a78bfa" fillOpacity={0.3} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            )}
+
+            {/* GPU Memory */}
+            {chartData.some((t: any) => t.gpuMemTotalGB > 0) && (
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
+              <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
+                GPU Memory
+                <span className="text-xs font-normal ml-2">{last.gpuMemUsedGB} / {last.gpuMemTotalGB} GB</span>
+              </h3>
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={chartData}>
+                  <XAxis {...xAxisProps} />
+                  <YAxis tick={{ fill: '#71717a', fontSize: 12 }} unit="GB" />
+                  <Tooltip labelFormatter={(t) => String(t)} formatter={(v, name) => [`${v}GB`, name]} contentStyle={tooltipStyle} />
+                  <Area type="monotone" dataKey="gpuMemTotalGB" name="Total" stroke="#3f3f46" fill="#3f3f46" fillOpacity={0.2} dot={false} />
+                  <Area type="monotone" dataKey="gpuMemUsedGB" name="Used" stroke="#22c55e" fill="#22c55e" fillOpacity={0.3} dot={false} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            )}
+          </div>
+          );
+        })()}
+      </>)}
 
       {/* ===== HARNESSES TAB ===== */}
       {activeTab === 'Harnesses' && (() => {
