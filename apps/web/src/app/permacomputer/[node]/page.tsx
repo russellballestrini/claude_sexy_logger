@@ -73,14 +73,14 @@ const HARNESSES = [
   {
     id: 'claude-code', name: 'Claude Code',
     desc: 'Anthropic CLI for Claude — agentic coding in the terminal',
-    install: 'npm install -g @anthropic-ai/claude-code',
+    install: 'snap install claude-code --classic',
     verify: 'claude --version',
     tags: ['ml', 'coding', 'cli'],
   },
   {
     id: 'gemini-cli', name: 'Gemini CLI',
     desc: 'Google CLI for Gemini — agentic coding similar to Claude Code',
-    install: 'npm install -g @anthropic-ai/claude-code',
+    install: 'npm install -g @anthropic-ai/gemini-cli',
     verify: 'gemini --version',
     requiresKey: 'GOOGLE_API_KEY', tags: ['ml', 'coding', 'cli'],
   },

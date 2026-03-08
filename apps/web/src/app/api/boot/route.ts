@@ -470,7 +470,7 @@ async function ensureRemoteTools(sshBase: string[], host: string, sudoPassword?:
   try {
     await exec(sshCmd, [...sshArgs, `${nvmPrefix}which claude`], { timeout: 15000 });
   } catch {
-    await exec(sshCmd, [...sshArgs, `${nvmPrefix}npm install -g @anthropic-ai/claude-code`], { timeout: 180000 });
+    await exec(sshCmd, [...sshArgs, 'sudo snap install claude-code --classic'], { timeout: 180000 });
     bootstrapped.push('claude');
   }
 
@@ -714,8 +714,7 @@ async function bootUnsandbox(body: any, projectPath: string, passedRepoUrl?: str
   const setupParts = [
     '#!/bin/bash',
     'set -e',
-    // Install essentials
-    'apt-get update -qq && apt-get install -y -qq git curl nodejs npm python3 python3-pip >/dev/null 2>&1',
+    // Golden image has batteries included — no apt-get needed
   ];
 
   // Clone repo if we have a URL
@@ -730,7 +729,7 @@ async function bootUnsandbox(body: any, projectPath: string, passedRepoUrl?: str
   // Install harness
   const resolvedHarness = harnessName || 'claude';
   if (resolvedHarness === 'claude') {
-    setupParts.push('npm install -g @anthropic-ai/claude-code >/dev/null 2>&1');
+    // claude-code is pre-installed in the golden image
   }
 
   // Build the harness command

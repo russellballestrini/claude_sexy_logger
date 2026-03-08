@@ -25,8 +25,8 @@ cd apps/web
 PORT=3000 node .next/standalone/server.js`.trim();
 
 const HARNESSES = [
-  { id: 'claude-code', name: 'Claude Code', desc: 'Anthropic CLI for Claude — agentic coding in the terminal', install: 'npm install -g @anthropic-ai/claude-code', verify: 'claude --version', tags: ['ml', 'coding'], },
-  { id: 'gemini-cli', name: 'Gemini CLI', desc: 'Google CLI for Gemini — agentic coding similar to Claude Code', install: 'npm install -g @anthropic-ai/claude-code', verify: 'gemini --version', requiresKey: 'GOOGLE_API_KEY', tags: ['ml', 'coding'], },
+  { id: 'claude-code', name: 'Claude Code', desc: 'Anthropic CLI for Claude — agentic coding in the terminal', install: 'snap install claude-code --classic', verify: 'claude --version', tags: ['ml', 'coding'], },
+  { id: 'gemini-cli', name: 'Gemini CLI', desc: 'Google CLI for Gemini — agentic coding similar to Claude Code', install: 'npm install -g @anthropic-ai/gemini-cli', verify: 'gemini --version', requiresKey: 'GOOGLE_API_KEY', tags: ['ml', 'coding'], },
   { id: 'openai-codex', name: 'OpenAI Codex CLI', desc: 'OpenAI CLI coding agent — GPT-4 powered terminal assistant', install: 'npm install -g @openai/codex', verify: 'codex --version', requiresKey: 'OPENAI_API_KEY', tags: ['ml', 'coding'], },
   { id: 'open-code', name: 'Open Code', desc: 'Open source alternative to Claude Code — multi-provider', install: 'npm install -g opencode-ai', verify: 'opencode --version', requiresKey: 'ANTHROPIC_API_KEY or OPENAI_API_KEY', tags: ['ml', 'coding'], },
   { id: 'aider', name: 'Aider', desc: 'ML pair programming in the terminal — many models', install: 'pip install aider-chat', verify: 'aider --version', requiresKey: 'ANTHROPIC_API_KEY or OPENAI_API_KEY', tags: ['ml', 'coding'], },
@@ -854,7 +854,7 @@ ${harness.verify} 2>&1 || echo "VERIFY_FAILED"`;
               <ExampleCard
                 title="Claude Code on a repo"
                 desc="Clone a project and run Claude Code with a prompt. Requires ANTHROPIC_API_KEY in the container."
-                command={`apt-get update && apt-get install -y nodejs npm git && npm install -g @anthropic-ai/claude-code && git clone https://github.com/you/repo /workspace && cd /workspace && claude --dangerously-skip-permissions "review this codebase and fix any defects"`}
+                command={`git clone https://github.com/you/repo /workspace && cd /workspace && claude --dangerously-skip-permissions "review this codebase and fix any defects"`}
                 network="semitrusted"
                 onRun={(c, n) => { setCmd(c); setNetwork(n); }}
               />
@@ -875,7 +875,7 @@ ${harness.verify} 2>&1 || echo "VERIFY_FAILED"`;
               <ExampleCard
                 title="Python project"
                 desc="Clone a Python repo, set up a venv, install deps, and run pytest."
-                command={`apt-get update && apt-get install -y python3 python3-pip python3-venv git && git clone https://github.com/you/repo /workspace && cd /workspace && python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt && pytest`}
+                command={`git clone https://github.com/you/repo /workspace && cd /workspace && python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt && pytest`}
                 network="semitrusted"
                 onRun={(c, n) => { setCmd(c); setNetwork(n); }}
               />
