@@ -3,6 +3,9 @@ import { ingestAll, getDbStats } from '@unturf/unfirehose/db/ingest';
 import { getDb } from '@unturf/unfirehose/db/schema';
 import { checkpointTruncate, freelistBytes } from '@unturf/unfirehose/db/pragmas';
 import { discoverNodes } from '@unturf/unfirehose/mesh';
+import { getLocalStats } from '@unturf/unfirehose/mesh-local';
+import { probeRemote } from '@unturf/unfirehose/mesh-remote';
+import { insertMeshSnapshots } from '@unturf/unfirehose/db/mesh-snapshots';
 import { rollupDrain } from './mesh-rollup';
 import { syncPricing, syncPricingIfStale, hydratePricing, syncIfUnpriced } from '@unturf/unfirehose/pricing-sync';
 import { scanRateLimits } from '@unturf/unfirehose/db/rate-limit-scan';
@@ -104,31 +107,18 @@ function phaseOffsetMs(host: string, intervalMs: number): number {
 }
 
 async function probeAndPersistNode(host: string): Promise<void> {
-  // Per-node probe + persist. Hits /api/mesh?host=X (not /api/mesh/node!) so
-  // we reuse the same flat MeshNode shape /api/mesh/history POST expects —
-  // /api/mesh/node returns a different nested shape meant for the UI detail
-  // view. Single host = only that SSH target touched.
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 20_000);
+  // Straight to the node and straight to the database. This used to fetch
+  // /api/mesh?host=… from the web server and then POST the answer back to
+  // /api/mesh/history — two HTTP round trips through the process whose job
+  // is to answer pages, every fifteen seconds, per node, whether or not
+  // anyone had a page open. On a busy box that was most of the dev server's
+  // load, and a sample was lost whenever the web server was down.
   try {
-    const res = await fetch(
-      `${NEXT_BASE_URL}/api/mesh?host=${encodeURIComponent(host)}`,
-      { signal: ctrl.signal },
-    );
-    if (!res.ok) return;
-    const data = await res.json() as { nodes?: Array<{ reachable?: boolean }> };
-    const nodes = Array.isArray(data?.nodes) ? data.nodes : [];
-    if (nodes.length === 0 || !nodes[0]?.reachable) return;
-    await fetch(`${NEXT_BASE_URL}/api/mesh/history`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nodes }),
-      signal: ctrl.signal,
-    });
-  } catch {
-    // Next not ready, network blip, abort timeout — next interval will retry
-  } finally {
-    clearTimeout(t);
+    const node = host === 'localhost' ? getLocalStats() : await probeRemote(host);
+    if (!node.reachable) return;
+    insertMeshSnapshots(getDb(), [node]);
+  } catch (err) {
+    console.error(`[worker] mesh sample for ${host} failed:`, err);
   }
 }
 

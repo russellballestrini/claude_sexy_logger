@@ -1,0 +1,65 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { createTestDb } from '../test/db-helper';
+import { insertMeshSnapshots } from './mesh-snapshots';
+import type { MeshNode } from '../mesh-probe';
+
+/**
+ * Writing mesh samples.
+ *
+ * This was the body of a route the worker POSTed to so the web server would
+ * write a row into a database the worker already had open. Now both call it.
+ */
+
+const db = createTestDb();
+const node = (over: Partial<MeshNode> & Record<string, unknown> = {}): MeshNode => ({
+  hostname: 'cammy', reachable: true, cpuCores: 8, loadAvg: [1.5, 1.2, 0.9], memTotalGB: 32, memUsedGB: 10,
+  powerWatts: 45, gpuPowerWatts: 0, powerSource: 'rapl', claudeProcesses: 1,
+  ...over,
+} as MeshNode);
+const rows = () => db.prepare('SELECT * FROM mesh_snapshots ORDER BY id').all() as Array<Record<string, unknown>>;
+beforeEach(() => db.prepare('DELETE FROM mesh_snapshots').run());
+
+describe('insertMeshSnapshots', () => {
+  it('writes one row per reachable node and says how many', () => {
+    expect(insertMeshSnapshots(db, [node(), node({ hostname: 'blanka' })])).toBe(2);
+    expect(rows().map((r) => r.hostname)).toEqual(['cammy', 'blanka']);
+  });
+
+  it('skips a node that did not answer, rather than writing zeros for it', () => {
+    // A row of zeros for a down node reads as an idle machine forever after.
+    expect(insertMeshSnapshots(db, [node({ hostname: 'gone', reachable: false })])).toBe(0);
+    expect(rows()).toHaveLength(0);
+  });
+
+  it('carries the load triple and the power source through', () => {
+    insertMeshSnapshots(db, [node()]);
+    expect(rows()[0]).toMatchObject({ load_avg_1: 1.5, load_avg_5: 1.2, load_avg_15: 0.9, power_source: 'rapl', cpu_cores: 8 });
+  });
+
+  it('counts agents across every harness, not only claude', () => {
+    // A node with five uncloseai-cli agents and no claude used to persist
+    // zero agents.
+    insertMeshSnapshots(db, [node({ claudeProcesses: 0, harnessCounts: { 'uncloseai-cli': 5, aider: 2 } })]);
+    const r = rows()[0];
+    expect(r.agent_processes).toBe(7);
+    expect(JSON.parse(String(r.harness_counts))).toEqual({ 'uncloseai-cli': 5, aider: 2 });
+  });
+
+  it('falls back to the claude count when no breakdown was reported', () => {
+    insertMeshSnapshots(db, [node({ claudeProcesses: 3 })]);
+    expect(rows()[0]).toMatchObject({ agent_processes: 3, harness_counts: null });
+  });
+
+  it('leaves GPU columns null, not zero, on a node with no GPU', () => {
+    // Zero would chart as "a GPU doing nothing"; null charts as nothing.
+    insertMeshSnapshots(db, [node()]);
+    expect(rows()[0]).toMatchObject({ gpu_util: null, gpu_mem_used_mb: null, gpu_mem_total_mb: null });
+  });
+
+  it('writes all or nothing', () => {
+    // One transaction: a bad node in the middle must not leave half a batch.
+    const bad = node({ hostname: null as unknown as string });
+    expect(() => insertMeshSnapshots(db, [node(), bad, node({ hostname: 'blanka' })])).toThrow();
+    expect(rows()).toHaveLength(0);
+  });
+});

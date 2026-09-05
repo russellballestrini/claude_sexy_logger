@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@unturf/unfirehose/db/schema';
+import { insertMeshSnapshots } from '@unturf/unfirehose/db/mesh-snapshots';
 import { Timing } from '@/lib/timing';
 import { rollupTimeline, decimatePeaks, distinctHostnames } from '@/lib/mesh-history';
 
@@ -106,43 +107,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No nodes provided' }, { status: 400 });
   }
 
-  const insert = db.prepare(`
-    INSERT INTO mesh_snapshots (hostname, cpu_cores, load_avg_1, load_avg_5, load_avg_15,
-      mem_total_gb, mem_used_gb, power_watts, gpu_power_watts, gpu_util, gpu_mem_used_mb, gpu_mem_total_mb, power_source, claude_processes,
-      agent_processes, harness_counts)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const tx = db.transaction(() => {
-    for (const n of nodes) {
-      if (!n.reachable) continue;
-      insert.run(
-        n.hostname,
-        n.cpuCores ?? 0,
-        n.loadAvg?.[0] ?? 0,
-        n.loadAvg?.[1] ?? 0,
-        n.loadAvg?.[2] ?? 0,
-        n.memTotalGB ?? 0,
-        n.memUsedGB ?? 0,
-        n.powerWatts ?? 0,
-        n.gpuPowerWatts ?? 0,
-        n.gpuUtil ?? null,
-        n.gpuMemUsedMB ?? null,
-        n.gpuMemTotalMB ?? null,
-        n.powerSource ?? 'estimate',
-        n.claudeProcesses ?? 0,
-        // Total across harnesses, and the breakdown. A node with five
-        // uncloseai-cli agents and no claude used to persist a zero here.
-        (() => {
-          const c = n.harnessCounts as Record<string, number> | undefined;
-          const total = c ? Object.values(c).reduce((a, b) => a + b, 0) : 0;
-          return total || (n.claudeProcesses ?? 0);
-        })(),
-        n.harnessCounts ? JSON.stringify(n.harnessCounts) : null,
-      );
-    }
-  });
-  tx();
+  const written = insertMeshSnapshots(db, nodes);
 
   // No prune here — the worker's rollup tick folds 15s rows past the
   // 28-day boundary into mesh_snapshots_15m and deletes the source rows

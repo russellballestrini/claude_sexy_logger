@@ -75,7 +75,12 @@
     "./test/db-helper": "./test/db-helper.ts",
     "./precomputed": "./precomputed.ts",
     "./db/session-close": "./db/session-close.ts",
-    "./harness-paths": "./harness-paths.ts"
+    "./harness-paths": "./harness-paths.ts",
+    "./mesh-probe": "./mesh-probe.ts",
+    "./mesh-local": "./mesh-local.ts",
+    "./mesh-remote": "./mesh-remote.ts",
+    "./num": "./num.ts",
+    "./db/mesh-snapshots": "./db/mesh-snapshots.ts"
   },
   "scripts": {
     "test": "vitest run",

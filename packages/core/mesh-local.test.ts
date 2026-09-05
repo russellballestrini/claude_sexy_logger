@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 
-vi.mock('@unturf/unfirehose/db/schema', () => ({
+vi.mock('./db/schema', () => ({
   getDb: () => ({ prepare: () => ({ get: () => undefined, all: () => [], run: () => ({}) }) }),
   UNFIREHOSE_DIR: '/tmp/unfirehose-test',
 }));
 
-const { getLocalStats } = await import('./local-stats');
+const { getLocalStats } = await import('./mesh-local');
 
 /**
  * Reading this machine.

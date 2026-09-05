@@ -9,50 +9,13 @@ import {
 import { execSync, execFile } from 'child_process';
 import { readFileSync, readdirSync } from 'fs';
 import { discoverNodes } from '@unturf/unfirehose/mesh';
+import { probeRemote } from '@unturf/unfirehose/mesh-remote';
 import { Timing } from '@/lib/timing';
 import { getLocalStats } from '@/lib/local-stats';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 
-/**
- * Probe a remote node via a single SSH call that collects all stats,
- * RAPL power readings, and nvidia-smi data in one round-trip.
- */
-function getRemoteStatsAsync(host: string): Promise<MeshNode> {
-  // Single SSH command that gathers everything: stats, RAPL (with 100ms sleep), nvidia-smi
-  // Use ; between sections so RAPL/GPU failures don't break the chain
-  const remoteScript = [
-    // Stats section (&&-chained — all must succeed)
-    `{ hostname -f 2>/dev/null || hostname; } && nproc && grep -m1 "model name" /proc/cpuinfo && uname -m && { lsblk -d -o NAME,TYPE,SIZE,ROTA 2>/dev/null; echo "---LSBLK_END---"; } && cat /proc/meminfo && cat /proc/loadavg && cat /proc/uptime && ps aux 2>/dev/null | awk '${harnessPsAwk()}' | sed 's/^/HPROC /' && echo "---STATS_END---"`,
-    // RAPL section (best-effort, semicolon-delimited)
-    'R1=$(cat /sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj 2>/dev/null); R1B=$(cat /sys/class/powercap/intel-rapl/intel-rapl:1/energy_uj 2>/dev/null); sleep 0.1; R2=$(cat /sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj 2>/dev/null); R2B=$(cat /sys/class/powercap/intel-rapl/intel-rapl:1/energy_uj 2>/dev/null); echo "$R1 $R1B $R2 $R2B"; echo "---RAPL_END---"',
-    // GPU section (best-effort)
-    'nvidia-smi --query-gpu=power.draw,name,memory.total,memory.used,utilization.gpu --format=csv,noheader,nounits 2>/dev/null; echo "---GPU_END---"',
-  ].join('; ');
-
-  return new Promise((resolve) => {
-    execFile('ssh', ['-o', 'ConnectTimeout=5', '-o', 'StrictHostKeyChecking=no', host, remoteScript],
-      { encoding: 'utf-8', timeout: 12000 },
-      (err, stdout) => {
-        if (err) {
-          resolve({
-            hostname: host,
-            reachable: false,
-            error: err.message?.includes('ETIMEDOUT') ? 'Connection timed out' : 'Unreachable',
-          });
-          return;
-        }
-
-        try {
-          resolve(parseRemoteProbe(host, stdout));
-        } catch (parseErr: any) {
-          resolve({ hostname: host, reachable: false, error: parseErr.message });
-        }
-      },
-    );
-  });
-}
 
 let meshCache: { data: any; ts: number } | null = null;
 let refreshing = false;
@@ -67,7 +30,7 @@ async function probeMesh(timing?: Timing) {
     nodeHosts.map(host =>
       host === 'localhost'
         ? Promise.resolve(getLocalStats())
-        : getRemoteStatsAsync(host)
+        : probeRemote(host)
     )
   );
   timing?.mark('probe_all');
@@ -119,7 +82,7 @@ async function probeSingleHost(host: string) {
   // Bypasses the cache because callers want point-in-time samples.
   const node = host === 'localhost'
     ? getLocalStats()
-    : await getRemoteStatsAsync(host);
+    : await probeRemote(host);
   let localHostname: string | undefined;
   try { localHostname = execSync('hostname', { encoding: 'utf-8' }).trim(); } catch {}
   return { nodes: [node], localHostname, summary: undefined };
