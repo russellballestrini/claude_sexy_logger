@@ -80,7 +80,8 @@
     "./mesh-local": "./mesh-local.ts",
     "./mesh-remote": "./mesh-remote.ts",
     "./num": "./num.ts",
-    "./db/mesh-snapshots": "./db/mesh-snapshots.ts"
+    "./db/mesh-snapshots": "./db/mesh-snapshots.ts",
+    "./vllm-sample": "./vllm-sample.ts"
   },
   "scripts": {
     "test": "vitest run",

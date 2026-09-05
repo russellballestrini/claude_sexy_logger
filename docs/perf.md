@@ -85,6 +85,19 @@ the tab. The worker already ingests every sixty seconds. The arrival ingest
 is gone; the manual button remains, and if it needs to stop blocking too, the
 fix is to run ingest out of process rather than in the web server.
 
+## The worker no longer routes through the web server
+
+Every fifteen seconds per node the worker fetched `/api/mesh?host=…` from
+Next and POSTed the answer back to `/api/mesh/history`; every five minutes
+it POSTed `/api/inference/cache`; and on-demand ingest ran `ingestAll()`
+inside the Next process. All three were work done in, or through, the
+process whose job is to answer pages — most of the dev server's idle load,
+and lost whenever the web server was down. The probes and the writes moved
+into `packages/core` (`mesh-probe`, `mesh-local`, `mesh-remote`,
+`db/mesh-snapshots`, `vllm-sample`); the routes and the worker call the same
+functions, and the worker writes directly. Ingest on demand spawns
+`apps/worker/src/ingest-once.ts` and answers 202.
+
 ## Four ways the instrument lied first
 
 Each is fixed in code; each flattered the numbers.

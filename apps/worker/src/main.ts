@@ -6,6 +6,7 @@ import { discoverNodes } from '@unturf/unfirehose/mesh';
 import { getLocalStats } from '@unturf/unfirehose/mesh-local';
 import { probeRemote } from '@unturf/unfirehose/mesh-remote';
 import { insertMeshSnapshots } from '@unturf/unfirehose/db/mesh-snapshots';
+import { sampleVllmCache } from '@unturf/unfirehose/vllm-sample';
 import { rollupDrain } from './mesh-rollup';
 import { syncPricing, syncPricingIfStale, hydratePricing, syncIfUnpriced } from '@unturf/unfirehose/pricing-sync';
 import { scanRateLimits } from '@unturf/unfirehose/db/rate-limit-scan';
@@ -61,7 +62,6 @@ const STATUS_ROLLUP_INTERVAL_MS = 60 * 60_000;
 const WATCHDOG_TICK_MS = 5 * 60_000;       // check liveness every 5 min
 const INGEST_STALL_MS = 10 * 60_000;       // >10 min with no completed ingest = suspect
 const INGEST_HANG_MS = 30 * 60_000;        // in-flight this long = abandoned; force-restart it
-const NEXT_BASE_URL = process.env.UNFIREHOSE_NEXT_URL ?? 'http://localhost:3000';
 
 // ── Autoheal ─────────────────────────────────────────────────────────────────
 // A background timer that throws or rejects becomes an uncaughtException /
@@ -354,14 +354,14 @@ async function main() {
   // Sample vLLM prefix-cache counters. Goes through the route rather than
   // duplicating the SSH + port-discovery logic here — one probe, one place.
   const vllmCacheInterval = setInterval(() => {
-    void fetch(`${NEXT_BASE_URL}/api/inference/cache`, { method: 'POST' })
-      .then(async (r) => {
-        if (!r.ok) return;
-        const d = await r.json() as { nodes?: Array<{ host: string; sampled: number }> };
-        const n = (d.nodes ?? []).reduce((a, x) => a + (x.sampled ?? 0), 0);
+    // Directly, not through the web server: this was the last thing the
+    // worker fetched from Next, and it stalled with it.
+    sampleVllmCache(getDb(), discoverNodes())
+      .then((nodes) => {
+        const n = nodes.reduce((a, x) => a + x.sampled, 0);
         if (n > 0) console.log(`[worker] vllm cache: sampled ${n} model(s)`);
       })
-      .catch(() => { /* Next not up yet, or every node down — retry next tick */ });
+      .catch((err) => console.error('[worker] vllm cache sample failed:', err));
   }, VLLM_CACHE_SAMPLE_MS);
 
   // VACUUM only when there is something to reclaim. This ran unconditionally

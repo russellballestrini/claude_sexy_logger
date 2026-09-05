@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const execFile = vi.fn();
 vi.mock('child_process', () => ({ execFile: (...a: unknown[]) => execFile(...a) }));
-const parseRemoteProbe = vi.fn((host: string) => ({ hostname: host, reachable: true, cpuCores: 4 }));
+const parseRemoteProbe = vi.fn((host: string, _stdout?: string) => ({ hostname: host, reachable: true, cpuCores: 4 }));
 vi.mock('./mesh-probe', () => ({ parseRemoteProbe: (...a: unknown[]) => parseRemoteProbe(...(a as [string, string])) }));
 
 const { probeRemote } = await import('./mesh-remote');
