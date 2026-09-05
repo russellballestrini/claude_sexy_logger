@@ -40,12 +40,16 @@ type Calibration = {
 /** How long after starting a pass to re-read, so its first rows show. */
 const INGEST_REFRESH_MS = 8000;
 
-/** The right-hand panel: recent alerts by default, the rules table on request. */
-const PANEL_TABS = ['recent', 'rules'] as const;
-type Panel = typeof PANEL_TABS[number];
+/**
+ * Page-level tabs, like every other page here. Alerts is what the page is
+ * for; the rules are one tab away rather than a table that used to take the
+ * whole width and push the breach history below the fold.
+ */
+const TABS = ['Alerts', 'Rules'] as const;
+type Tab = typeof TABS[number];
 
 export default function UsageMonitorPage() {
-  const [panel, setPanel] = useHashTab<Panel>(PANEL_TABS, 'recent');
+  const [activeTab, setActiveTab] = useHashTab<Tab>(TABS, 'Alerts');
   const [ingesting, setIngesting] = useState(false);
 
   const { data: alerts, mutate: mutateAlerts } = useSWR('/api/alerts?filter=unacknowledged', fetcher, { refreshInterval: 5000 });
@@ -112,6 +116,30 @@ export default function UsageMonitorPage() {
       setTimeout(() => setAckState(s => s.kind === 'done' ? { kind: 'idle' } : s), 3000);
     } catch (err: any) {
       setAckState({ kind: 'error', msg: err?.message ?? 'failed' });
+    }
+  };
+
+  // --- Clear acknowledged alerts ---
+  // Acknowledging leaves an alert in the recent list and the breach history
+  // for good. 2,741 had piled up here, every one acknowledged, with no way
+  // to be rid of any of them. This is the way.
+  const [clearState, setClearState] = useState<{ kind: 'idle' } | { kind: 'pending' } | { kind: 'done'; n: number } | { kind: 'error'; msg: string }>({ kind: 'idle' });
+  const clearAcknowledged = async () => {
+    if (clearState.kind === 'pending') return;
+    setClearState({ kind: 'pending' });
+    try {
+      const res = await fetch('/api/alerts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clear', scope: 'acknowledged' }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json();
+      refreshAll();
+      setClearState({ kind: 'done', n: body.deleted ?? 0 });
+      setTimeout(() => setClearState(s => s.kind === 'done' ? { kind: 'idle' } : s), 3000);
+    } catch (err: any) {
+      setClearState({ kind: 'error', msg: err?.message ?? 'failed' });
     }
   };
 
@@ -263,18 +291,34 @@ export default function UsageMonitorPage() {
         );
       })()}
 
-      {/* The hits are what this page is for and they sit on top. Below, on a
-          desktop, history and the panel share the width; the rules table
-          used to take the whole page by itself, which pushed the breach
-          history — the thing that says whether the rules are any good —
-          below the fold on every visit. */}
-      <div className="grid gap-6 lg:grid-cols-2 items-start">
-      {/* Breach history — per day, raw rows behind a disclosure */}
+      {/* Page-level tabs, as on every other page. The hits stay above them. */}
+      <div className="flex gap-1 border-b border-[var(--color-border)]" role="tablist">
+        {TABS.map((tab) => (
+          <button
+            key={tab}
+            role="tab"
+            aria-selected={activeTab === tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2 text-sm font-medium transition-colors cursor-pointer -mb-px border-b-2 ${
+              activeTab === tab
+                ? 'border-[var(--color-accent)] text-[var(--color-foreground)]'
+                : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-foreground)]'
+            }`}
+          >
+            {tab}{tab === 'Alerts' && Array.isArray(recent) && recent.length > 0 ? ` (${recent.length})` : ''}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'Alerts' && (
+        <div className="grid gap-6 lg:grid-cols-2 items-start">
       <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 min-w-0">
         <h3 className="text-base font-bold mb-3 text-[var(--color-muted)]">
           Breaches — last {HISTORY_DAYS} days
         </h3>
-        {days.length === 0 ? (
+        {daily === undefined ? (
+          <p className="text-base text-[var(--color-muted)]">Loading…</p>
+        ) : days.length === 0 ? (
           <p className="text-base text-[var(--color-muted)]">No threshold breaches in the last {HISTORY_DAYS} days.</p>
         ) : (
           <div className="space-y-1">
@@ -298,24 +342,36 @@ export default function UsageMonitorPage() {
         )}
 
       </div>
-
-        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] min-w-0">
-          <div role="tablist" className="flex border-b border-[var(--color-border)] text-sm">
-            {PANEL_TABS.map((t) => (
-              <button
-                key={t}
-                role="tab"
-                aria-selected={panel === t}
-                onClick={() => setPanel(t)}
-                className={`px-4 py-2 -mb-px border-b-2 ${panel === t ? 'border-[var(--color-accent)] text-[var(--color-foreground)]' : 'border-transparent text-[var(--color-muted)] hover:text-[var(--color-foreground)]'}`}
-              >
-                {t === 'recent' ? `Recent alerts${Array.isArray(recent) ? ` (${recent.length})` : ''}` : 'Rules'}
-              </button>
-            ))}
-          </div>
-          <div className="p-4">
-            {panel === 'recent' && (
-              Array.isArray(recent) && recent.length > 0 ? (
+          <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 min-w-0">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <h3 className="text-base font-bold text-[var(--color-muted)]">Recent alerts</h3>
+              <div className="flex items-center gap-2">
+                {alerts && alerts.length > 0 && (
+                  <ActionButton
+                    state={ackState}
+                    onClick={acknowledgeAll}
+                    className="text-xs px-2 py-1"
+                    labels={{ pending: 'Acknowledging...', done: 'Acknowledged', error: 'Failed', idle: `Acknowledge all (${alerts.length})` }}
+                  />
+                )}
+                <ActionButton
+                  state={clearState}
+                  onClick={clearAcknowledged}
+                  disabled={!Array.isArray(recent) || !recent.some((a: any) => a.acknowledged)}
+                  className="text-xs px-2 py-1"
+                  title="Delete every acknowledged alert. Acknowledging only dims one; this removes it from the list and from the breach history, which is built from these rows."
+                  labels={{
+                    pending: 'Clearing...',
+                    done: `Cleared ${'n' in clearState ? clearState.n : ''}`,
+                    error: `Failed: ${'msg' in clearState ? clearState.msg : ''}`,
+                    idle: 'Clear acknowledged',
+                  }}
+                />
+              </div>
+            </div>
+            {recent === undefined ? (
+              <p className="text-sm text-[var(--color-muted)]">Loading…</p>
+            ) : Array.isArray(recent) && recent.length > 0 ? (
                 <div className="space-y-0.5 max-h-[32rem] overflow-auto">
                   {recent.map((a: any) => (
                     <Link
@@ -332,10 +388,13 @@ export default function UsageMonitorPage() {
                     </Link>
                   ))}
                 </div>
-              ) : <p className="text-sm text-[var(--color-muted)]">No alerts yet.</p>
-            )}
-            {panel === 'rules' && (
-              <div>
+              ) : <p className="text-sm text-[var(--color-muted)]">No alerts yet.</p>}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'Rules' && (
+        <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4">
         <div className="flex items-start justify-between gap-4 mb-3">
           <div>
             <h3 className="text-base font-bold text-[var(--color-muted)]">Alert Rules</h3>
@@ -413,11 +472,8 @@ export default function UsageMonitorPage() {
             </tbody>
           </table>
         )}
-              </div>
-            )}
-          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

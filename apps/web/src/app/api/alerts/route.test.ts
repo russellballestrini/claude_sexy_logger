@@ -6,6 +6,8 @@ vi.mock('@unturf/unfirehose/db/ingest', () => ({
   getUnacknowledgedAlerts: vi.fn().mockReturnValue([{ id: 2, acknowledged: 0 }]),
   getAlertThresholds: vi.fn().mockReturnValue([{ id: 1, window_minutes: 5, metric: 'output_tokens', threshold_value: 200000 }]),
   acknowledgeAlert: vi.fn(),
+  acknowledgeAllAlerts: vi.fn().mockReturnValue(2),
+  clearAlerts: vi.fn((scope: string) => (scope === 'all' ? 3 : 2)),
   updateAlertThreshold: vi.fn(),
   acknowledgeAlertsForThreshold: vi.fn().mockReturnValue(3),
   calibrateAlertThresholds: vi.fn().mockReturnValue([{ id: 1, window_minutes: 5, metric: 'output_tokens', previous: 200000, p95: 100000, threshold: 150000, samples: 10, acknowledged: 3 }]),
@@ -92,5 +94,36 @@ describe('POST /api/alerts', () => {
       body: JSON.stringify({ action: 'unknown' }),
     }));
     expect(res.status).toBe(400);
+  });
+
+  it('acknowledges every open alert in one statement and says how many', async () => {
+    // It used to fetch the open list and acknowledge each row in its own
+    // UPDATE — 2,741 round trips to say one thing.
+    const { acknowledgeAllAlerts } = await import('@unturf/unfirehose/db/ingest');
+    const res = await POST(req('/api/alerts', { method: 'POST', body: JSON.stringify({ action: 'acknowledge_all' }) }));
+    expect(await res.json()).toEqual({ ok: true, count: 2 });
+    expect(acknowledgeAllAlerts).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears acknowledged alerts by default', async () => {
+    // Acknowledging left an alert in the recent list and the breach history
+    // for good; 2,741 had piled up with no way to be rid of any.
+    const { clearAlerts } = await import('@unturf/unfirehose/db/ingest');
+    const res = await POST(req('/api/alerts', { method: 'POST', body: JSON.stringify({ action: 'clear' }) }));
+    expect(await res.json()).toEqual({ ok: true, scope: 'acknowledged', deleted: 2 });
+    expect(clearAlerts).toHaveBeenLastCalledWith('acknowledged');
+  });
+
+  it('clears everything when asked for all', async () => {
+    const { clearAlerts } = await import('@unturf/unfirehose/db/ingest');
+    const res = await POST(req('/api/alerts', { method: 'POST', body: JSON.stringify({ action: 'clear', scope: 'all' }) }));
+    expect(await res.json()).toEqual({ ok: true, scope: 'all', deleted: 3 });
+    expect(clearAlerts).toHaveBeenLastCalledWith('all');
+  });
+
+  it('treats an unknown scope as the safe one', async () => {
+    const { clearAlerts } = await import('@unturf/unfirehose/db/ingest');
+    await POST(req('/api/alerts', { method: 'POST', body: JSON.stringify({ action: 'clear', scope: 'everything-please' }) }));
+    expect(clearAlerts).toHaveBeenLastCalledWith('acknowledged');
   });
 });

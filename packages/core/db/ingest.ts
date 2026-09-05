@@ -2038,6 +2038,29 @@ export function getUnacknowledgedAlerts(): Array<{ id: number; [k: string]: unkn
     .all() as Array<{ id: number; [k: string]: unknown }>;
 }
 
+/**
+ * Acknowledge every open alert in one statement.
+ *
+ * The route used to fetch the open list and acknowledge each row in its own
+ * UPDATE — 2,741 round trips to say one thing.
+ */
+export function acknowledgeAllAlerts(): number {
+  const db = getDb();
+  return db.prepare('UPDATE alerts SET acknowledged = 1 WHERE acknowledged = 0').run().changes;
+}
+
+/**
+ * Remove alerts. Acknowledging one leaves it in the recent list and in the
+ * breach history for good; there was no way to be rid of it. 'acknowledged'
+ * clears what has already been seen; 'all' clears everything, open included.
+ * The breach history is derived from these rows and empties with them.
+ */
+export function clearAlerts(scope: 'acknowledged' | 'all' = 'acknowledged'): number {
+  const db = getDb();
+  const sql = scope === 'all' ? 'DELETE FROM alerts' : 'DELETE FROM alerts WHERE acknowledged = 1';
+  return db.prepare(sql).run().changes;
+}
+
 export function acknowledgeAlert(id: number) {
   const db = getDb();
   db.prepare('UPDATE alerts SET acknowledged = 1 WHERE id = ?').run(id);

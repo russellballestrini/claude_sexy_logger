@@ -212,8 +212,9 @@ describe('usage monitor', () => {
     expect(hits).toBeLessThan(history);
   });
 
-  it('opens on recent alerts, with the rules a tab away', async () => {
+  it('opens on alerts, with the rules a page-level tab away', async () => {
     await show();
+    expect(button(/^Alerts/)?.getAttribute('aria-selected')).toBe('true');
     expect(button(/^Rules$/)?.getAttribute('aria-selected')).toBe('false');
     expect(document.body.textContent).not.toContain('Alert Rules');
     await openRules();
@@ -223,6 +224,34 @@ describe('usage monitor', () => {
     // The rules themselves, not just the heading above them.
     expect(document.querySelectorAll('table tbody tr')).toHaveLength(1);
     expect(document.body.textContent).toContain('output_tokens');
+  });
+
+  it('offers to clear acknowledged alerts, which acknowledging alone never removed', async () => {
+    // 2,741 acknowledged alerts had piled up with no way to be rid of any.
+    recent = [alert({ acknowledged: 1 }), alert({ id: 2, acknowledged: 1 })];
+    global.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true, deleted: 2 }) })) as never;
+    await show();
+    await act(async () => { button(/Clear acknowledged/)!.click(); });
+    const call = posts().find((p) => p.url === '/api/alerts' && p.body?.action === 'clear');
+    expect(call?.body).toMatchObject({ action: 'clear', scope: 'acknowledged' });
+    expect(document.body.textContent).toContain('Cleared 2');
+  });
+
+  it('has nothing to clear when nothing is acknowledged', async () => {
+    recent = [alert({ acknowledged: 0 })];
+    await show();
+    expect(button(/Clear acknowledged/)).toBeDisabled();
+  });
+
+  it('says it is loading rather than that there is nothing, before the data arrives', async () => {
+    // A screenshot taken before SWR answered read "No alerts yet" and "No
+    // threshold breaches" over a table of 2,741 alerts. Loading must not
+    // look like empty.
+    recent = undefined; daily = undefined;
+    await show();
+    expect(document.body.textContent).not.toContain('No alerts yet');
+    expect(document.body.textContent).not.toContain('No threshold breaches');
+    expect(document.body.textContent).toContain('Loading');
   });
 
   it('lays history and the panel side by side on a wide screen', async () => {

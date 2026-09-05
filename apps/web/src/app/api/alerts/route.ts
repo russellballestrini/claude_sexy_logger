@@ -1,15 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  getRecentAlerts,
-  getAlertsCount,
-  getUnacknowledgedAlerts,
-  acknowledgeAlert,
-  getAlertThresholds,
-  updateAlertThreshold,
-  acknowledgeAlertsForThreshold,
-  calibrateAlertThresholds,
-  getAlertDailyCounts,
-} from '@unturf/unfirehose/db/ingest';
+import { getRecentAlerts, getAlertsCount, getUnacknowledgedAlerts, acknowledgeAlert, getAlertThresholds, updateAlertThreshold, acknowledgeAlertsForThreshold, calibrateAlertThresholds, getAlertDailyCounts, acknowledgeAllAlerts, clearAlerts } from '@unturf/unfirehose/db/ingest';
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -56,9 +46,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.action === 'acknowledge_all') {
-      const unacked = getUnacknowledgedAlerts();
-      for (const a of unacked) acknowledgeAlert(a.id);
-      return NextResponse.json({ ok: true, count: unacked.length });
+      return NextResponse.json({ ok: true, count: acknowledgeAllAlerts() });
+    }
+
+    // Acknowledging leaves an alert in the recent list and the breach
+    // history for good. This is the way to be rid of them: what has been
+    // seen by default, or everything with scope 'all'.
+    if (body.action === 'clear') {
+      const scope = body.scope === 'all' ? 'all' : 'acknowledged';
+      return NextResponse.json({ ok: true, scope, deleted: clearAlerts(scope) });
     }
 
     if (body.action === 'update_threshold' && body.id) {
