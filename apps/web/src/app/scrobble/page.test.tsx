@@ -251,5 +251,19 @@ describe('the scrobble page', () => {
     expect(weeks).toContain('2026-W35');
     expect(container.textContent).toContain('last 7 days');
   });
+
+  it('calls the same hooks while loading as after, so React never sees the order change', async () => {
+    // The range hook briefly sat below the loading return. React caught it on
+    // the first real navigation; the tests had not, because they never
+    // rendered the loading state and then the loaded one in the same mount.
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const loaded = payload;
+    payload = undefined;
+    const view = render(<ScrobblePage />);
+    payload = loaded;
+    await act(async () => { view.rerender(<ScrobblePage />); });
+    expect(errors.mock.calls.flat().join(' ')).not.toMatch(/order of Hooks|Rendered more hooks/);
+    errors.mockRestore();
+  });
 });
 

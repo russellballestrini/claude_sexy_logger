@@ -49,6 +49,10 @@ export default function ScrobblePage() {
   const { data: payload, isLoading } = useSWR('/api/scrobble/payload', fetcher);
   const { data: preview } = useSWR('/api/scrobble/preview', fetcher);
   const { data: settings } = useSWR('/api/settings', fetcher);
+  // Every hook above the early returns below. This one sat after them for a
+  // few minutes and React said so on the first navigation: a hook that only
+  // runs once data has loaded changes the hook order between renders.
+  const [range, setRange] = useTimeRange('scrobble_range', 'all');
   const [tab, setTab] = useState<'overview' | 'projects' | 'badges'>('overview');
   const [saving, setSaving] = useState<string | null>(null);
 
@@ -93,7 +97,6 @@ export default function ScrobblePage() {
   // from it here. Lifetime by default — this is a profile — and the day
   // ranges the rest of the app uses. Hour ranges are not offered: the series
   // are daily, and a one-hour window of daily data is always empty.
-  const [range, setRange] = useTimeRange('scrobble_range', 'all');
   const from = getTimeRangeFrom(range);
   const fromDay = from?.slice(0, 10);
   const fromWeek = from ? isoWeekOf(from) : undefined;
