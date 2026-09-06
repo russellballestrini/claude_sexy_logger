@@ -28,6 +28,41 @@ function isoWeekKey(ts: string): string {
   return `${year}-W${String(week).padStart(2, '0')}`;
 }
 
+export interface WeekVelocity {
+  week: string;
+  /** Sessions that had at least one message in this week. */
+  sessions: number;
+  messages: number;
+  /** The week we are in: its numbers are still growing. */
+  partial?: boolean;
+}
+
+/**
+ * Messages per week, and the sessions that were active in each.
+ *
+ * This used to credit every message of a session to the week the session
+ * last ran in. A session that stays open across weeks then lands all of its
+ * messages in its final week — and the current week read "1 session,
+ * 11,884 msgs", which is one still-open session carrying weeks of history.
+ * A message belongs to the week it happened; a session counts in every week
+ * it was active. Weeks are SQLite's %Y-W%W, the same key isoWeekKey builds.
+ */
+export function weeklyVelocityRows(db: Database.Database, since: string): WeekVelocity[] {
+  const rows = db.prepare(`
+    SELECT strftime('%Y-W%W', timestamp)  AS week,
+           COUNT(*)                        AS messages,
+           COUNT(DISTINCT session_id)      AS sessions
+      FROM messages
+     WHERE timestamp >= ?
+     GROUP BY week
+     ORDER BY week
+  `).all(since) as WeekVelocity[];
+  // "This week" by the same strftime that keyed the rows, so the two cannot
+  // drift — isoWeekKey's JS mirror of %W disagrees with SQLite on some days.
+  const { week: thisWeek } = db.prepare("SELECT strftime('%Y-W%W', 'now') AS week").get() as { week: string };
+  return rows.map((r) => (r.week === thisWeek ? { ...r, partial: true } : r));
+}
+
 export const SCROBBLE_CACHE_KEY = 'scrobble_payload';
 
 /** Build the payload. Seconds of work; call it from the worker. */
@@ -39,7 +74,6 @@ export function buildScrobblePayload(db: Database.Database = getDb()): any {
     const displayName = getSetting('unfirehose_display_name') ?? handle;
 
     const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString();
-    const twelveWeeksAgo = new Date(Date.now() - 84 * 86400000).toISOString();
 
     // One scan of `messages`, four grouping columns.
     //
@@ -180,10 +214,6 @@ export function buildScrobblePayload(db: Database.Database = getDb()): any {
       .sort((a, b) => a.date.localeCompare(b.date));
 
     const harnessAgg = new Map<string, { harness: string; sessions: number; messages: number }>();
-    // A session belongs to the week it last ran in. The old query counted a
-    // session once per week it touched; on a 12-week window that double-counts
-    // long-lived sessions, and the chart reads as velocity either way.
-    const weekAgg = new Map<string, { week: string; sessions: number; messages: number }>();
     let durationSum = 0, durationCount = 0;
     for (const s0 of sessionRows) {
       const h = harnessAgg.get(s0.harness) ?? { harness: s0.harness, sessions: 0, messages: 0 };
@@ -195,16 +225,11 @@ export function buildScrobblePayload(db: Database.Database = getDb()): any {
         durationSum += new Date(s0.last_ts).getTime() - new Date(s0.first_ts).getTime();
         durationCount += 1;
       }
-      if (s0.last_ts && s0.last_ts >= twelveWeeksAgo) {
-        const wk = isoWeekKey(s0.last_ts);
-        const w = weekAgg.get(wk) ?? { week: wk, sessions: 0, messages: 0 };
-        w.sessions += 1;
-        w.messages += s0.messages ?? 0;
-        weekAgg.set(wk, w);
-      }
     }
     const harnesses = [...harnessAgg.values()].sort((a, b) => b.sessions - a.sessions);
-    const weeklyVelocity = [...weekAgg.values()].sort((a, b) => a.week.localeCompare(b.week));
+    // Every week there is. The window used to be twelve, from before this
+    // was one indexed GROUP BY; there was no reason for it but the query.
+    const weeklyVelocity = weeklyVelocityRows(db, '1970-01-01');
     const avgSessionLen = { avg_ms: durationCount ? durationSum / durationCount : 0 };
     t.mark('fold');
 

@@ -28,6 +28,11 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 vi.mock('@/components/UPlotTimeChart', () => ({ UPlotTimeChart: () => null, default: () => null }));
+/** The velocity chart, as a record of what it was handed. */
+const charts: Array<Record<string, unknown>> = [];
+vi.mock('@/components/UPlotCategoryChart', () => ({
+  UPlotCategoryChart: (props: Record<string, unknown>) => { charts.push(props); return null; },
+}));
 
 const ScrobblePage = (await import('./page')).default;
 
@@ -56,7 +61,7 @@ const full = (over: Record<string, unknown> = {}) => ({
   timeSeries: {
     dailyMessages: [{ date: '2026-09-04', count: 120 }],
     dailyCost: [{ date: '2026-09-04', cost: 3.2 }],
-    weeklyVelocity: [{ week: '2026-W35', messages: 800 }],
+    weeklyVelocity: [{ week: '2026-W34', sessions: 12, messages: 800 }, { week: '2026-W35', sessions: 3, messages: 120, partial: true }],
   },
   models: [{ model: 'claude-opus-4-6-20260301', messages: 300, cost: 180 }],
   harnesses: [{ harness: 'claude', sessions: 400, messages: 18_000 }],
@@ -189,4 +194,33 @@ describe('the scrobble page', () => {
       expect(container.textContent!.length).toBeGreaterThan(50);
     }
   });
+
+  it('draws weekly velocity as a chart, sessions as bars and messages on their own axis', async () => {
+    // It was a grid of week / N sessions / N msgs in text — thirteen cells of
+    // numbers nobody can compare by eye.
+    charts.length = 0;
+    await show();
+    const chart = charts.find((c) => c.labelKey === 'week')!;
+    expect(chart).toBeTruthy();
+    expect((chart.data as Array<{ week: string }>).map((w) => w.week)).toEqual(['2026-W34', '2026-W35']);
+    const series = chart.series as Array<{ key: string; kind?: string; axis?: string }>;
+    expect(series.map((s) => s.key)).toEqual(['sessions', 'messages']);
+    // Messages run into the tens of thousands where sessions are hundreds; on
+    // one axis the sessions would be a flat line at zero.
+    expect(series[1]).toMatchObject({ kind: 'lines', axis: 'right' });
+  });
+
+  it('says the current week is partial', async () => {
+    const { container } = await show();
+    expect(container.textContent).toContain('current week is partial');
+  });
+
+  it('puts the lifetime numbers on one strip', async () => {
+    const { container } = await show();
+    const strips = container.querySelectorAll('.flex-wrap');
+    const strip = [...strips].find((el) => el.textContent?.includes('Sessions') && el.textContent?.includes('Cache write'));
+    expect(strip).toBeTruthy();
+    expect(strip!.textContent).toContain('412');
+  });
 });
+

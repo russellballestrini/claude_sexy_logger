@@ -9,6 +9,8 @@ import useSWR from 'swr';
 import { formatTokens, formatCost } from '@unturf/unfirehose/format';
 import { PageContext } from '@unturf/unfirehose-ui/PageContext';
 import { StatCard } from '@unturf/unfirehose-ui/StatCard';
+import { StatStrip, Stat, StatDivider, costSub } from '@unturf/unfirehose-ui/StatStrip';
+import { UPlotCategoryChart } from '@/components/UPlotCategoryChart';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -166,23 +168,23 @@ export default function ScrobblePage() {
 
       {tab === 'overview' && (
         <div className="space-y-6">
-          {/* Hero stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            <StatCard label="Sessions" value={lt.totalSessions.toLocaleString()} />
-            <StatCard label="Messages" value={lt.totalMessages.toLocaleString()} />
-            <StatCard label="Active Days" value={lt.activeDays.toLocaleString()} />
-            <StatCard label="Current Streak" value={`${streaks.current}d`} tone={streaks.current >= 3 ? 'accent' : 'default'} />
-            <StatCard label="Longest Streak" value={`${streaks.longest}d`} />
-            <StatCard label="Total Cost" value={`$${lt.totalCostUSD.toLocaleString()}`} />
-          </div>
-
-          {/* Token breakdown */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <StatCard label="Input Tokens" value={formatTokens(lt.totalInputTokens)} sub={priced(cs?.input, 'prompts → model')} />
-            <StatCard label="Output Tokens" value={formatTokens(lt.totalOutputTokens)} sub={priced(cs?.output, 'model → you')} />
-            <StatCard label="Cache Read" value={formatTokens(lt.totalCacheRead)} sub={priced(cs?.cacheRead, 'replayed prompt')} />
-            <StatCard label="Cache Write" value={formatTokens(lt.totalCacheWrite)} sub={priced(cs?.cacheWrite, 'new cache')} />
-          </div>
+          {/* One strip: what happened, then what it cost. It was ten cards over two
+              grids, each number in its own box with nothing beside it. */}
+          <StatStrip>
+            <Stat label="Sessions" value={lt.totalSessions.toLocaleString()} />
+            <Stat label="Messages" value={lt.totalMessages.toLocaleString()} />
+            <Stat label="Active days" value={lt.activeDays.toLocaleString()} />
+            <Stat label="Streak" value={`${streaks.current}d`} sub={`longest ${streaks.longest}d`} color={streaks.current >= 3 ? 'var(--color-accent)' : undefined} />
+            <Stat label="Total cost" value={`$${lt.totalCostUSD.toLocaleString()}`} />
+            <StatDivider />
+            {/* Cost under each; what the tokens are is the tooltip. With the
+                description inline, nine stats would not fit one row on a
+                desktop, and the ninth wrapped alone underneath. */}
+            <Stat label="Input" value={formatTokens(lt.totalInputTokens)} sub={costSub(cs?.input)} title="Prompt tokens the model read for the first time" />
+            <Stat label="Output" value={formatTokens(lt.totalOutputTokens)} sub={costSub(cs?.output)} title="Tokens the model generated" />
+            <Stat label="Cache read" value={formatTokens(lt.totalCacheRead)} sub={costSub(cs?.cacheRead)} title="Prompt replayed from cache" />
+            <Stat label="Cache write" value={formatTokens(lt.totalCacheWrite)} sub={costSub(cs?.cacheWrite)} title="Prompt written into cache" />
+          </StatStrip>
 
           {/* Activity heatmap — sleep schedule proxy */}
           <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
@@ -205,19 +207,31 @@ export default function ScrobblePage() {
             </div>
           )}
 
-          {/* Weekly velocity */}
+          {/* Weekly velocity. Messages are counted in the week they happened and
+              a session in every week it was active; the week we are in is
+              marked, because its numbers are still growing. */}
           {timeSeries.weeklyVelocity.length > 0 && (
-            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
-              <h3 className="text-base font-bold text-[var(--color-muted)]">Weekly Velocity (12w)</h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                {timeSeries.weeklyVelocity.map((w: any) => (
-                  <div key={w.week} className="text-center">
-                    <div className="text-base font-mono text-[var(--color-muted)]">{w.week}</div>
-                    <div className="text-base font-bold">{w.sessions} sessions</div>
-                    <div className="text-base text-[var(--color-muted)]">{w.messages} msgs</div>
-                  </div>
-                ))}
+            <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <h3 className="text-base font-bold text-[var(--color-muted)]">Weekly velocity</h3>
+                {timeSeries.weeklyVelocity.some((w: any) => w.partial) && (
+                  <span className="text-xs text-[var(--color-muted)]">current week is partial</span>
+                )}
               </div>
+              <UPlotCategoryChart
+                data={timeSeries.weeklyVelocity as Array<Record<string, unknown>>}
+                labelKey="week"
+                legend
+                series={[
+                  { key: 'sessions', label: 'sessions', color: '#a78bfa' },
+                  { key: 'messages', label: 'messages', color: '#10b981', kind: 'lines', axis: 'right' },
+                ]}
+                height={200}
+                format={(v) => v.toLocaleString()}
+                formatRight={(v) => formatTokens(v)}
+                tick={(w) => w.replace(/^\d{4}-/, '')}
+                hover={(row) => (row.partial ? 'in progress' : '')}
+              />
             </div>
           )}
 
