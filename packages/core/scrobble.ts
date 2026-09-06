@@ -17,14 +17,22 @@ import { TOOL_CALL_SQL } from './block-types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-/** SQLite's strftime('%Y-W%W'): week 00 starts at the first Sunday of the year. */
-function isoWeekKey(ts: string): string {
-  const d = new Date(ts);
+/**
+ * SQLite's strftime('%Y-W%W') for an ISO date, so the weekly series is keyed
+ * the way every other week in this database is.
+ *
+ * %W starts a week on Monday, and the days before a year's first Monday are
+ * week 00. The mirror this replaced started weeks on Sunday, so every Sunday
+ * landed in the week after SQLite's — the "disagrees on some days" that once
+ * forced the week to be keyed by SQLite itself. Checked against SQLite for
+ * every day of eleven years in scrobble-velocity.test.ts.
+ */
+export function weekKey(date: string): string {
+  const d = new Date(`${date.slice(0, 10)}T00:00:00Z`);
   const year = d.getUTCFullYear();
-  const jan1 = Date.UTC(year, 0, 1);
-  const firstSunday = jan1 + ((7 - new Date(jan1).getUTCDay()) % 7) * 86400000;
-  const t = Date.UTC(year, d.getUTCMonth(), d.getUTCDate());
-  const week = t < firstSunday ? 0 : Math.floor((t - firstSunday) / (7 * 86400000)) + 1;
+  const yday = Math.round((d.getTime() - Date.UTC(year, 0, 1)) / 86400000);
+  const monday0 = (d.getUTCDay() + 6) % 7;
+  const week = Math.floor((yday + 7 - monday0) / 7);
   return `${year}-W${String(week).padStart(2, '0')}`;
 }
 
@@ -37,30 +45,45 @@ export interface WeekVelocity {
   partial?: boolean;
 }
 
+/** One (session, day) of the scan the payload is built from. */
+export interface SessionDay {
+  id: number;
+  date: string | null;
+  messages: number;
+  first_ts: string | null;
+  last_ts: string | null;
+}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
- * Messages per week, and the sessions that were active in each.
+ * Messages per week, and the sessions that were active in each, folded from
+ * the (session, day) rows the builder already has.
  *
- * This used to credit every message of a session to the week the session
- * last ran in. A session that stays open across weeks then lands all of its
- * messages in its final week — and the current week read "1 session,
- * 11,884 msgs", which is one still-open session carrying weeks of history.
  * A message belongs to the week it happened; a session counts in every week
- * it was active. Weeks are SQLite's %Y-W%W, the same key isoWeekKey builds.
+ * it was active. This used to be its own scan of `messages` with a strftime
+ * per row — 3.75s against 1.6M rows, on top of the scan that already had
+ * every session's days. Now it is a fold over ~50k rows.
  */
-export function weeklyVelocityRows(db: Database.Database, since: string): WeekVelocity[] {
-  const rows = db.prepare(`
-    SELECT strftime('%Y-W%W', timestamp)  AS week,
-           COUNT(*)                        AS messages,
-           COUNT(DISTINCT session_id)      AS sessions
-      FROM messages
-     WHERE timestamp >= ?
-     GROUP BY week
-     ORDER BY week
-  `).all(since) as WeekVelocity[];
-  // "This week" by the same strftime that keyed the rows, so the two cannot
-  // drift — isoWeekKey's JS mirror of %W disagrees with SQLite on some days.
-  const { week: thisWeek } = db.prepare("SELECT strftime('%Y-W%W', 'now') AS week").get() as { week: string };
-  return rows.map((r) => (r.week === thisWeek ? { ...r, partial: true } : r));
+export function weeklyVelocity(days: SessionDay[], today = new Date().toISOString()): WeekVelocity[] {
+  const weeks = new Map<string, { messages: number; sessions: Set<number> }>();
+  for (const d of days) {
+    if (!d.date || !ISO_DAY.test(d.date)) continue;
+    const key = weekKey(d.date);
+    const w = weeks.get(key) ?? { messages: 0, sessions: new Set<number>() };
+    w.messages += d.messages ?? 0;
+    w.sessions.add(d.id);
+    weeks.set(key, w);
+  }
+  const thisWeek = weekKey(today);
+  return [...weeks.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([week, w]) => ({
+      week,
+      sessions: w.sessions.size,
+      messages: w.messages,
+      ...(week === thisWeek ? { partial: true } : {}),
+    }));
 }
 
 export const SCROBBLE_CACHE_KEY = 'scrobble_payload';
@@ -102,19 +125,34 @@ export function buildScrobblePayload(db: Database.Database = getDb()): any {
     `).all() as any[];
     t.mark('grain');
 
-    // Per session, one row: harness, span and volume. Replaces three more
-    // scans (harnesses, weekly velocity, average session length) and is the
-    // only place a session-level DISTINCT is needed.
-    const sessionRows = db.prepare(`
-      SELECT s.id                          AS id,
-             COALESCE(s.harness, 'claude-code') AS harness,
-             COUNT(m.id)                    AS messages,
-             MIN(m.timestamp)               AS first_ts,
-             MAX(m.timestamp)               AS last_ts
-        FROM sessions s
-        JOIN messages m ON m.session_id = s.id
-       GROUP BY s.id
-    `).all() as any[];
+    // Per session and day, one row. Folded below into one row per session
+    // (harness, span, volume) and into the weekly series, so the weeks come
+    // from a scan the payload already needed rather than a third one. The
+    // harness is a small lookup rather than a join across the whole table.
+    const sessionDays = db.prepare(`
+      SELECT session_id                  AS id,
+             substr(timestamp, 1, 10)    AS date,
+             COUNT(*)                    AS messages,
+             MIN(timestamp)              AS first_ts,
+             MAX(timestamp)              AS last_ts
+        FROM messages
+       GROUP BY session_id, date
+    `).all() as SessionDay[];
+    const harnessOf = new Map<number, string>();
+    for (const s of db.prepare("SELECT id, COALESCE(harness, 'claude-code') AS harness FROM sessions").all() as any[]) {
+      harnessOf.set(s.id, s.harness);
+    }
+    const perSession = new Map<number, { id: number; harness: string; messages: number; first_ts: string | null; last_ts: string | null }>();
+    for (const d of sessionDays) {
+      const harness = harnessOf.get(d.id);
+      if (harness === undefined) continue; // a message whose session is gone, as the join used to drop
+      const s0 = perSession.get(d.id) ?? { id: d.id, harness, messages: 0, first_ts: null, last_ts: null };
+      s0.messages += d.messages ?? 0;
+      if (d.first_ts && (!s0.first_ts || d.first_ts < s0.first_ts)) s0.first_ts = d.first_ts;
+      if (d.last_ts && (!s0.last_ts || d.last_ts > s0.last_ts)) s0.last_ts = d.last_ts;
+      perSession.set(d.id, s0);
+    }
+    const sessionRows = [...perSession.values()];
     t.mark('sessions');
 
     let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheWrite = 0, totalCost = 0;
@@ -227,9 +265,8 @@ export function buildScrobblePayload(db: Database.Database = getDb()): any {
       }
     }
     const harnesses = [...harnessAgg.values()].sort((a, b) => b.sessions - a.sessions);
-    // Every week there is. The window used to be twelve, from before this
-    // was one indexed GROUP BY; there was no reason for it but the query.
-    const weeklyVelocity = weeklyVelocityRows(db, '1970-01-01');
+    // Every week there is; the page carries the range selector.
+    const weeklyVelocityRows = weeklyVelocity(sessionDays);
     const avgSessionLen = { avg_ms: durationCount ? durationSum / durationCount : 0 };
     t.mark('fold');
 
@@ -300,7 +337,7 @@ export function buildScrobblePayload(db: Database.Database = getDb()): any {
         dayOfWeek: dowActivity,
         heatmap: heatmapRows.map((d: any) => ({ dow: d.dow, hour: d.hour, count: d.count })),
       },
-      timeSeries: { dailyMessages, dailyCost: dailyCostSeries, weeklyVelocity },
+      timeSeries: { dailyMessages, dailyCost: dailyCostSeries, weeklyVelocity: weeklyVelocityRows },
       models,
       harnesses: harnesses.map((h: any) => ({ harness: h.harness, sessions: h.sessions, messages: h.messages })),
       tools: tools.map((t: any) => ({ name: t.tool_name, count: t.count })),
