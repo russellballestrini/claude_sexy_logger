@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { execSync } from 'child_process';
+import { exec } from 'child_process';
 import { parseProbeOutput } from '@/lib/node-probe';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -186,8 +186,10 @@ echo '===SECTION:IOSTAT==='
 cat /proc/diskstats 2>/dev/null | head -20 || echo 'n/a'
 
 # --- docker/containers ---
+# Every container, stopped ones included: a node whose ten containers are
+# all exited read as having none, and "running" is what the Status column says.
 echo '===SECTION:DOCKER==='
-\$T docker ps --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null | head -20 || echo 'none'
+\$T docker ps -a --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null | head -50 || echo 'none'
 
 # --- tmux sessions ---
 echo '===SECTION:TMUX==='
@@ -201,28 +203,51 @@ echo '===SECTION:END==='
 `.trim();
 
 
-function probeLocal(): string {
-  try {
-    return execSync(`bash -c '${PROBE_SCRIPT.replace(/'/g, "'\\''")}'`, {
-      encoding: 'utf-8',
-      timeout: 15000,
+/**
+ * Run a command off the event loop.
+ *
+ * This route used execSync. The probe is a shell script that takes 4 to 10
+ * seconds on a loaded node, and for that whole time the process that answers
+ * every request answered nothing — the node page polls it every six seconds,
+ * so with that page open the server was frozen for most of every interval
+ * and every other page felt it. Measured 2026-09-06: a 25ms endpoint took
+ * 10.9s, 5.7s, 5.2s while one probe ran.
+ *
+ * A killed command (timeout) still yields what it wrote, as execSync's
+ * e.stdout did; the parser flags the truncation.
+ */
+function run(cmd: string, opts: { timeout: number; shell?: string }): Promise<string> {
+  return new Promise((resolve) => {
+    exec(cmd, { encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024, ...opts }, (err, stdout) => {
+      resolve(typeof stdout === 'string' ? stdout : '');
+      void err;
     });
-  } catch (e: any) {
-    return e.stdout ?? '';
-  }
+  });
 }
 
-function probeRemote(host: string): string {
-  try {
-    return execSync(
-      `ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${host} 'bash -s' << 'PROBE_EOF'\n${PROBE_SCRIPT}\nPROBE_EOF`,
-      { encoding: 'utf-8', timeout: 20000, shell: '/bin/bash' }
-    );
-  } catch (e: any) {
-    return e.stdout ?? '';
-  }
+function probeLocal(): Promise<string> {
+  return run(`bash -c '${PROBE_SCRIPT.replace(/'/g, "'\\''")}'`, { timeout: 15000 });
 }
 
+function probeRemote(host: string): Promise<string> {
+  return run(
+    `ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no ${host} 'bash -s' << 'PROBE_EOF'\n${PROBE_SCRIPT}\nPROBE_EOF`,
+    { timeout: 20000, shell: '/bin/bash' },
+  );
+}
+
+/** Our own names, or null when the machine cannot say — then nothing is local. */
+async function ownNames(): Promise<{ short: string; fqdn: string } | null> {
+  return new Promise((resolve) => {
+    exec('hostname', { encoding: 'utf-8' }, (err, short) => {
+      if (err) return resolve(null);
+      exec('hostname -f 2>/dev/null || echo ""', { encoding: 'utf-8' }, (err2, fqdn) => {
+        if (err2) return resolve(null);
+        resolve({ short: String(short).trim(), fqdn: String(fqdn).trim() });
+      });
+    });
+  });
+}
 
 export async function GET(req: NextRequest) {
   const host = req.nextUrl.searchParams.get('host');
@@ -238,14 +263,11 @@ export async function GET(req: NextRequest) {
   // Detect if the requested host is actually localhost
   let isLocal = host === 'localhost';
   if (!isLocal) {
-    try {
-      const localHostname = execSync('hostname', { encoding: 'utf-8' }).trim();
-      const localFqdn = execSync('hostname -f 2>/dev/null || echo ""', { encoding: 'utf-8' }).trim();
-      isLocal = host === localHostname || host === localFqdn;
-    } catch { /* ignore */ }
+    const names = await ownNames();
+    isLocal = !!names && (host === names.short || host === names.fqdn);
   }
 
-  const raw = isLocal ? probeLocal() : probeRemote(host);
+  const raw = isLocal ? await probeLocal() : await probeRemote(host);
 
   if (!raw.includes('===SECTION:HOSTNAME===')) {
     return NextResponse.json({

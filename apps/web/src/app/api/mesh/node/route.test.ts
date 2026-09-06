@@ -10,8 +10,25 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
  * costs a round trip and fails outright on a node with no key back to itself.
  */
 
-const execSync = vi.fn();
-vi.mock('child_process', () => ({ execSync: (...a: unknown[]) => execSync(...a) }));
+/**
+ * Every command the route runs goes through child_process.exec — the async
+ * one. It used the synchronous form, and the probe is seconds of shell on a
+ * loaded node, so the whole server answered nothing while it ran.
+ * `commands` records what was asked and answers with a string or a throw;
+ * the exec shim turns that into a callback, delivered on a later tick like
+ * the real one. The mock has no synchronous form on purpose: a route that
+ * reaches for it fails here.
+ */
+const commands = vi.fn();
+type ExecCb = (err: Error | null, stdout: string, stderr: string) => void;
+let deliver = (cb: () => void) => queueMicrotask(cb);
+vi.mock('child_process', () => ({
+  exec: (cmd: string, _opts: unknown, cb: ExecCb) => {
+    let out = '', err: Error | null = null;
+    try { out = commands(cmd); } catch (e) { err = e as Error; }
+    deliver(() => cb(err, out, ''));
+  },
+}));
 
 const parseProbeOutput = vi.fn((raw: string, host: string) => ({ hostname: host, reachable: true, raw }));
 vi.mock('@/lib/node-probe', async (orig) => ({
@@ -19,9 +36,9 @@ vi.mock('@/lib/node-probe', async (orig) => ({
   parseProbeOutput: (r: string, h: string) => parseProbeOutput(r, h),
 }));
 
-/** The probe is one execSync call; which machine it lands on is in the command. */
+/** The probe is one exec call; which machine it lands on is in the command. */
 const probeCommands = () =>
-  execSync.mock.calls.map((c) => String(c[0])).filter((c) => c.includes('SECTION:HOSTNAME'));
+  commands.mock.calls.map((c) => String(c[0])).filter((c) => c.includes('SECTION:HOSTNAME'));
 const probedOverSsh = () => probeCommands().filter((c) => c.startsWith('ssh '));
 const probedLocally = () => probeCommands().filter((c) => c.startsWith('bash -c'));
 
@@ -31,15 +48,16 @@ const get = (query: string) =>
   GET({ nextUrl: new URL(`http://localhost:3000/api/mesh/node${query}`) } as never);
 
 /** Answer `hostname` with a name, and the probe itself with output. */
-function machine({ name = 'some-other-box', fqdn = name, probe = '===SECTION:HOSTNAME===\nbox' } = {}) {
-  execSync.mockImplementation((cmd: string) => {
+function machine({ name = 'some-other-box', fqdn, probe = '===SECTION:HOSTNAME===\nbox' }: { name?: string; fqdn?: string; probe?: string } = {}) {
+  const full = fqdn ?? name;
+  commands.mockImplementation((cmd: string) => {
     if (cmd === 'hostname') return `${name}\n`;
-    if (cmd.startsWith('hostname -f')) return `${fqdn}\n`;
+    if (cmd.startsWith('hostname -f')) return `${full}\n`;
     return probe;
   });
 }
 
-beforeEach(() => { vi.clearAllMocks(); machine(); });
+beforeEach(() => { vi.clearAllMocks(); deliver = (cb) => queueMicrotask(cb); machine(); });
 
 describe('what it refuses', () => {
   it('will not probe without being told what to probe', async () => {
@@ -109,7 +127,7 @@ describe('recognising itself', () => {
   it('falls back to ssh when it cannot ask its own name', async () => {
     // A container with no `hostname` binary. Treating the failure as "this
     // is me" would probe the wrong machine and report it as the right one.
-    execSync.mockImplementation((cmd: string) => {
+    commands.mockImplementation((cmd: string) => {
       if (String(cmd).startsWith('hostname')) throw new Error('not found');
       return '===SECTION:HOSTNAME===\nbox';
     });
@@ -152,5 +170,40 @@ describe('a node that does answer', () => {
     const body = await (await get('?host=neoblanka')).json();
     expect(body).toMatchObject({ hostname: 'neoblanka', reachable: true });
     expect(parseProbeOutput).toHaveBeenCalledWith(expect.stringContaining('remote-box'), 'neoblanka');
+  });
+});
+
+
+describe('staying out of the way', () => {
+  it('waits for a probe that takes its time, rather than blocking for it', async () => {
+    // The real probe answers seconds later. The route must still be a
+    // pending promise in the meantime — other requests run in that gap.
+    deliver = (cb) => { setTimeout(cb, 30); };
+    machine({ probe: '===SECTION:HOSTNAME===\nslow-box' });
+    let settled = false;
+    const pending = get('?host=neoblanka').then((r) => { settled = true; return r; });
+    await new Promise((r) => setTimeout(r, 5));
+    expect(settled).toBe(false);
+    const body = await (await pending).json();
+    expect(body).toMatchObject({ hostname: 'neoblanka', reachable: true });
+  });
+
+  it('keeps what a killed probe managed to write', async () => {
+    // exec reports a timeout as an error and still hands over stdout. The
+    // shim models that with a throw carrying stdout; the route must parse
+    // what arrived and let the parser flag the truncation.
+    commands.mockImplementation((cmd: string) => {
+      if (cmd.startsWith('hostname')) return 'some-other-box\n';
+      throw Object.assign(new Error('killed'), { killed: true });
+    });
+    const body = await (await get('?host=neoblanka')).json();
+    expect(body.reachable).toBe(false);
+    expect(body.error).toMatch(/unreachable or timed out/);
+  });
+
+  it('lists every container, stopped ones included', async () => {
+    // A node whose ten containers had all exited read as having none.
+    await get('?host=neoblanka');
+    expect(probeCommands()[0]).toContain('docker ps -a ');
   });
 });
