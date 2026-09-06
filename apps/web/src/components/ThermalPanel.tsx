@@ -147,6 +147,13 @@ const sensorHistory = (() => {
     snapshot(host: string): HistRow[] {
       return buffers.get(host) ?? EMPTY;
     },
+    // The same rule for the server snapshot: React compares it by reference
+    // across the hydration pass, and a fresh `[]` per call read as a store
+    // that changes every render — "should be cached to avoid an infinite
+    // loop" in the console, and a re-render loop on the node page.
+    serverSnapshot(): HistRow[] {
+      return EMPTY;
+    },
     hydrate(host: string) {
       const before = buffers.get(host);
       const after = load(host);
@@ -194,7 +201,7 @@ function useSensorHistory(
   const rows = useSyncExternalStore(
     useMemo(() => (cb: () => void) => sensorHistory.subscribe(host, cb), [host]),
     () => sensorHistory.snapshot(host),
-    () => [] as HistRow[],   // server render — localStorage does not exist
+    sensorHistory.serverSnapshot,   // server render — localStorage does not exist
   );
   const lastSigRef = useRef<string>('');
 

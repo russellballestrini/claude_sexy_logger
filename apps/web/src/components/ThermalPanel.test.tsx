@@ -165,3 +165,35 @@ describe('ThermalPanel', () => {
     expect(screen.getByText(/4 cpu cores/)).toBeInTheDocument();
   });
 });
+
+/**
+ * Hydration. The sensor history is read through useSyncExternalStore, and
+ * React compares the server snapshot by reference across the hydration
+ * pass. A fresh `[]` per call reads as a store that changes every render:
+ * "The result of getServerSnapshot should be cached to avoid an infinite
+ * loop" in the console, and a re-render loop on the node page that fox
+ * noticed as the whole app going laggy.
+ */
+describe('ThermalPanel hydration', () => {
+  it('hydrates server HTML without React complaining about the server snapshot', async () => {
+    const { renderToString } = await import('react-dom/server');
+    const { hydrateRoot } = await import('react-dom/client');
+    const { act } = await import('react');
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => { errors.push(args.map(String).join(' ')); });
+    try {
+      const temps = [temp('Core 0', 50), temp('Core 1', 52)];
+      const el = <ThermalPanel host="box" temps={temps} fans={[]} throttle={null} />;
+      const container = document.createElement('div');
+      container.innerHTML = renderToString(el);
+      document.body.appendChild(container);
+      let root: ReturnType<typeof hydrateRoot> | undefined;
+      await act(async () => { root = hydrateRoot(container, el); });
+      await act(async () => { root?.unmount(); });
+      container.remove();
+      expect(errors.filter((e) => /getServerSnapshot/.test(e))).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
