@@ -73,7 +73,6 @@ export function buildScrobblePayload(db: Database.Database = getDb()): any {
     const handle = getSetting('unfirehose_handle') ?? 'anonymous';
     const displayName = getSetting('unfirehose_display_name') ?? handle;
 
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString();
 
     // One scan of `messages`, four grouping columns.
     //
@@ -181,11 +180,12 @@ export function buildScrobblePayload(db: Database.Database = getDb()): any {
       prev.inputTokens += m.inp;
       prev.outputTokens += m.out;
       modelAgg.set(m.model, prev);
-      if (m.date >= ninetyDaysAgo.slice(0, 10)) {
-        if (!dailyAgg[m.date]) dailyAgg[m.date] = { cost: 0, count: 0 };
-        dailyAgg[m.date].cost += c.total;
-        dailyAgg[m.date].count += m.messages;
-      }
+      // Every day there is. This was gated to the last ninety; the page now
+      // carries the range selector, and it needs the whole series to select
+      // from — a day is one row, and there are a few hundred of them.
+      if (!dailyAgg[m.date]) dailyAgg[m.date] = { cost: 0, count: 0 };
+      dailyAgg[m.date].cost += c.total;
+      dailyAgg[m.date].count += m.messages;
     }
     const models = [...modelAgg.values()].sort((a, b) => b.messages - a.messages);
     const heatmapRows = [...heatKey.values()];

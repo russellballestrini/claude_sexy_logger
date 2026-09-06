@@ -43,17 +43,25 @@ export function useTimeRange(storageKey: string, defaultValue: TimeRangeValue = 
 export function TimeRangeSelect({
   value,
   onChange,
+  options,
 }: {
   value: string;
   onChange: (value: string) => void;
+  /**
+   * Which of the shared ranges to offer, by value. A page whose series are
+   * daily has no use for "1 hour"; it offers the days and Lifetime, in the
+   * shared order, and the same labels everywhere.
+   */
+  options?: readonly string[];
 }) {
+  const offered = options ? TIME_RANGE_OPTIONS.filter((o) => options.includes(o.value)) : TIME_RANGE_OPTIONS;
   return (
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded px-3 py-1.5 text-base text-[var(--color-foreground)] cursor-pointer"
     >
-      {TIME_RANGE_OPTIONS.map((o) => (
+      {offered.map((o) => (
         <option key={o.value} value={o.value}>
           {o.label}
         </option>

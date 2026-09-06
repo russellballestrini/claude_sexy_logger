@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, beforeAll, afterEach, vi } from 'vitest';
-import { render, cleanup, act, waitFor } from '@testing-library/react';
+import { render, cleanup, act, waitFor, fireEvent } from '@testing-library/react';
 
 /**
  * A public profile built out of our own logs.
@@ -61,7 +61,7 @@ const full = (over: Record<string, unknown> = {}) => ({
   timeSeries: {
     dailyMessages: [{ date: '2026-09-04', count: 120 }],
     dailyCost: [{ date: '2026-09-04', cost: 3.2 }],
-    weeklyVelocity: [{ week: '2026-W34', sessions: 12, messages: 800 }, { week: '2026-W35', sessions: 3, messages: 120, partial: true }],
+    weeklyVelocity: [{ week: '2026-W20', sessions: 40, messages: 5000 }, { week: '2026-W34', sessions: 12, messages: 800 }, { week: '2026-W35', sessions: 3, messages: 120, partial: true }],
   },
   models: [{ model: 'claude-opus-4-6-20260301', messages: 300, cost: 180 }],
   harnesses: [{ harness: 'claude', sessions: 400, messages: 18_000 }],
@@ -202,7 +202,7 @@ describe('the scrobble page', () => {
     await show();
     const chart = charts.find((c) => c.labelKey === 'week')!;
     expect(chart).toBeTruthy();
-    expect((chart.data as Array<{ week: string }>).map((w) => w.week)).toEqual(['2026-W34', '2026-W35']);
+    expect((chart.data as Array<{ week: string }>).map((w) => w.week)).toEqual(['2026-W20', '2026-W34', '2026-W35']);
     const series = chart.series as Array<{ key: string; kind?: string; axis?: string }>;
     expect(series.map((s) => s.key)).toEqual(['sessions', 'messages']);
     // Messages run into the tens of thousands where sessions are hundreds; on
@@ -221,6 +221,35 @@ describe('the scrobble page', () => {
     const strip = [...strips].find((el) => el.textContent?.includes('Sessions') && el.textContent?.includes('Cache write'));
     expect(strip).toBeTruthy();
     expect(strip!.textContent).toContain('412');
+  });
+
+  it('offers the day ranges and Lifetime, not hours, since the series are daily', async () => {
+    const { container } = await show();
+    const select = [...container.querySelectorAll('select')].find((el) => el.textContent?.includes('Lifetime'))!;
+    expect(select).toBeTruthy();
+    const values = [...select.querySelectorAll('option')].map((o) => o.value);
+    expect(values).toEqual(['7d', '14d', '28d', 'all']);
+  });
+
+  it('shows everything by default — this is a profile', async () => {
+    charts.length = 0;
+    await show();
+    const chart = charts.find((c) => c.labelKey === 'week')!;
+    expect((chart.data as unknown[]).length).toBe(3);
+  });
+
+  it('narrows the dated series to the chosen range, and says which', async () => {
+    charts.length = 0;
+    const { container } = await show();
+    const select = [...container.querySelectorAll('select')].find((el) => el.textContent?.includes('Lifetime'))!;
+    await act(async () => { fireEvent.change(select, { target: { value: '7d' } }); });
+    // A week from May is gone; the recent ones stay. The exact boundary
+    // depends on today's date, so the assertion is about the old week.
+    const chart = charts.at(-1)!;
+    const weeks = (chart.data as Array<{ week: string }>).map((w) => w.week);
+    expect(weeks).not.toContain('2026-W20');
+    expect(weeks).toContain('2026-W35');
+    expect(container.textContent).toContain('last 7 days');
   });
 });
 

@@ -10,6 +10,7 @@ import { formatTokens, formatCost } from '@unturf/unfirehose/format';
 import { PageContext } from '@unturf/unfirehose-ui/PageContext';
 import { StatCard } from '@unturf/unfirehose-ui/StatCard';
 import { StatStrip, Stat, StatDivider, costSub } from '@unturf/unfirehose-ui/StatStrip';
+import { TimeRangeSelect, useTimeRange, getTimeRangeFrom } from '@unturf/unfirehose-ui/TimeRangeSelect';
 import { UPlotCategoryChart } from '@/components/UPlotCategoryChart';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -29,6 +30,20 @@ const TIER_COLORS: Record<string, string> = {
 };
 
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** The ranges that make sense for daily series. */
+const SCROBBLE_RANGES = ['7d', '14d', '28d', 'all'] as const;
+
+/** SQLite's %Y-W%W for a date, matching the keys the payload's weeks carry. */
+function isoWeekOf(iso: string): string {
+  const d = new Date(iso);
+  const year = d.getUTCFullYear();
+  const jan1 = Date.UTC(year, 0, 1);
+  const firstMonday = jan1 + ((8 - new Date(jan1).getUTCDay()) % 7) * 86400000;
+  const t = Date.UTC(year, d.getUTCMonth(), d.getUTCDate());
+  const week = t < firstMonday ? 0 : Math.floor((t - firstMonday) / (7 * 86400000)) + 1;
+  return `${year}-W${String(week).padStart(2, '0')}`;
+}
 
 export default function ScrobblePage() {
   const { data: payload, isLoading } = useSWR('/api/scrobble/payload', fetcher);
@@ -73,7 +88,21 @@ export default function ScrobblePage() {
     usd == null ? tail : `${formatCost(usd)} · ${tail}`;
   const streaks = payload.streaks ?? { current: 0, longest: 0 };
   const activity = payload.activity ?? { hourOfDay: [], dayOfWeek: [], heatmap: [] };
-  const timeSeries = payload.timeSeries ?? { dailyMessages: [], dailyCost: [], weeklyVelocity: [] };
+  const allSeries = payload.timeSeries ?? { dailyMessages: [], dailyCost: [], weeklyVelocity: [] };
+  // The payload carries every day and every week there is; the range picks
+  // from it here. Lifetime by default — this is a profile — and the day
+  // ranges the rest of the app uses. Hour ranges are not offered: the series
+  // are daily, and a one-hour window of daily data is always empty.
+  const [range, setRange] = useTimeRange('scrobble_range', 'all');
+  const from = getTimeRangeFrom(range);
+  const fromDay = from?.slice(0, 10);
+  const fromWeek = from ? isoWeekOf(from) : undefined;
+  const timeSeries = {
+    dailyMessages: fromDay ? allSeries.dailyMessages.filter((d: any) => d.date >= fromDay) : allSeries.dailyMessages,
+    dailyCost: fromDay ? allSeries.dailyCost.filter((d: any) => d.date >= fromDay) : allSeries.dailyCost,
+    weeklyVelocity: fromWeek ? allSeries.weeklyVelocity.filter((w: any) => w.week >= fromWeek) : allSeries.weeklyVelocity,
+  };
+  const rangeLabel = range === 'all' ? 'lifetime' : `last ${range.replace('d', ' days')}`;
   const projects = payload.projects ?? [];
   const badges = payload.badges ?? [];
   const earnedBadges = badges.filter((b: any) => b.earned);
@@ -170,6 +199,9 @@ export default function ScrobblePage() {
         <div className="space-y-6">
           {/* One strip: what happened, then what it cost. It was ten cards over two
               grids, each number in its own box with nothing beside it. */}
+          <div className="flex items-center justify-end">
+            <TimeRangeSelect value={range} onChange={setRange} options={SCROBBLE_RANGES} />
+          </div>
           <StatStrip>
             <Stat label="Sessions" value={lt.totalSessions.toLocaleString()} />
             <Stat label="Messages" value={lt.totalMessages.toLocaleString()} />
@@ -202,7 +234,7 @@ export default function ScrobblePage() {
           {/* Daily cost chart */}
           {timeSeries.dailyCost.length > 0 && (
             <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-3">
-              <h3 className="text-base font-bold text-[var(--color-muted)]">Daily Cost (90d)</h3>
+              <h3 className="text-base font-bold text-[var(--color-muted)]">Daily cost — {rangeLabel}</h3>
               <BarChart data={timeSeries.dailyCost.map((d: any) => ({ label: d.date.slice(5), value: d.costUSD }))} />
             </div>
           )}
@@ -213,7 +245,7 @@ export default function ScrobblePage() {
           {timeSeries.weeklyVelocity.length > 0 && (
             <div className="bg-[var(--color-surface)] rounded border border-[var(--color-border)] p-4 space-y-2">
               <div className="flex items-baseline justify-between gap-3">
-                <h3 className="text-base font-bold text-[var(--color-muted)]">Weekly velocity</h3>
+                <h3 className="text-base font-bold text-[var(--color-muted)]">Weekly velocity — {rangeLabel}</h3>
                 {timeSeries.weeklyVelocity.some((w: any) => w.partial) && (
                   <span className="text-xs text-[var(--color-muted)]">current week is partial</span>
                 )}
