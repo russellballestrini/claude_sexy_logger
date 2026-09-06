@@ -11,6 +11,12 @@ export const TIME_RANGE_OPTIONS = [
   { label: '7 days', value: '7d', ms: 7 * 24 * 60 * 60 * 1000 },
   { label: '14 days', value: '14d', ms: 14 * 24 * 60 * 60 * 1000 },
   { label: '28 days', value: '28d', ms: 28 * 24 * 60 * 60 * 1000 },
+  // Between a month and everything: a quarter, a half year, a year. Before
+  // these the only step past 28 days was Lifetime, and a profile that goes
+  // back most of a year had nowhere to stand in between.
+  { label: '90 days', value: '90d', ms: 90 * 24 * 60 * 60 * 1000 },
+  { label: '6 months', value: '180d', ms: 180 * 24 * 60 * 60 * 1000 },
+  { label: '1 year', value: '365d', ms: 365 * 24 * 60 * 60 * 1000 },
   { label: 'Lifetime', value: 'all', ms: 0 },
 ] as const;
 

@@ -32,7 +32,7 @@ const TIER_COLORS: Record<string, string> = {
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** The ranges that make sense for daily series. */
-const SCROBBLE_RANGES = ['7d', '14d', '28d', 'all'] as const;
+const SCROBBLE_RANGES = ['7d', '14d', '28d', '90d', '180d', '365d', 'all'] as const;
 
 /** SQLite's %Y-W%W for a date, matching the keys the payload's weeks carry. */
 function isoWeekOf(iso: string): string {

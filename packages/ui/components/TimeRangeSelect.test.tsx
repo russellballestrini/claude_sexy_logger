@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, cleanup, renderHook, act } from '@testing-library/react';
+import { DASHBOARD_RANGES } from '@unturf/unfirehose/dashboard';
 import {
   TIME_RANGE_OPTIONS, getTimeRangeMinutes, getTimeRangeFrom, useTimeRange, TimeRangeSelect,
 } from './TimeRangeSelect';
@@ -109,4 +110,25 @@ describe('TimeRangeSelect', () => {
     }
     expect(picked).toBe('1h');
   });
+
+  it('offers steps between a month and lifetime', () => {
+    // A profile that goes back most of a year had nowhere to stand between
+    // 28 days and everything.
+    const values = TIME_RANGE_OPTIONS.map((o) => o.value);
+    const i28 = values.indexOf('28d'), iAll = values.indexOf('all');
+    expect(values.slice(i28 + 1, iAll)).toEqual(['90d', '180d', '365d']);
+    expect(getTimeRangeMinutes('90d')).toBe(90 * 24 * 60);
+    expect(getTimeRangeMinutes('365d')).toBe(365 * 24 * 60);
+  });
+
+  it('offers nothing the dashboard cannot answer', () => {
+    // The dashboard is the one page that sends the raw value to its API,
+    // and that API keeps its own map. A range added here and not there
+    // silently falls back to seven days.
+    for (const o of TIME_RANGE_OPTIONS) {
+      expect(DASHBOARD_RANGES, o.value).toHaveProperty(o.value);
+      expect(DASHBOARD_RANGES[o.value]).toBe(o.ms / 60_000);
+    }
+  });
 });
+

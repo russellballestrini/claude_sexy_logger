@@ -18,7 +18,8 @@ import { ingestLagMinutes } from './db/ingest';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-const TIME_RANGES: Record<string, number> = {
+/** Minutes per range value. Exported so the shared selector can be checked against it. */
+export const DASHBOARD_RANGES: Record<string, number> = {
   '1h': 60,
   '3h': 180,
   '6h': 360,
@@ -27,11 +28,16 @@ const TIME_RANGES: Record<string, number> = {
   '7d': 10080,
   '14d': 20160,
   '28d': 40320,
+  // The long ranges the shared selector offers. Not warmed by the worker —
+  // see WARM_RANGES — so the first request for one computes it.
+  '90d': 129600,
+  '180d': 259200,
+  '365d': 525600,
   'all': 0,
 };
 
 export function buildDashboard(range: string): any {
-    const minutes = TIME_RANGES[range] ?? 10080;
+    const minutes = DASHBOARD_RANGES[range] ?? 10080;
 
   try {
     const db = getDb();

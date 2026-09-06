@@ -228,7 +228,7 @@ describe('the scrobble page', () => {
     const select = [...container.querySelectorAll('select')].find((el) => el.textContent?.includes('Lifetime'))!;
     expect(select).toBeTruthy();
     const values = [...select.querySelectorAll('option')].map((o) => o.value);
-    expect(values).toEqual(['7d', '14d', '28d', 'all']);
+    expect(values).toEqual(['7d', '14d', '28d', '90d', '180d', '365d', 'all']);
   });
 
   it('shows everything by default — this is a profile', async () => {
